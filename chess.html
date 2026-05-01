@@ -69,6 +69,7 @@
       cursor: pointer;
       position: relative;
       user-select: none;
+      touch-action: manipulation;
     }
 
     .square.light { background: var(--light); }
@@ -100,7 +101,7 @@
     }
 
     .piece {
-      font-size: 44px;
+      font-size: calc(var(--sq) * 0.63);
       line-height: 1;
       pointer-events: none;
       filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.4));
@@ -208,13 +209,12 @@
       text-align: center;
     }
     #promo-box h2 { margin-bottom: 16px; font-size: 18px; }
-
-    #promo-choices { display: flex; gap: 10px; }
+    #promo-choices { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 
     .promo-piece {
-      width: var(--sq);
-      height: var(--sq);
-      font-size: 48px;
+      width: 64px;
+      height: 64px;
+      font-size: 44px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -222,9 +222,37 @@
       border: 2px solid transparent;
       border-radius: 8px;
       cursor: pointer;
+      touch-action: manipulation;
       transition: border-color 0.15s, background 0.15s;
     }
     .promo-piece:hover { background: #1a5276; border-color: #3498db; }
+
+    /* ── Mobile / responsive ── */
+    @media (max-width: 860px) {
+      :root {
+        /* fluid squares: fill available width minus 8px padding each side + 18px rank label */
+        --sq: clamp(32px, calc((100vw - 34px) / 8), 70px);
+      }
+
+      body {
+        padding: 8px;
+        align-items: flex-start;
+        overflow-x: hidden;
+      }
+
+      #game {
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+      }
+
+      #panel {
+        width: calc(18px + var(--sq) * 8);
+        max-width: 100%;
+      }
+
+      #history { max-height: 120px; }
+    }
   </style>
 </head>
 <body>
