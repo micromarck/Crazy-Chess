@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = ["crates/tactics_core", "crates/tactics_game"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+tactics_core = { path = "crates/tactics_core" }
+bevy = { version = "0.20", default-features = false }
+
+# Compile dependencies (Bevy especially) with optimizations even in dev builds:
+# our own code stays fast to compile, but the engine runs at a usable framerate.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+# Size-oriented profile for the web build (`cargo build --profile wasm-release`).
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = true
