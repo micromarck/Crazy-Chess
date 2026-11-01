@@ -36,6 +36,7 @@ pub mod enemy_turn;
 pub mod html_ui;
 pub mod hud;
 pub mod input;
+pub mod missions;
 pub mod models;
 pub mod overlay;
 pub mod playback;
@@ -82,6 +83,7 @@ impl Plugin for TacticsPlugin {
             playback::PlaybackPlugin,
             overlay::OverlayPlugin,
             hud::HudPlugin,
+            missions::MissionsPlugin,
             html_ui::HtmlUiPlugin,
             editor::EditorPlugin,
         ));

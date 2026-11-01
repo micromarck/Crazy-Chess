@@ -49,7 +49,7 @@ fn enemy_think(
     let config = state.battle.rules().ai_profile("default").map_or(brain.config, |p| p.config);
     let action = ai::next_team_action(&state.battle, &config);
     if let Some(pos) = action.actor().and_then(|id| state.battle.unit(id)).map(|u| u.pos) {
-        rig.focus_on(pos);
+        rig.focus_at(crate::coords::tile_top(state.battle.map(), pos));
     }
     if !brain.delay.tick(time.delta()).is_finished() {
         return;

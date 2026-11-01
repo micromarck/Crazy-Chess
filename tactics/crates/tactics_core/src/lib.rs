@@ -44,6 +44,8 @@
 //! | [`battle`] | authoritative state + rules |
 //! | [`ai`] | enemy decision making |
 //! | [`scenario`] | demo and procedural battles |
+//! | [`mission`] | XML mission files: map, heights, units, props, zones, scripts |
+//! | [`script`] | Rhai scripting attached to missions, tiles, props and units |
 //! | [`rng`] | deterministic randomness |
 //!
 //! ## Minimal example
@@ -66,10 +68,12 @@ pub mod content;
 pub mod cover;
 pub mod event;
 pub mod grid;
+pub mod mission;
 pub mod modules;
 pub mod pathfinding;
 pub mod rng;
 pub mod scenario;
+pub mod script;
 pub mod unit;
 pub mod visibility;
 
@@ -85,7 +89,8 @@ pub mod prelude {
     };
     pub use crate::cover::{cover_against, cover_around, CoverResult};
     pub use crate::event::{GameEvent, ShotOutcome};
-    pub use crate::grid::{CoverLevel, Direction, GridPos, Map, Terrain};
+    pub use crate::grid::{Climb, CoverLevel, Direction, GridPos, Map, Terrain};
+    pub use crate::mission::MissionDef;
     pub use crate::pathfinding::ReachableSet;
     pub use crate::scenario;
     pub use crate::modules;

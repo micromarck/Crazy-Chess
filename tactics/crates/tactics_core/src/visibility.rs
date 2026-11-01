@@ -12,14 +12,40 @@
 //!
 //! The system is symmetric (`A sees B ⇔ B sees A`), which keeps combat fair and
 //! avoids "they can shoot me but I can't shoot them" frustration.
+//!
+//! **Height:** the sight line runs between the two units' eyes
+//! (ground level + [`EYE_HEIGHT`]) and an intermediate tile blocks it when its
+//! top (ground level, plus [`HIGH_COVER_HEIGHT`] for full-cover terrain) rises
+//! above the line there. So a 1-level step doesn't block sight, a 2-level
+//! cliff does, and units on high ground see over obstacles.
 
 use crate::grid::{GridPos, Map};
+
+/// Eye height above the ground, in levels.
+pub const EYE_HEIGHT: f32 = 1.5;
+/// Height of full-cover terrain (walls) above its ground, in levels.
+pub const HIGH_COVER_HEIGHT: f32 = 3.0;
+
+/// Top of whatever stands on `pos`, in levels.
+fn tile_top(map: &Map, pos: GridPos) -> f32 {
+    map.elevation(pos) as f32 + if map.terrain(pos).blocks_sight() { HIGH_COVER_HEIGHT } else { 0.0 }
+}
 
 /// Returns `true` if there is an unobstructed line between the centres of `a` and `b`.
 pub fn has_line_of_sight(map: &Map, a: GridPos, b: GridPos) -> bool {
     if a == b {
         return true;
     }
+    // Height of the sight line above tile `p`: interpolate the eye heights by
+    // projecting the tile centre onto the segment (symmetric in a and b).
+    let ha = map.elevation(a) as f32 + EYE_HEIGHT;
+    let hb = map.elevation(b) as f32 + EYE_HEIGHT;
+    let (abx, aby) = ((b.x - a.x) as f32, (b.y - a.y) as f32);
+    let len2 = abx * abx + aby * aby;
+    let blocks = |p: GridPos| {
+        let t = (((p.x - a.x) as f32 * abx + (p.y - a.y) as f32 * aby) / len2).clamp(0.0, 1.0);
+        tile_top(map, p) > ha + (hb - ha) * t + 1e-4
+    };
     let dx = b.x - a.x;
     let dy = b.y - a.y;
     let nx = dx.abs();
@@ -42,9 +68,7 @@ pub fn has_line_of_sight(map: &Map, a: GridPos, b: GridPos) -> bool {
             let side_b = GridPos::new(x, y + sign_y);
             // (The side tiles can never be the endpoints: the line passes
             // diagonally between them.)
-            if map.terrain(side_a).blocks_sight()
-                && map.terrain(side_b).blocks_sight()
-            {
+            if blocks(side_a) && blocks(side_b) {
                 return false;
             }
             x += sign_x;
@@ -59,7 +83,7 @@ pub fn has_line_of_sight(map: &Map, a: GridPos, b: GridPos) -> bool {
             iy += 1;
         }
         let pos = GridPos::new(x, y);
-        if pos != b && map.terrain(pos).blocks_sight() {
+        if pos != b && blocks(pos) {
             return false;
         }
     }
@@ -118,6 +142,45 @@ mod tests {
                     has_line_of_sight(&map, b, a),
                     "asymmetric LOS between {a} and {b}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn height_blocks_and_reveals() {
+        let mut map = Map::new(7, 1);
+        let (a, b) = (GridPos::new(0, 0), GridPos::new(6, 0));
+        map.set_elevation(GridPos::new(3, 0), 1);
+        assert!(has_line_of_sight(&map, a, b), "a 1-level step doesn't block");
+        map.set_elevation(GridPos::new(3, 0), 2);
+        assert!(!has_line_of_sight(&map, a, b), "a 2-level ridge does");
+        map.set_elevation(a, 2);
+        map.set_elevation(b, 2);
+        assert!(has_line_of_sight(&map, a, b), "both on high ground: they see over it");
+        // High ground sees over a wall that blocks at ground level.
+        let mut map = Map::from_ascii(".....H.");
+        assert!(!has_line_of_sight(&map, GridPos::new(0, 0), GridPos::new(6, 0)));
+        map.set_elevation(GridPos::new(0, 0), 4);
+        map.set_elevation(GridPos::new(6, 0), 4);
+        assert!(has_line_of_sight(&map, GridPos::new(0, 0), GridPos::new(6, 0)));
+    }
+
+    #[test]
+    fn symmetric_with_heights() {
+        let mut map = Map::from_ascii(
+            "
+            ..H...
+            ...H..
+            H.....
+            ....H.
+            ",
+        );
+        for (i, p) in map.positions().collect::<Vec<_>>().into_iter().enumerate() {
+            map.set_elevation(p, ((i * 7) % 4) as i8);
+        }
+        for a in map.positions() {
+            for b in map.positions() {
+                assert_eq!(has_line_of_sight(&map, a, b), has_line_of_sight(&map, b, a), "{a} {b}");
             }
         }
     }

@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 use tactics_core::prelude::*;
 
-use super::UiData;
+use super::{UiData, UiFlags};
+use crate::missions::MissionCatalog;
 use super::bind::UiValues;
 use crate::camera_director::CameraDirector;
 use crate::editor::EditorState;
@@ -19,6 +20,7 @@ use crate::playback::Playback;
 use crate::state::{BattleState, Selection};
 
 /// Rebuilds [`UiData`] (only marks it changed when something differs).
+#[allow(clippy::too_many_arguments)] // Bevy systems take their inputs as parameters.
 pub fn collect_ui_data(
     state: Res<BattleState>,
     selection: Res<Selection>,
@@ -26,6 +28,8 @@ pub fn collect_ui_data(
     playback: Res<Playback>,
     editor: Res<EditorState>,
     director: Res<CameraDirector>,
+    catalog: Res<MissionCatalog>,
+    flags: Res<UiFlags>,
     mut data: ResMut<UiData>,
 ) {
     let mut v = UiValues::default();
@@ -93,6 +97,34 @@ pub fn collect_ui_data(
     v.set("log.text", lines.join("\n"));
     v.set("log.last", lines.last().cloned().unwrap_or_default());
     v.lists.insert("log".into(), lines.iter().map(|l| item(&[("text", l.clone())])).collect());
+
+    // Missions.
+    let current = state.mission.as_deref().and_then(|id| catalog.get(id));
+    v.set("mission.active", bool_str(current.is_some()));
+    v.set("mission.name", current.map_or("Skirmish", |m| m.def.name.as_str()));
+    v.set("mission.description", current.map_or("", |m| m.def.description.as_str()));
+    v.set("missions.ready", bool_str(catalog.ready));
+    v.lists.insert(
+        "missions".into(),
+        catalog
+            .missions
+            .iter()
+            .map(|m| {
+                item(&[
+                    ("id", m.def.id.clone()),
+                    ("name", m.def.name.clone()),
+                    ("description", m.def.description.clone()),
+                    ("file", m.file.clone()),
+                    ("state", if state.mission.as_deref() == Some(m.def.id.as_str()) { "current" } else { "" }.into()),
+                ])
+            })
+            .collect(),
+    );
+
+    // Layout flags (toggle:<name>).
+    for (name, on) in &flags.0 {
+        v.set(&format!("ui.{name}"), bool_str(*on));
+    }
 
     // Misc toggles.
     v.set("editor.open", bool_str(editor.open));

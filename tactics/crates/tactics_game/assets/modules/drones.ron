@@ -61,7 +61,7 @@
         (
             id: "drone",
             name: "Drone",
-            stats: (max_hp: 5, mobility: 14, aim: 60, defense: 10, sight: 15.0),
+            stats: (max_hp: 5, mobility: 14, aim: 60, defense: 10, sight: 15.0, climb: 9),  // climb 9: flies over walls
             weapon: "drone_laser",
             abilities: ["laser", "overwatch", "reload"],
             model: "drone",

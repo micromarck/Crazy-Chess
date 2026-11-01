@@ -27,7 +27,7 @@ use crate::FrameSet;
 use crate::animation::AnimCommand;
 use crate::camera::CameraRig;
 use crate::camera_director::{CameraContext, CameraDirector};
-use crate::coords::grid_to_world;
+use crate::coords::tile_top;
 use crate::hud::{FloatingText, LogMessages};
 use crate::models::ModelLibrary;
 use crate::state::BattleState;
@@ -120,6 +120,8 @@ pub struct Presenter<'w, 's> {
     rig: Single<'w, 's, &'static mut CameraRig>,
     log: ResMut<'w, LogMessages>,
     anim: MessageWriter<'w, AnimCommand>,
+    board: MessageWriter<'w, crate::board::BoardDirty>,
+    spawn_visual: MessageWriter<'w, crate::units::SpawnUnitVisual>,
 }
 
 /// Moves the camera unless a camera script owns it.
@@ -277,8 +279,8 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             vec![Anim::Walk {
                 unit: *unit,
                 entity,
-                from: grid_to_world(*from),
-                points: path.iter().map(|g| grid_to_world(*g)).collect(),
+                from: tile_top(battle.map(), *from),
+                points: path.iter().map(|g| tile_top(battle.map(), *g)).collect(),
                 index: 0,
                 t: 0.0,
             }]
@@ -295,7 +297,7 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             let Some(actor) = pos_of(*unit) else { return vec![] };
             let aim = match target {
                 Target::Unit(t) => pos_of(*t),
-                Target::Tile(tile) => Some(grid_to_world(*tile)),
+                Target::Tile(tile) => Some(tile_top(battle.map(), *tile)),
                 Target::None => None,
             };
 
@@ -327,7 +329,7 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
         }
 
         GameEvent::Explosion { center, radius } => {
-            let c = grid_to_world(*center);
+            let c = tile_top(battle.map(), *center);
             look_at(&p.director, &mut p.rig, c);
             vec![Anim::Explosion { center: c, radius: *radius, t: 0.0 }]
         }
@@ -420,6 +422,53 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
         }
 
         GameEvent::ActionPointsChanged { .. } => vec![],
+
+        // --- mission / script events -------------------------------------
+        GameEvent::Message { text } => {
+            p.log.push(format!(">> {text}"));
+            let at = p.rig.target_focus + Vec3::Y * 1.5;
+            FloatingText::spawn(&mut p.commands, at, text.clone(), theme::TRACER);
+            vec![Anim::Wait { remaining: 0.9 }]
+        }
+        GameEvent::ScriptError { message } => {
+            p.log.push(format!("Script error: {message}"));
+            warn!("script error: {message}");
+            vec![]
+        }
+        GameEvent::UnitSpawned { unit } => {
+            p.spawn_visual.write(crate::units::SpawnUnitVisual(*unit));
+            if let Some(u) = battle.unit(*unit) {
+                p.log.push(format!("{} arrives", u.name));
+                look_at(&p.director, &mut p.rig, tile_top(battle.map(), u.pos));
+            }
+            vec![Anim::Wait { remaining: 0.5 }]
+        }
+        GameEvent::UnitDamaged { unit, amount } => {
+            if let Some(pos) = pos_of(*unit) {
+                FloatingText::spawn(&mut p.commands, pos + Vec3::Y * (CHEST + 0.6), format!("-{amount}"), theme::TARGET);
+            }
+            p.log.push(format!("  {} takes {amount} damage", name(*unit)));
+            p.anim.write(AnimCommand::OneShot { unit: *unit, slot: "hit".into() });
+            vec![Anim::Wait { remaining: 0.25 }]
+        }
+        GameEvent::PropDamaged { prop, hp } => {
+            if let Some(pr) = battle.prop(*prop) {
+                let at = tile_top(battle.map(), pr.pos) + Vec3::Y * 1.0;
+                FloatingText::spawn(&mut p.commands, at, format!("{} {hp} hp", pr.kind), theme::UI_DIM);
+            }
+            vec![]
+        }
+        GameEvent::PropDestroyed { prop } => {
+            if let Some(pr) = battle.prop(*prop) {
+                p.log.push(format!("  {} destroyed", pr.kind));
+            }
+            p.board.write(crate::board::BoardDirty);
+            vec![Anim::Wait { remaining: 0.2 }]
+        }
+        GameEvent::TerrainChanged { .. } => {
+            p.board.write(crate::board::BoardDirty);
+            vec![]
+        }
     }
 }
 

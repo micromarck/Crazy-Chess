@@ -12,17 +12,26 @@
 //!   for one-off queries.
 //!
 //! Both take a `passable` predicate so the caller decides what blocks movement
-//! (other units, hazards, doors...). The map's own walkability is always enforced.
+//! (other units, hazards, doors...). The map's own walkability and the
+//! climbing rule ([`Climb`]) are always enforced; every level climbed costs
+//! [`CLIMB_COST`] extra movement points (dropping down is free).
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 
-use crate::grid::{GridPos, Map};
+use crate::grid::{Climb, GridPos, Map};
 
 /// Cost of a north/east/south/west step.
 pub const ORTHOGONAL_COST: u32 = 2;
 /// Cost of a diagonal step (≈ 1.5 × orthogonal).
 pub const DIAGONAL_COST: u32 = 3;
+/// Extra cost per level climbed.
+pub const CLIMB_COST: u32 = 1;
+
+/// Full cost of one step from `from` to `to`.
+fn move_cost(map: &Map, from: GridPos, to: GridPos, diagonal: bool) -> u32 {
+    step_cost(diagonal) + CLIMB_COST * map.rise(from, to)
+}
 
 /// Cost of stepping in a direction.
 fn step_cost(diagonal: bool) -> u32 {
@@ -85,6 +94,7 @@ pub fn reachable(
     map: &Map,
     origin: GridPos,
     budget: u32,
+    climb: Climb,
     passable: impl Fn(GridPos) -> bool,
 ) -> ReachableSet {
     let mut nodes: HashMap<GridPos, (u32, GridPos)> = HashMap::new();
@@ -97,11 +107,11 @@ pub fn reachable(
         if cost > nodes[&pos].0 {
             continue; // Stale queue entry: a cheaper route was already found.
         }
-        for (next, dir) in map.walkable_neighbors(pos) {
+        for (next, dir) in map.climbable_neighbors(pos, climb) {
             if !passable(next) {
                 continue;
             }
-            let new_cost = cost + step_cost(dir.is_diagonal());
+            let new_cost = cost + move_cost(map, pos, next, dir.is_diagonal());
             if new_cost > budget {
                 continue;
             }
@@ -133,6 +143,7 @@ pub fn find_path(
     start: GridPos,
     goal: GridPos,
     max_cost: Option<u32>,
+    climb: Climb,
     passable: impl Fn(GridPos) -> bool,
 ) -> Option<(Vec<GridPos>, u32)> {
     if !map.is_walkable(goal) || !passable(goal) {
@@ -161,11 +172,11 @@ pub fn find_path(
         if g > g_score[&pos] {
             continue;
         }
-        for (next, dir) in map.walkable_neighbors(pos) {
+        for (next, dir) in map.climbable_neighbors(pos, climb) {
             if !passable(next) {
                 continue;
             }
-            let tentative = g + step_cost(dir.is_diagonal());
+            let tentative = g + move_cost(map, pos, next, dir.is_diagonal());
             if max_cost.is_some_and(|m| tentative > m) {
                 continue;
             }
@@ -186,7 +197,7 @@ mod tests {
     #[test]
     fn reachable_respects_budget() {
         let map = Map::new(10, 10);
-        let set = reachable(&map, GridPos::new(5, 5), 4, |_| true);
+        let set = reachable(&map, GridPos::new(5, 5), 4, Climb::default(), |_| true);
         assert_eq!(set.cost(GridPos::new(7, 5)), Some(4)); // two orthogonal steps
         assert!(!set.contains(GridPos::new(8, 5))); // three steps = 6 > 4
         assert_eq!(set.cost(GridPos::new(6, 6)), Some(3)); // one diagonal
@@ -202,7 +213,7 @@ mod tests {
             ",
         );
         let (path, cost) =
-            find_path(&map, GridPos::new(2, 0), GridPos::new(2, 2), None, |_| true).unwrap();
+            find_path(&map, GridPos::new(2, 0), GridPos::new(2, 2), None, Climb::default(), |_| true).unwrap();
         assert_eq!(*path.last().unwrap(), GridPos::new(2, 2));
         assert!(path.iter().all(|p| map.is_walkable(*p)));
         // Must go around: at least 4 steps.
@@ -213,16 +224,42 @@ mod tests {
     #[test]
     fn reachable_path_matches_cost() {
         let map = Map::new(8, 8);
-        let set = reachable(&map, GridPos::new(0, 0), 20, |_| true);
+        let set = reachable(&map, GridPos::new(0, 0), 20, Climb::default(), |_| true);
         let path = set.path_to(GridPos::new(3, 1)).unwrap();
         assert_eq!(path.last(), Some(&GridPos::new(3, 1)));
         assert_eq!(set.cost(GridPos::new(3, 1)), Some(DIAGONAL_COST + 2 * ORTHOGONAL_COST));
     }
 
     #[test]
+    fn cliffs_need_a_detour_or_a_ladder() {
+        // A 2-level cliff splits the map; the only way up is a ladder at x=4.
+        let mut map = Map::new(5, 3);
+        for x in 0..5 {
+            map.set_elevation(GridPos::new(x, 2), 2);
+        }
+        let (start, goal) = (GridPos::new(0, 0), GridPos::new(0, 2));
+        assert!(find_path(&map, start, goal, None, Climb::default(), |_| true).is_none());
+        map.set_ladder(GridPos::new(4, 1), true);
+        let (path, _) = find_path(&map, start, goal, None, Climb::default(), |_| true).expect("via ladder");
+        assert!(path.contains(&GridPos::new(4, 1)));
+        // A good climber goes straight up.
+        let (direct, _) = find_path(&map, start, goal, None, Climb { max_up: 3 }, |_| true).unwrap();
+        assert!(direct.len() < path.len());
+    }
+
+    #[test]
+    fn climbing_costs_extra() {
+        let mut map = Map::new(3, 1);
+        map.set_elevation(GridPos::new(1, 0), 1);
+        let set = reachable(&map, GridPos::new(0, 0), 20, Climb::default(), |_| true);
+        assert_eq!(set.cost(GridPos::new(1, 0)), Some(ORTHOGONAL_COST + CLIMB_COST));
+        assert_eq!(set.cost(GridPos::new(2, 0)), Some(2 * ORTHOGONAL_COST + CLIMB_COST), "going down is free");
+    }
+
+    #[test]
     fn blocked_by_predicate() {
         let map = Map::new(3, 1);
         let blocker = GridPos::new(1, 0);
-        assert!(find_path(&map, GridPos::new(0, 0), GridPos::new(2, 0), None, |p| p != blocker).is_none());
+        assert!(find_path(&map, GridPos::new(0, 0), GridPos::new(2, 0), None, Climb::default(), |p| p != blocker).is_none());
     }
 }

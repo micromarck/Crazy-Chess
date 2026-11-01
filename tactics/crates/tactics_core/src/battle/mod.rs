@@ -36,6 +36,9 @@ use crate::rng::GameRng;
 use crate::unit::{Team, Unit, UnitId};
 use crate::visibility;
 
+mod world;
+pub use world::{MAX_SCRIPT_DEPTH, Prop, PropId};
+
 /// Authoritative state of one tactical engagement.
 #[derive(Debug, Clone)]
 pub struct Battle {
@@ -47,6 +50,19 @@ pub struct Battle {
     round: u32,
     rng: GameRng,
     winner: Option<Team>,
+    // --- mission layer (see world.rs) ---
+    props: Vec<Prop>,
+    hooks: Vec<world::ActiveHook>,
+    /// Shared script functions from the mission.
+    library: String,
+    flags: std::collections::BTreeMap<String, i64>,
+    /// Enemies the player has already seen (for `spotted` hooks).
+    spotted: std::collections::BTreeSet<UnitId>,
+    unit_tags: std::collections::BTreeMap<UnitId, String>,
+    /// Killing every enemy wins (otherwise only scripts can win).
+    eliminate_to_win: bool,
+    mission_id: Option<String>,
+    script_depth: u32,
 }
 
 impl Battle {
@@ -60,6 +76,15 @@ impl Battle {
             round: 1,
             rng: GameRng::new(seed),
             winner: None,
+            props: Vec::new(),
+            hooks: Vec::new(),
+            library: String::new(),
+            flags: Default::default(),
+            spotted: Default::default(),
+            unit_tags: Default::default(),
+            eliminate_to_win: true,
+            mission_id: None,
+            script_depth: 0,
         }
     }
 
@@ -163,7 +188,8 @@ impl Battle {
             return ReachableSet::default();
         };
         let budget = unit.stats.mobility * unit.action_points as u32;
-        pathfinding::reachable(&self.map, unit.pos, budget, |p| self.unit_at(p).is_none())
+        let climb = crate::grid::Climb { max_up: unit.stats.climb };
+        pathfinding::reachable(&self.map, unit.pos, budget, climb, |p| self.unit_at(p).is_none())
     }
 
     /// How many action points moving `movement_cost` points costs this unit.
@@ -427,6 +453,15 @@ impl Battle {
                 for (victim, origin) in self.attack_victims(&user, profile, point, target) {
                     self.resolve_attack(unit, victim, &def.id, origin, profile, false, events);
                 }
+                // Blasts also hit destructible props.
+                if profile.area_radius > 0.0 {
+                    let (lo, hi) = match profile.damage {
+                        crate::content::DamageSource::Weapon => (user.weapon.damage_min, user.weapon.damage_max),
+                        crate::content::DamageSource::Fixed { min, max } => (min, max),
+                    };
+                    let damage = self.rng.range_inclusive(lo, hi) + profile.damage_bonus;
+                    self.damage_props_in_area(point, profile.area_radius, damage, events);
+                }
             }
             AbilityEffect::Overwatch(_) => self.unit_mut(unit).status.overwatch = Some(def.id.clone()),
             AbilityEffect::Defend { defense_bonus } => self.unit_mut(unit).status.defense_bonus = *defense_bonus,
@@ -473,6 +508,10 @@ impl Battle {
         let mut segment_start = self.units[id.0 as usize].pos;
         let mut segment: Vec<GridPos> = Vec::new();
         for step in path {
+            // A script may have spawned something in the way: stop there.
+            if self.unit_at(step).is_some_and(|u| u.id != id) {
+                break;
+            }
             self.unit_mut(id).pos = step;
             segment.push(step);
 
@@ -489,7 +528,22 @@ impl Battle {
                     .and_then(|d| d.effect.attack_profile().cloned())
                     .unwrap_or_default();
                 self.resolve_attack(watcher, id, &ability, watcher_pos, &profile, true, events);
-                if !self.units[id.0 as usize].is_alive() {
+                if !self.units[id.0 as usize].is_alive() || self.is_over() {
+                    return;
+                }
+            }
+
+            // Zone/tile scripts and first sightings. Flush the walk first if
+            // they did anything, so the frontend shows them at the right moment.
+            let mut script_events = Vec::new();
+            self.on_enter(id, step, &mut script_events);
+            if !script_events.is_empty() {
+                if !segment.is_empty() {
+                    events.push(GameEvent::UnitMoved { unit: id, from: segment_start, path: std::mem::take(&mut segment) });
+                    segment_start = step;
+                }
+                events.extend(script_events);
+                if !self.units[id.0 as usize].is_alive() || self.is_over() {
                     return;
                 }
             }
@@ -552,16 +606,9 @@ impl Battle {
         });
 
         if let ShotOutcome::Hit { damage, .. } = outcome {
-            let t = self.unit_mut(target);
-            if t.is_alive() {
-                t.hp -= damage;
-                if t.hp <= 0 {
-                    t.hp = 0;
-                    t.action_points = 0;
-                    t.status = Default::default();
-                    events.push(GameEvent::UnitKilled { unit: target });
-                }
-            }
+            // The attack event already shows the damage; this applies it and
+            // runs damaged/death scripts.
+            self.apply_damage(target, damage, false, events);
         }
     }
 
@@ -569,12 +616,10 @@ impl Battle {
         if self.winner.is_some() {
             return;
         }
-        for team in [Team::Player, Team::Enemy] {
-            if self.living(team).next().is_none() {
-                self.winner = Some(team.opponent());
-                events.push(GameEvent::BattleEnded { winner: team.opponent() });
-                return;
-            }
+        if self.living(Team::Player).next().is_none() {
+            self.decide(Team::Enemy, events);
+        } else if self.eliminate_to_win && self.living(Team::Enemy).next().is_none() {
+            self.decide(Team::Player, events);
         }
     }
 
@@ -600,6 +645,8 @@ impl Battle {
             });
         }
         events.push(GameEvent::TurnStarted { team, round: self.round });
+        self.on_turn_start(events);
+        self.check_victory(events);
     }
 }
 

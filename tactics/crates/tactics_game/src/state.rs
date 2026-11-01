@@ -44,11 +44,13 @@ pub struct BattleState {
     pub revision: u64,
     /// Seed of the current battle (for restarts and bug reports).
     pub seed: u64,
+    /// Id of the mission being played (`None` = skirmish / demo).
+    pub mission: Option<String>,
 }
 
 impl BattleState {
     pub fn new(battle: Battle) -> Self {
-        Self { battle, revision: 0, seed: DEFAULT_SEED }
+        Self { battle, revision: 0, seed: DEFAULT_SEED, mission: None }
     }
 
     /// Applies an action and queues its events for animation.
@@ -119,7 +121,12 @@ pub enum PlayerCommand {
     AbilitySlot(usize),
     CancelTargeting,
     EndTurn,
+    /// Restart the current mission (or a new skirmish).
     Restart,
+    /// Start a mission from `assets/missions/` by id.
+    StartMission(String),
+    /// Start a procedural skirmish.
+    Skirmish,
 }
 
 /// Sent after the battle has been replaced, so visuals can be rebuilt.

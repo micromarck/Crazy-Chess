@@ -9,9 +9,16 @@ rust-version.workspace = true
 [features]
 # `data` lets modules be written as RON data files (and lets the in-game editor
 # save them). Disable default features for a dependency-free rules engine.
-default = ["data"]
+default = ["data", "missions", "scripting"]
 data = ["dep:serde", "dep:ron"]
+# XML mission files (`mission::parse_mission`).
+missions = ["dep:roxmltree"]
+# Rhai scripts attached to missions, tiles, props and units.
+scripting = ["dep:rhai"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"], optional = true }
 ron = { version = "0.12", optional = true }
+roxmltree = { version = "0.21", optional = true }
+# No default features: avoids OS randomness/timers so it also builds for wasm.
+rhai = { version = "1.27", optional = true, default-features = false, features = ["std", "sync", "no_time"] }

@@ -22,7 +22,7 @@ use tactics_core::prelude::*;
 use crate::FrameSet;
 use crate::camera::{CameraRig, CameraSystems, TouchGesture};
 use crate::camera_director::CameraDirector;
-use crate::coords::world_to_grid;
+use crate::coords::pick_tile;
 use crate::hud::LogMessages;
 use crate::playback::Playback;
 use crate::state::{BattleState, PlayerCommand, Selection};
@@ -76,9 +76,7 @@ fn update_hover(
     let (camera, cam_transform) = *camera;
     selection.hovered = pointer_position(&window, &touches)
         .and_then(|p| camera.viewport_to_world(cam_transform, p).ok())
-        .and_then(|ray| ray.plane_intersection_point(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y)))
-        .map(world_to_grid)
-        .filter(|p| state.battle.map().in_bounds(*p));
+        .and_then(|ray| pick_tile(state.battle.map(), ray));
 }
 
 fn keyboard_shortcuts(keys: Res<ButtonInput<KeyCode>>, mut commands: MessageWriter<PlayerCommand>) {
@@ -160,7 +158,7 @@ fn board_click(
     // 2. Select a friendly unit.
     if let Some(unit) = battle.unit_at(tile).filter(|u| u.team == Team::Player) {
         selection.select(Some(unit.id));
-        rig.focus_on(tile);
+        rig.focus_at(crate::coords::tile_top(state.battle.map(), tile));
         return;
     }
 
@@ -200,7 +198,7 @@ fn handle_commands(
                 let next = next_ready_unit(&state.battle, selection.unit);
                 selection.select(next);
                 if let Some(u) = next.and_then(|id| state.battle.unit(id)) {
-                    rig.focus_on(u.pos);
+                    rig.focus_at(crate::coords::tile_top(state.battle.map(), u.pos));
                 }
                 continue;
             }
@@ -213,8 +211,8 @@ fn handle_commands(
                 let _ = state.apply(Action::EndTurn, &mut playback);
                 continue;
             }
-            // Restart is handled by the HUD (it works even when the battle is over).
-            PlayerCommand::Restart => continue,
+            // Battle (re)starts are handled by `missions` (they work even when the battle is over).
+            PlayerCommand::Restart | PlayerCommand::StartMission(_) | PlayerCommand::Skirmish => continue,
             PlayerCommand::UseAbility(id) => id.clone(),
             PlayerCommand::AbilitySlot(slot) => {
                 let Some(id) = selection
@@ -292,7 +290,7 @@ fn auto_select(
             selection.select(next);
         }
         if let Some(u) = selection.unit.and_then(|id| state.battle.unit(id)) {
-            rig.focus_on(u.pos);
+            rig.focus_at(crate::coords::tile_top(state.battle.map(), u.pos));
         }
     }
     selection.refresh_range(&state);

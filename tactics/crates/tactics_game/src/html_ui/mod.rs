@@ -46,6 +46,7 @@ pub struct HtmlUiPlugin;
 impl Plugin for HtmlUiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<UiData>()
+            .init_resource::<UiFlags>()
             .init_resource::<HtmlLayout>()
             .add_message::<UiCommand>()
             .add_systems(Startup, request_initial_build)
@@ -71,6 +72,12 @@ impl Plugin for HtmlUiPlugin {
 pub struct UiData {
     pub values: bind::UiValues,
 }
+
+/// Layout-local on/off switches: `data-command="toggle:missions"` flips
+/// `ui.missions`, readable in bindings (`data-if="ui.missions"`). Lets a layout
+/// open and close its own panels without any Rust.
+#[derive(Resource, Default)]
+pub struct UiFlags(pub std::collections::BTreeMap<String, bool>);
 
 /// The current layout's stylesheet and source, plus a rebuild flag.
 #[derive(Resource, Default)]
@@ -156,6 +163,9 @@ fn rebuild_layout(
 /// | `editor` | toggle the module editor |
 /// | `cinematics` | toggle cinematic cameras |
 /// | `reload_ui` | rebuild the HUD from its source |
+/// | `toggle:<name>` | flip the layout flag `ui.<name>` (show/hide panels) |
+/// | `mission:<id>` | start a mission from `assets/missions/` |
+/// | `skirmish` | start a procedural skirmish |
 /// | `log:<text>` | print a message (handy while designing layouts) |
 #[allow(clippy::too_many_arguments)]
 pub fn run_ui_commands(
@@ -165,6 +175,7 @@ pub fn run_ui_commands(
     mut director: ResMut<CameraDirector>,
     mut layout: ResMut<HtmlLayout>,
     mut selection: ResMut<Selection>,
+    mut flags: ResMut<UiFlags>,
     state: Res<BattleState>,
     mut log: ResMut<LogMessages>,
 ) {
@@ -203,6 +214,16 @@ pub fn run_ui_commands(
                 log.push(format!("Cinematic cameras {}", if director.enabled { "ON" } else { "OFF" }));
             }
             "reload_ui" => layout.dirty = true,
+            "toggle" => {
+                let f = flags.0.entry(arg.trim().to_string()).or_insert(false);
+                *f = !*f;
+            }
+            "mission" => {
+                player.write(PlayerCommand::StartMission(arg.trim().to_string()));
+            }
+            "skirmish" => {
+                player.write(PlayerCommand::Skirmish);
+            }
             "log" => log.push(arg.to_string()),
             other => log.push(format!("UI: unknown command '{other}'")),
         }

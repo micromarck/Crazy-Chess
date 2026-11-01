@@ -89,6 +89,9 @@ pub struct UnitStats {
     pub defense: i32,
     /// Vision radius in tiles.
     pub sight: f32,
+    /// Levels the unit can step **up** in one move (1 = normal infantry,
+    /// higher = jump jets / flyers). Ladders allow any climb.
+    pub climb: i8,
 }
 
 impl Default for UnitStats {
@@ -99,6 +102,7 @@ impl Default for UnitStats {
             aim: 70,
             defense: 0,
             sight: 14.0,
+            climb: 1,
         }
     }
 }

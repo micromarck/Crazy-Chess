@@ -121,6 +121,8 @@ pub struct CombatRules {
     pub max_close_bonus: i32,
     /// Action points every unit receives each turn.
     pub action_points: u8,
+    /// Aim bonus when the attack comes from higher ground than the target.
+    pub height_advantage_bonus: i32,
 }
 
 impl Default for CombatRules {
@@ -132,6 +134,7 @@ impl Default for CombatRules {
             close_bonus_per_tile: 2.0,
             max_close_bonus: 15,
             action_points: 2,
+            height_advantage_bonus: 15,
         }
     }
 }

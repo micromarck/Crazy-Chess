@@ -8,7 +8,8 @@
 //! * [`FloatingText`]: damage numbers and labels that follow world positions,
 //! * button/panel helpers and [`ButtonLook`] styling for code-built UI such as
 //!   the module editor,
-//! * starting a new battle ([`PlayerCommand::Restart`]).
+//!
+//! (Starting battles lives in [`missions`](crate::missions).)
 
 use std::collections::VecDeque;
 
@@ -16,13 +17,10 @@ use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui::Pressed;
 use bevy::ui_widgets::{Activate, Button, observe};
-use tactics_core::prelude::*;
 
 use crate::FrameSet;
 use crate::camera::CameraRig;
-use crate::coords::grid_to_world;
-use crate::playback::Playback;
-use crate::state::{BattleReset, BattleState, ModuleLoadLog, PlayerCommand, Selection};
+use crate::state::ModuleLoadLog;
 use crate::theme;
 
 pub struct HudPlugin;
@@ -31,7 +29,6 @@ impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LogMessages>()
             .add_systems(Startup, show_module_log)
-            .add_systems(Update, handle_restart.in_set(FrameSet::Logic))
             .add_systems(Update, (style_buttons, animate_floating_text).in_set(FrameSet::Present));
     }
 }
@@ -53,6 +50,10 @@ pub struct LogMessages(VecDeque<String>);
 
 impl LogMessages {
     const MAX: usize = 8;
+
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
 
     /// The stored lines, oldest first.
     pub fn lines(&self) -> impl Iterator<Item = &String> {
@@ -186,41 +187,4 @@ fn animate_floating_text(
         let alpha = 1.0 - (ft.age / FloatingText::LIFETIME).powi(2);
         color.0.set_alpha(alpha);
     }
-}
-
-/// Restart: build a fresh procedural skirmish with a new seed, keeping the
-/// current (possibly live-edited) ruleset.
-#[allow(clippy::too_many_arguments)]
-fn handle_restart(
-    mut commands_in: MessageReader<PlayerCommand>,
-    mut reset: MessageWriter<BattleReset>,
-    mut state: ResMut<BattleState>,
-    mut playback: ResMut<Playback>,
-    mut selection: ResMut<Selection>,
-    mut log: ResMut<LogMessages>,
-    mut rig: Single<&mut CameraRig>,
-    floating: Query<Entity, With<FloatingText>>,
-    mut commands: Commands,
-) {
-    if !commands_in.read().any(|c| *c == PlayerCommand::Restart) {
-        return;
-    }
-    let seed = state.seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-    let rules = state.battle.rules().clone();
-    state.battle = scenario::skirmish(&rules, seed);
-    state.seed = seed;
-    state.revision += 1;
-    playback.clear();
-    *selection = Selection::default();
-    log.0.clear();
-    log.push(format!("New skirmish (seed {seed:#x})"));
-    for e in &floating {
-        commands.entity(e).despawn();
-    }
-
-    let map = state.battle.map();
-    let far = grid_to_world(GridPos::new(map.width() - 1, map.height() - 1));
-    rig.bounds = Rect::from_corners(Vec2::ZERO, Vec2::new(far.x, far.z));
-    rig.focus_on(GridPos::new(3, 3));
-    reset.write(BattleReset);
 }

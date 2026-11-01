@@ -238,7 +238,7 @@ fn register_classes(rules: &mut Ruleset) {
     rules.add_class(UnitClass {
         id: "sectoid".into(),
         name: "Sectoid".into(),
-        stats: UnitStats { max_hp: 6, mobility: 12, aim: 65, defense: 5, sight: 13.0 },
+        stats: UnitStats { max_hp: 6, mobility: 12, aim: 65, defense: 5, sight: 13.0, ..Default::default() },
         weapon: "plasma_pistol".into(),
         abilities: basic(),
         model: "alien".into(),

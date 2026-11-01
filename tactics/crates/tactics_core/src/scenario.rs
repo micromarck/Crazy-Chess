@@ -84,7 +84,7 @@ pub fn generate_map(width: i32, height: i32, seed: u64) -> Map {
                 }
             }
         }
-        let connected = pathfinding::find_path(&map, player_zone, enemy_zone, None, |_| true).is_some();
+        let connected = pathfinding::find_path(&map, player_zone, enemy_zone, None, crate::grid::Climb::default(), |_| true).is_some();
         if connected {
             return map;
         }

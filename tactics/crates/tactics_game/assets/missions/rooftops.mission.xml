@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Rooftop Uplink: built around the height map.
+
+  Buildings stand at levels 1-3. Soldiers can step up one level at a time;
+  taller walls need a ladder. Drones fly (their class has a high `climb`).
+  Gaps (#) are cut out of the grid: nothing to stand on.
+
+  Coordinates: x = column from the left, y = ROW FROM THE TOP of <layout>.
+-->
+<mission id="rooftops" name="Rooftop Uplink" win="script" seed="9001">
+  <description>Upload the data at the east uplink, then extract from the enemy roof (top-left).</description>
+
+  <layout>
+    ....................
+    .hh.....##....H.....
+    ........##..........
+    ...H....##.....hh...
+    ....................
+    ######..........####
+    ######...h......####
+    ....................
+    ..h.......##........
+    ..........##...H....
+    ....................
+    ...hh.........h.....
+    ....................
+    ....................
+  </layout>
+
+  <heights>
+    33333330000222222222
+    33333330000222222222
+    33333330000222222222
+    33333330000222222222
+    00000000000000000000
+    00000000000000000000
+    00000000000000000000
+    00000000000000000000
+    00000000000000000000
+    00000000000000000000
+    11111110000002222222
+    11111110000002222222
+    11111110000002222222
+    11111110000002222222
+  </heights>
+
+  <!-- Ladders: the only ways onto the 2- and 3-level roofs on foot. -->
+  <ladder x="3" y="4"/>
+  <ladder x="12" y="4"/>
+  <ladder x="13" y="9"/>
+
+  <deploy team="player" squad="player" x="2" y="12"/>
+
+  <unit team="enemy" class="sectoid" name="Roof Sentry" x="5" y="2"/>
+  <unit team="enemy" class="sectoid" name="Street Patrol" x="8" y="7"/>
+  <unit team="enemy" class="drone" name="Drone A" x="15" y="2">
+    <script on="spotted" once="true">message("Drones on the east roof. They fly over walls!");</script>
+  </unit>
+  <unit team="enemy" class="drone" name="Drone B" x="17" y="1"/>
+
+  <prop tag="uplink" kind="console" x="17" y="12" cover="half"/>
+  <prop tag="barrel" kind="barrel" x="12" y="7" cover="half" hp="1">
+    <script on="destroyed">explode(x, y, 1.6, 3);</script>
+  </prop>
+
+  <!-- Objective 1: stand next to the uplink. -->
+  <zone tag="uplink_spot" x="16" y="12" width="1" height="1">
+    <script on="enter" team="player" once="true">
+      set_flag("uplink", 1);
+      message("Data uploaded! Now extract from the enemy roof (top-left).");
+    </script>
+  </zone>
+
+  <!-- Objective 2: extraction, only after the upload. -->
+  <zone tag="extraction" x="0" y="0" width="2" height="1">
+    <script on="enter" team="player">
+      if flag("uplink") == 1 { message("Extraction!"); win(); }
+      else { message("Upload the data at the uplink first."); }
+    </script>
+  </zone>
+
+  <script on="start">message("Upload at the east uplink, then extract from the top-left roof.");</script>
+
+  <script on="turn_start" team="enemy">
+    if round == 2 { spawn_unit("enemy", "drone", "Drone C", 14, 7); message("Another drone joins the fight."); }
+  </script>
+
+  <script on="unit_killed">
+    if alive_count("player") == 1 && flag("warned") == 0 {
+      set_flag("warned", 1);
+      message("Last soldier standing - get to the objective!");
+    }
+  </script>
+</mission>

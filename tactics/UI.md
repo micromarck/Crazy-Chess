@@ -65,6 +65,9 @@ Any `<button>` (or element with `data-command`) is clickable/tappable:
 | `editor` | toggle the module editor (F1) |
 | `cinematics` | toggle cinematic cameras (C) |
 | `reload_ui` | rebuild the HUD from its source (F6) |
+| `mission:<id>` | start a mission from `assets/missions/` |
+| `skirmish` | start a procedural skirmish |
+| `toggle:<name>` | flip the layout flag `ui.<name>` (open/close your own panels) |
 | `log:<text>` | print to the combat log |
 
 New commands: add a match arm in `run_ui_commands` (`src/html_ui/mod.rs`).
@@ -84,6 +87,8 @@ Values (strings; booleans are `true`/`false`):
 | `hover.info` | odds breakdown / move cost under the pointer (multi-line) |
 | `log.text`, `log.last` | combat log |
 | `editor.open`, `cinematics` | toggles |
+| `mission.active`, `mission.name`, `mission.description`, `missions.ready` | current mission |
+| `ui.<name>` | layout flags set by `toggle:<name>` |
 
 Lists (for `data-for`):
 
@@ -92,6 +97,7 @@ Lists (for `data-for`):
 | `abilities` | `id name description key cost charges cooldown state` (`state` = `ready` / `active` / `disabled`) |
 | `squad` | `id name hp max_hp hp_percent ap state` (`state` = `selected` / `ready` / `done`) |
 | `log` | `text` |
+| `missions` | `id name description file state` (`state` = `current` / empty) |
 
 New data: add `v.set("path", value)` or a list in `collect_ui_data`
 (`src/html_ui/data.rs`).

@@ -11,7 +11,7 @@ use tactics_core::prelude::*;
 
 use crate::FrameSet;
 use crate::camera::CameraRig;
-use crate::coords::{TILE_SIZE, grid_to_world};
+use crate::coords::{TILE_SIZE, tile_top};
 use crate::input::player_can_act;
 use crate::playback::{Anim, Playback};
 use crate::state::{BattleState, Selection};
@@ -38,9 +38,9 @@ impl Plugin for OverlayPlugin {
 const LIFT: f32 = 0.02;
 
 /// A flat square outline on a tile.
-fn tile_rect(gizmos: &mut Gizmos, pos: GridPos, scale: f32, color: Color) {
+fn tile_rect(gizmos: &mut Gizmos, map: &Map, pos: GridPos, scale: f32, color: Color) {
     let iso = Isometry3d::new(
-        grid_to_world(pos) + Vec3::Y * LIFT,
+        tile_top(map, pos) + Vec3::Y * LIFT,
         Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
     );
     gizmos.rect(iso, Vec2::splat(TILE_SIZE * scale), color);
@@ -61,16 +61,16 @@ fn draw_movement(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Sel
         } else {
             theme::MOVE_FAR
         };
-        tile_rect(&mut gizmos, pos, 0.8, color);
+        tile_rect(&mut gizmos, state.battle.map(), pos, 0.8, color);
     }
-    tile_rect(&mut gizmos, unit.pos, 0.95, theme::SELECTED);
+    tile_rect(&mut gizmos, state.battle.map(), unit.pos, 0.95, theme::SELECTED);
 
     // Path preview + cover shields at the hovered destination.
     let Some(hover) = selection.hovered else { return };
     if let Some(path) = range.path_to(hover) {
         let points = std::iter::once(unit.pos)
             .chain(path)
-            .map(|p| grid_to_world(p) + Vec3::Y * 0.08);
+            .map(|p| tile_top(battle.map(), p) + Vec3::Y * 0.08);
         gizmos.linestrip(points, theme::HOVER);
         draw_cover_shields(&mut gizmos, battle.map(), hover);
     }
@@ -78,7 +78,7 @@ fn draw_movement(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Sel
 
 /// Small walls on the sides of `pos` that offer cover (blue = half, dark blue = full).
 fn draw_cover_shields(gizmos: &mut Gizmos, map: &Map, pos: GridPos) {
-    let center = grid_to_world(pos);
+    let center = tile_top(map, pos);
     for (dir, level) in Direction::CARDINAL.into_iter().zip(cover_around(map, pos)) {
         let (color, h) = match level {
             CoverLevel::None => continue,
@@ -105,10 +105,10 @@ fn draw_targets(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Sele
         let Some(t) = battle.unit(target) else { continue };
         let hovered = selection.hovered == Some(t.pos);
         let color = if hovered { theme::TARGET } else { theme::TARGET.with_alpha(0.35) };
-        tile_rect(&mut gizmos, t.pos, 0.9, color);
+        tile_rect(&mut gizmos, state.battle.map(), t.pos, 0.9, color);
         if hovered {
             let up = Vec3::Y * theme::UNIT_HEIGHT * 0.65;
-            gizmos.line(grid_to_world(unit.pos) + up, grid_to_world(t.pos) + up, color);
+            gizmos.line(tile_top(battle.map(), unit.pos) + up, tile_top(battle.map(), t.pos) + up, color);
         }
     }
 }
@@ -125,8 +125,8 @@ fn draw_targeting(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Se
     let battle = &state.battle;
     let (Some(unit), Some(def)) = (battle.unit(id), battle.ability(ability)) else { return };
 
-    tile_rect(&mut gizmos, unit.pos, 0.95, theme::SELECTED);
-    ground_circle(&mut gizmos, grid_to_world(unit.pos), battle.ability_range(unit, def), theme::MOVE_FAR.with_alpha(0.5));
+    tile_rect(&mut gizmos, state.battle.map(), unit.pos, 0.95, theme::SELECTED);
+    ground_circle(&mut gizmos, tile_top(battle.map(), unit.pos), battle.ability_range(unit, def), theme::MOVE_FAR.with_alpha(0.5));
 
     // Highlight every unit this ability could legally be used on.
     if matches!(def.targeting, Targeting::Enemy | Targeting::Ally) {
@@ -134,7 +134,7 @@ fn draw_targeting(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Se
             let action = Action::UseAbility { unit: id, ability: ability.clone(), target: Target::Unit(other.id) };
             if battle.validate(&action).is_ok() {
                 let color = if def.targeting == Targeting::Enemy { theme::TARGET } else { theme::HEAL };
-                tile_rect(&mut gizmos, other.pos, 0.9, color);
+                tile_rect(&mut gizmos, state.battle.map(), other.pos, 0.9, color);
             }
         }
     }
@@ -146,16 +146,16 @@ fn draw_targeting(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Se
                 .validate(&Action::UseAbility { unit: id, ability: ability.clone(), target: Target::Tile(hover) })
                 .is_ok();
             let color = if ok { theme::EXPLOSION } else { theme::UI_DIM };
-            ground_circle(&mut gizmos, grid_to_world(hover), profile.area_radius, color);
+            ground_circle(&mut gizmos, tile_top(battle.map(), hover), profile.area_radius, color);
             for u in battle.units().iter().filter(|u| u.is_alive() && u.pos.distance(hover) <= profile.area_radius) {
-                tile_rect(&mut gizmos, u.pos, 0.7, color);
+                tile_rect(&mut gizmos, state.battle.map(), u.pos, 0.7, color);
             }
         }
 }
 
-fn draw_hover(mut gizmos: Gizmos, selection: Res<Selection>) {
+fn draw_hover(mut gizmos: Gizmos, selection: Res<Selection>, state: Res<BattleState>) {
     if let Some(pos) = selection.hovered {
-        tile_rect(&mut gizmos, pos, 1.0, theme::HOVER.with_alpha(0.6));
+        tile_rect(&mut gizmos, state.battle.map(), pos, 1.0, theme::HOVER.with_alpha(0.6));
     }
 }
 

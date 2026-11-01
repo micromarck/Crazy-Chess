@@ -14,6 +14,7 @@
 //!        - target.defense - target.status.defense_bonus
 //!        - profile.{half,full}_cover_penalty        (if in cover vs. origin)
 //!        ± range modifier                             (if profile.range_falloff)
+//!        + rules.height_advantage_bonus               (if firing from higher ground)
 //! crit = weapon.crit (weapon damage only) + profile.crit_bonus
 //!        + profile.flank_crit_bonus                   (if flanked)
 //! ```
@@ -80,6 +81,9 @@ pub fn preview_attack(
         None => push("Aim", attacker.stats.aim),
     }
     push("Ability", profile.accuracy_bonus);
+    if map.elevation(origin) > map.elevation(target.pos) {
+        push("Height advantage", rules.height_advantage_bonus);
+    }
     push("Defense", -target.stats.defense);
     push("Defending", -target.status.defense_bonus);
     match cover.level {
@@ -172,6 +176,18 @@ mod tests {
         assert!(open.cover.flanked);
         assert_eq!(covered.hit_chance, open.hit_chance - 20);
         assert_eq!(covered_precise.hit_chance, open.hit_chance - 5);
+    }
+
+    #[test]
+    fn high_ground_bonus() {
+        let rules = CombatRules::default();
+        let mut map = Map::new(10, 10);
+        let a = make(Team::Player, GridPos::new(0, 0));
+        let b = make(Team::Enemy, GridPos::new(0, 5));
+        let flat = preview_attack(&rules, &map, a.pos, &a, &b, &AttackProfile::default()).hit_chance;
+        map.set_elevation(a.pos, 2);
+        let high = preview_attack(&rules, &map, a.pos, &a, &b, &AttackProfile::default()).hit_chance;
+        assert_eq!(high, flat + rules.height_advantage_bonus);
     }
 
     #[test]

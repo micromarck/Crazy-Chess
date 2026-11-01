@@ -16,6 +16,10 @@
 //!
 //! This is the classic XCOM model: cover is directional, and repositioning to
 //! hit a target from an uncovered side is the core tactical decision.
+//!
+//! Terrain height counts as cover too: a neighbouring tile 1 level higher than
+//! the defender is half cover, 2+ levels is full cover (see
+//! [`Map::cover_from`]).
 
 use crate::grid::{CoverLevel, Direction, GridPos, Map};
 
@@ -31,7 +35,7 @@ pub struct CoverResult {
 /// Cover provided by each cardinal neighbour of `pos`, in
 /// [`Direction::CARDINAL`] order (N, E, S, W). Handy for drawing shield icons.
 pub fn cover_around(map: &Map, pos: GridPos) -> [CoverLevel; 4] {
-    Direction::CARDINAL.map(|d| map.terrain(pos.step(d)).cover())
+    Direction::CARDINAL.map(|d| map.cover_from(pos.step(d), pos))
 }
 
 /// Best cover the tile `pos` offers in any direction (ignores attacker position).
@@ -51,7 +55,7 @@ pub fn cover_against(map: &Map, defender: GridPos, attacker: GridPos) -> CoverRe
         // Is the attacker on this side of the defender?
         let facing = (cx != 0 && dx.signum() == cx) || (cy != 0 && dy.signum() == cy);
         if facing {
-            best = best.max(map.terrain(defender.step(dir)).cover());
+            best = best.max(map.cover_from(defender.step(dir), defender));
         }
     }
 

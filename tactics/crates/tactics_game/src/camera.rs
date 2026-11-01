@@ -73,9 +73,15 @@ impl CameraRig {
     /// Higher = snappier.
     pub const SMOOTHING: f32 = 8.0;
 
-    /// Smoothly moves the camera to look at a tile.
+    /// Smoothly moves the camera to look at a tile (at ground level 0; use
+    /// [`CameraRig::focus_at`] with `coords::tile_top` to respect height).
     pub fn focus_on(&mut self, pos: GridPos) {
         self.target_focus = grid_to_world(pos);
+    }
+
+    /// Smoothly moves the camera to look at a world point.
+    pub fn focus_at(&mut self, point: Vec3) {
+        self.target_focus = point;
     }
 
     /// Camera-relative "right" and "forward" on the ground plane.

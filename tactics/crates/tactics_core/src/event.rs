@@ -11,6 +11,7 @@
 //! `UnitMoved(first half) -> AttackResolved(reaction) -> UnitMoved(second half)`.
 
 use crate::action::Target;
+use crate::battle::PropId;
 use crate::content::AbilityId;
 use crate::grid::GridPos;
 use crate::unit::{Team, UnitId};
@@ -52,6 +53,20 @@ pub enum GameEvent {
     UnitKilled { unit: UnitId },
     /// A unit's remaining action points changed.
     ActionPointsChanged { unit: UnitId, remaining: u8 },
-    /// One team has been wiped out.
+    /// The battle is decided (a team was wiped out, or a script called win/lose).
     BattleEnded { winner: Team },
+    /// A unit appeared mid-battle (script `spawn_unit`).
+    UnitSpawned { unit: UnitId },
+    /// A unit took damage outside an attack roll (explosions, scripts).
+    UnitDamaged { unit: UnitId, amount: i32 },
+    /// A destructible prop was hit; `hp` is what's left.
+    PropDamaged { prop: PropId, hp: i32 },
+    /// A prop was destroyed (its tile becomes open floor).
+    PropDestroyed { prop: PropId },
+    /// A tile's terrain, height or ladder changed; redraw it.
+    TerrainChanged { pos: GridPos },
+    /// A message from a mission script.
+    Message { text: String },
+    /// A mission script failed (syntax/runtime error, limit reached).
+    ScriptError { message: String },
 }

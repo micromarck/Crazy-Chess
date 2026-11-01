@@ -155,11 +155,28 @@ impl Terrain {
     }
 }
 
-/// A single map cell. A struct (rather than a bare `Terrain`) leaves room for
-/// per-tile data such as elevation, hazards or loot without changing APIs.
+/// A single map cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Tile {
     pub terrain: Terrain,
+    /// Height level of the ground (0 = base level). Units can step up at most
+    /// their `climb` stat (1 by default) in one move; dropping down is free.
+    pub elevation: i8,
+    /// A ladder/ramp: any height difference may be climbed into or out of it.
+    pub ladder: bool,
+}
+
+/// How a unit may change height while moving.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Climb {
+    /// Maximum levels a unit can step **up** in one step (ladders ignore this).
+    pub max_up: i8,
+}
+
+impl Default for Climb {
+    fn default() -> Self {
+        Self { max_up: 1 }
+    }
 }
 
 /// A rectangular tile map stored in row-major order.
@@ -277,6 +294,59 @@ impl Map {
         self.terrain(pos).is_walkable()
     }
 
+    /// Ground height level at `pos` (0 outside the map).
+    pub fn elevation(&self, pos: GridPos) -> i8 {
+        self.tile(pos).map_or(0, |t| t.elevation)
+    }
+
+    pub fn set_elevation(&mut self, pos: GridPos, level: i8) {
+        if let Some(i) = self.index(pos) {
+            self.tiles[i].elevation = level;
+        }
+    }
+
+    /// Is there a ladder/ramp on `pos`?
+    pub fn is_ladder(&self, pos: GridPos) -> bool {
+        self.tile(pos).is_some_and(|t| t.ladder)
+    }
+
+    pub fn set_ladder(&mut self, pos: GridPos, ladder: bool) {
+        if let Some(i) = self.index(pos) {
+            self.tiles[i].ladder = ladder;
+        }
+    }
+
+    /// Highest elevation on the map.
+    pub fn max_elevation(&self) -> i8 {
+        self.tiles.iter().map(|t| t.elevation).max().unwrap_or(0)
+    }
+
+    /// May a unit with `climb` step from `from` to the adjacent `to` height-wise?
+    /// Stepping **up** more than `climb.max_up` levels needs a ladder on either
+    /// tile; stepping down is always allowed.
+    pub fn can_step(&self, from: GridPos, to: GridPos, climb: Climb) -> bool {
+        let rise = self.elevation(to) - self.elevation(from);
+        rise <= climb.max_up || self.is_ladder(from) || self.is_ladder(to)
+    }
+
+    /// Levels climbed going from `from` to `to` (0 when level or descending).
+    pub fn rise(&self, from: GridPos, to: GridPos) -> u32 {
+        (self.elevation(to) - self.elevation(from)).max(0) as u32
+    }
+
+    /// Cover that the tile `neighbor` gives to a unit standing at `defender`:
+    /// its terrain's cover, or the ground itself when it rises above the
+    /// defender (1 level = half cover, 2+ = full cover).
+    pub fn cover_from(&self, neighbor: GridPos, defender: GridPos) -> CoverLevel {
+        let terrain = self.terrain(neighbor).cover();
+        let wall = match self.elevation(neighbor) - self.elevation(defender) {
+            d if d >= 2 => CoverLevel::Full,
+            1 => CoverLevel::Half,
+            _ => CoverLevel::None,
+        };
+        terrain.max(wall)
+    }
+
     /// Iterates over every position on the map, row by row.
     pub fn positions(&self) -> impl Iterator<Item = GridPos> + '_ {
         (0..self.height).flat_map(move |y| (0..self.width).map(move |x| GridPos::new(x, y)))
@@ -287,18 +357,29 @@ impl Map {
     /// Diagonal steps are only allowed when **both** adjacent orthogonal tiles are
     /// walkable, which prevents units from slipping between two touching walls
     /// ("corner cutting").
+    ///
+    /// Height is ignored here; see [`Map::climbable_neighbors`].
     pub fn walkable_neighbors(&self, pos: GridPos) -> impl Iterator<Item = (GridPos, Direction)> + '_ {
+        self.climbable_neighbors(pos, Climb { max_up: i8::MAX })
+    }
+
+    /// Like [`Map::walkable_neighbors`] but also enforcing the climbing rule.
+    /// A diagonal step must be possible via both orthogonal side tiles, so
+    /// units can't slip diagonally around a ledge.
+    pub fn climbable_neighbors(&self, pos: GridPos, climb: Climb) -> impl Iterator<Item = (GridPos, Direction)> + '_ {
         Direction::ALL.into_iter().filter_map(move |dir| {
             let next = pos.step(dir);
-            if !self.is_walkable(next) {
+            if !self.is_walkable(next) || !self.can_step(pos, next, climb) {
                 return None;
             }
             if dir.is_diagonal() {
                 let (dx, dy) = dir.delta();
                 let side_a = GridPos::new(pos.x + dx, pos.y);
                 let side_b = GridPos::new(pos.x, pos.y + dy);
-                if !self.is_walkable(side_a) || !self.is_walkable(side_b) {
-                    return None;
+                for side in [side_a, side_b] {
+                    if !self.is_walkable(side) || !self.can_step(pos, side, climb) || !self.can_step(side, next, climb) {
+                        return None;
+                    }
                 }
             }
             Some((next, dir))
@@ -325,6 +406,23 @@ mod tests {
         assert_eq!(map.terrain(GridPos::new(0, 2)), Terrain::HighCover);
         assert_eq!(map.terrain(GridPos::new(2, 0)), Terrain::LowCover);
         assert_eq!(map.terrain(GridPos::new(-1, 0)), Terrain::Void);
+    }
+
+    #[test]
+    fn climbing_limits_and_ladders() {
+        let mut map = Map::new(4, 1);
+        map.set_elevation(GridPos::new(1, 0), 1);
+        map.set_elevation(GridPos::new(2, 0), 3);
+        let climb = Climb::default();
+        let (a, b, c) = (GridPos::new(0, 0), GridPos::new(1, 0), GridPos::new(2, 0));
+        assert!(map.can_step(a, b, climb), "one level up is fine");
+        assert!(!map.can_step(b, c, climb), "two levels up is not");
+        assert!(map.can_step(c, b, climb), "dropping down is always fine");
+        assert!(map.can_step(b, c, Climb { max_up: 2 }), "unless the unit can climb more");
+        map.set_ladder(c, true);
+        assert!(map.can_step(b, c, climb), "or there is a ladder");
+        assert_eq!(map.cover_from(c, b), CoverLevel::Full, "a 2-level wall is full cover");
+        assert_eq!(map.cover_from(b, a), CoverLevel::Half);
     }
 
     #[test]

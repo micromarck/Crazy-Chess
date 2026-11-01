@@ -60,6 +60,18 @@
   #hover { bottom: 80px; right: 12px; max-width: 380px; }
 
   #roster { top: 140px; left: 12px; padding: 6px; }
+  #missions { top: 140px; left: 190px; padding: 6px; max-width: 360px; }
+  .mission {
+    height: auto;
+    min-width: 320px;
+    max-width: 340px;
+    margin-left: 0px;
+    margin-bottom: 4px;
+    align-items: flex-start;
+    font-size: 14px;
+  }
+  .mission.current { background: #2f5e44; }
+  .mission .key { max-width: 320px; }
   .member {
     flex-direction: column;
     padding: 4px 6px;
@@ -113,6 +125,7 @@
 
 <!-- Turn / round -->
 <div id="turn" class="panel">
+  <span class="dim" style="font-size: 12px">{{ mission.name }}</span>
   <span class="title">Round {{ turn.round }} - {{ turn.label }}</span>
   <span>Squad {{ squad.alive }}  vs  Hostiles {{ enemies.alive }}</span>
 </div>
@@ -120,12 +133,25 @@
 <!-- Tool buttons -->
 <div id="tools">
   <button class="small-button" data-command="editor">Edit<span class="key">F1</span></button>
+  <button class="small-button" data-command="toggle:missions">Missions<span class="key">list</span></button>
   <button class="small-button" data-command="cinematics">Cinema<span class="key" data-if="cinematics">on</span><span class="key" data-if="!cinematics">off</span></button>
 </div>
 
 <!-- Combat log: one line per entry -->
 <div id="log" class="panel" data-for="line in log">
   <span>{{ line.text }}</span>
+</div>
+
+<!-- Mission list (from assets/missions/index.xml); toggled by the Missions button -->
+<div id="missions" class="panel" data-if="ui.missions">
+  <span class="dim" style="font-size: 11px; margin-bottom: 4px">MISSIONS</span>
+  <div data-for="m in missions">
+    <button class="mission {{ m.state }}" data-command="mission:{{ m.id }}">
+      <span>{{ m.name }}</span>
+      <span class="key">{{ m.description }}</span>
+    </button>
+  </div>
+  <button class="mission" data-command="skirmish"><span>Random skirmish</span><span class="key">procedural map</span></button>
 </div>
 
 <!-- Squad roster: click a soldier to select them -->
