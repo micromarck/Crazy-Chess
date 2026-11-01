@@ -9,6 +9,9 @@ rust-version.workspace = true
 default-run = "tactics_game"
 
 [lib]
+# Distinct from the binary name so the wasm/cdylib outputs don't collide.
+# Android loads it as libtactics.so.
+name = "tactics"
 # `cdylib` is what Android loads (libtactics_game.so); `rlib` is used by main.rs.
 crate-type = ["rlib", "cdylib"]
 

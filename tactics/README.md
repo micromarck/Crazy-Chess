@@ -91,6 +91,7 @@ Requires Rust **1.97.1+** (`rustup update`).
 cargo run -p tactics_game            # dev build (deps optimised, game code fast to compile)
 cargo run -p tactics_game --release  # release
 cargo test -p tactics_core           # rules test-suite
+cargo run -p tactics_core --example autobattle -- 20   # headless AI-vs-AI balance check
 ```
 
 Linux needs a few system libraries:
@@ -115,7 +116,8 @@ section of `crates/tactics_game/Cargo.toml`.
 
 ### Android
 
-The lib is built as a `cdylib` with a `#[bevy_main]` entry and uses
+The library target (`tactics`, i.e. `libtactics.so`) is built as a `cdylib` with a
+`#[bevy_main]` entry and uses
 NativeActivity, so it can be packaged without a Java/Gradle project:
 
 ```sh
