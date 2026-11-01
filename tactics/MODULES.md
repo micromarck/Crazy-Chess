@@ -321,6 +321,7 @@ crit = weapon crit (weapon damage only) + crit_bonus + flank_crit_bonus (if flan
 | `presentations` | `AbilityPresentation` | `ability, animation, camera, camera_chance, projectile, windup` |
 | `camera_scripts` | `CameraScriptDef` | `id, steps` |
 | `presentation_settings` | `PresentationSettings` | `kill_camera, kill_camera_chance` |
+| `ui_layouts` | `UiLayoutDef` | `id` (`"hud"` replaces the HUD), `html`; see [UI.md](UI.md) |
 
 A class's `model` is the id of a `ModelDef` (base game: `"soldier"`, `"alien"`).
 

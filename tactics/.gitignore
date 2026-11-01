@@ -1,3 +1,4 @@
 /target
 /crates/tactics_game/dist
 /modules
+/ui

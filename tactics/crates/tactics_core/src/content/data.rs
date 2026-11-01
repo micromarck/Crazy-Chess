@@ -27,7 +27,7 @@
 
 use super::{
     AbilityDef, AbilityPresentation, AiProfile, CameraScriptDef, CombatRules, GameModule, MapDef, ModelDef,
-    ModuleInfo, PresentationSettings, Ruleset, SquadDef, UnitClass, Weapon,
+    ModuleInfo, PresentationSettings, Ruleset, SquadDef, UiLayoutDef, UnitClass, Weapon,
 };
 
 /// "Give this existing class this ability" — lets data modules extend classes
@@ -60,6 +60,8 @@ pub struct DataModule {
     pub camera_scripts: Vec<CameraScriptDef>,
     /// Replaces the global presentation settings when present.
     pub presentation_settings: Option<PresentationSettings>,
+    /// HTML/CSS UI layouts (id `"hud"` replaces the battle HUD).
+    pub ui_layouts: Vec<UiLayoutDef>,
 }
 
 /// RON extensions we enable for every file, so authors can skip the
@@ -144,6 +146,9 @@ impl GameModule for DataModule {
         }
         for c in &self.camera_scripts {
             rules.add_camera_script(c.clone());
+        }
+        for l in &self.ui_layouts {
+            rules.add_ui_layout(l.clone());
         }
         if let Some(settings) = &self.presentation_settings {
             rules.presentation = settings.clone();

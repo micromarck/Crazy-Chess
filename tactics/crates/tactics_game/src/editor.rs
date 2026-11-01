@@ -25,7 +25,7 @@ use tactics_core::prelude::*;
 
 use crate::FrameSet;
 use crate::content;
-use crate::hud::{ButtonLook, LogMessages, UnitPanel, message_button, panel, panel_node, text};
+use crate::hud::{ButtonLook, LogMessages, message_button, panel, panel_node, text};
 use crate::state::BattleState;
 use crate::theme;
 
@@ -265,14 +265,10 @@ struct EditorTitle;
 struct FieldValue(EditField);
 
 fn spawn_editor(mut commands: Commands) {
-    // Always-visible "Edit" button under the turn panel.
-    commands.spawn((
-        Node { position_type: PositionType::Absolute, top: px(84), left: px(6), ..default() },
-        children![message_button("Edit", "F1", EditorCommand::Toggle, (64.0, 40.0), ButtonLook::Normal)],
-    ));
-
     commands.spawn((
         EditorRoot,
+        // Above the HTML HUD.
+        GlobalZIndex(10),
         ScrollPosition::default(),
         panel_node(Node {
             top: px(132),
@@ -322,8 +318,7 @@ fn apply_editor_commands(
     mut editor: ResMut<EditorState>,
     mut state: ResMut<BattleState>,
     mut log: ResMut<LogMessages>,
-    mut root: Single<&mut Node, (With<EditorRoot>, Without<UnitPanel>)>,
-    mut unit_panel: Single<&mut Node, (With<UnitPanel>, Without<EditorRoot>)>,
+    mut root: Single<&mut Node, With<EditorRoot>>,
 ) {
     let count = state.battle.rules().abilities().count().max(1);
     for command in commands.read() {
@@ -331,8 +326,7 @@ fn apply_editor_commands(
             EditorCommand::Toggle => {
                 editor.open = !editor.open;
                 root.display = if editor.open { Display::Flex } else { Display::None };
-                // The editor uses the whole left column; hide the unit panel meanwhile.
-                unit_panel.display = if editor.open { Display::None } else { Display::Flex };
+                // The HTML HUD hides its left-column panels via `data-if="!editor.open"`.
                 editor.dirty = true;
             }
             EditorCommand::Prev => {

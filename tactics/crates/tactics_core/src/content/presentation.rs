@@ -252,3 +252,16 @@ impl Default for PresentationSettings {
         Self { kill_camera: None, kill_camera_chance: 100 }
     }
 }
+
+/// An HTML/CSS user-interface layout (e.g. the in-battle HUD).
+///
+/// The frontend renders a subset of HTML + CSS natively (no browser), with
+/// `{{ data }}` bindings and `data-command` buttons; see `UI.md`. The layout
+/// with id `"hud"` replaces the default battle HUD.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
+pub struct UiLayoutDef {
+    pub id: String,
+    /// HTML markup, optionally with `<style>` blocks.
+    pub html: String,
+}

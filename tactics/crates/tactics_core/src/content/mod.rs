@@ -58,6 +58,7 @@
 //! | 3D models + animation clips | [`ModelDef`] | ✅ |
 //! | Ability visuals (animation, camera, projectile) | [`AbilityPresentation`] | ✅ |
 //! | Camera scripts | [`CameraScriptDef`] | ✅ |
+//! | HTML/CSS UI layouts | [`UiLayoutDef`] | ✅ |
 //! | Status effects, terrain types, items, objectives, campaign… | — | planned, see `MODULES.md` |
 
 pub mod ability;
@@ -203,6 +204,7 @@ pub struct Ruleset {
     models: BTreeMap<String, ModelDef>,
     ability_presentations: BTreeMap<AbilityId, AbilityPresentation>,
     camera_scripts: BTreeMap<String, CameraScriptDef>,
+    ui_layouts: BTreeMap<String, UiLayoutDef>,
     modules: Vec<ModuleInfo>,
     // FUTURE module types slot in here as additional maps, e.g.
     //   status_effects: BTreeMap<String, StatusEffectDef>,
@@ -272,6 +274,10 @@ impl Ruleset {
 
     pub fn add_camera_script(&mut self, script: CameraScriptDef) {
         self.camera_scripts.insert(script.id.clone(), script);
+    }
+
+    pub fn add_ui_layout(&mut self, layout: UiLayoutDef) {
+        self.ui_layouts.insert(layout.id.clone(), layout);
     }
 
     /// Gives an existing class an extra ability (no-op if already known or the
@@ -363,6 +369,11 @@ impl Ruleset {
 
     pub fn camera_scripts(&self) -> impl Iterator<Item = &CameraScriptDef> {
         self.camera_scripts.values()
+    }
+
+    /// An HTML UI layout by id (`"hud"`...).
+    pub fn ui_layout(&self, id: &str) -> Option<&UiLayoutDef> {
+        self.ui_layouts.get(id)
     }
 
     /// Checks cross-references (classes → weapons/abilities, squads → classes).
