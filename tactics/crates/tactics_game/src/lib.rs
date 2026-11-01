@@ -15,21 +15,27 @@
 //! ```
 //!
 //! * Nothing outside `state.rs` mutates the [`Battle`](tactics_core::battle::Battle).
-//! * While [`Playback`](playback::Playback) has queued events, input and AI
-//!   are paused, so the player always sees the consequences of each action.
+//! * While [`Playback`](playback::Playback) has queued events or a camera
+//!   script runs, input and AI are paused, so the player always sees the
+//!   consequences of each action.
+//! * How things *look* (models, animation clips, camera scripts, projectiles)
+//!   is module data too: see [`models`], [`animation`], [`camera_director`].
 //!
 //! ## Plugins
 //! Each module exposes one plugin; [`TacticsPlugin`] bundles them. Swap or extend
 //! any of them independently (e.g. replace `board.rs` with glTF level art).
 
+pub mod animation;
 pub mod board;
 pub mod camera;
+pub mod camera_director;
 pub mod content;
 pub mod coords;
 pub mod editor;
 pub mod enemy_turn;
 pub mod hud;
 pub mod input;
+pub mod models;
 pub mod overlay;
 pub mod playback;
 pub mod state;
@@ -65,8 +71,11 @@ impl Plugin for TacticsPlugin {
         .add_plugins((
             state::StatePlugin,
             board::BoardPlugin,
+            models::ModelsPlugin,
             units::UnitsPlugin,
+            animation::AnimationPlugin,
             camera::CameraPlugin,
+            camera_director::CameraDirectorPlugin,
             input::InputPlugin,
             enemy_turn::EnemyTurnPlugin,
             playback::PlaybackPlugin,

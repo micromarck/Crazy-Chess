@@ -1,25 +1,35 @@
 //! Event playback: turns the instant results of the rules engine into
-//! animations that play one after another.
+//! animations, camera moves and effects that play one after another.
 //!
-//! [`Playback`] holds a FIFO of [`GameEvent`]s. Each frame, if no animation is
-//! running, the next event is popped and converted into an [`Anim`]. Events with
-//! no visual (e.g. AP changes) complete immediately. While anything is queued
-//! or running, [`Playback::is_busy`] is `true`, which pauses player input and
-//! the AI.
+//! [`Playback`] holds a FIFO of [`GameEvent`]s. When idle it pops the next
+//! event and converts it into a short sequence of [`Anim`]s (see
+//! [`start_event`]). While anything is queued or running,
+//! [`Playback::is_busy`] is `true`, which pauses player input and the AI.
 //!
-//! To add a new kind of feedback (sound, camera shake, particles), match the
-//! event in [`start_event`] and add an `Anim` variant or spawn a one-shot
-//! entity — the rules engine doesn't need to change.
+//! Presentation is data-driven: for every ability, the ruleset's
+//! [`AbilityPresentation`](tactics_core::content::AbilityPresentation) says
+//! which **animation slot** the user plays, which **camera script** runs,
+//! how the **projectile** looks and how long the **wind-up** is. Unit
+//! animations are requested through [`AnimCommand`]; camera scripts through
+//! the [`CameraDirector`].
+//!
+//! To add new feedback (sound, particles...), match the event in
+//! [`start_event`] — the rules engine doesn't need to change.
 
 use std::collections::VecDeque;
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+use tactics_core::content::{AbilityEffect, ProjectileStyle};
 use tactics_core::prelude::*;
 
 use crate::FrameSet;
+use crate::animation::AnimCommand;
 use crate::camera::CameraRig;
+use crate::camera_director::{CameraContext, CameraDirector};
 use crate::coords::grid_to_world;
 use crate::hud::{FloatingText, LogMessages};
+use crate::models::ModelLibrary;
 use crate::state::BattleState;
 use crate::theme;
 use crate::units::UnitEntities;
@@ -28,42 +38,50 @@ pub struct PlaybackPlugin;
 
 impl Plugin for PlaybackPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Playback>()
-            .add_systems(Update, run_playback.in_set(FrameSet::Playback));
+        app.init_resource::<Playback>().add_systems(Update, run_playback.in_set(FrameSet::Playback));
     }
 }
 
 /// Seconds a unit takes to cross one tile.
 const STEP_TIME: f32 = 0.16;
-/// Duration of a shot tracer.
-const SHOT_TIME: f32 = 0.45;
+/// Flight time of a tracer/beam.
+pub const SHOT_TIME: f32 = 0.45;
 /// Pause before a shot so the player sees who is aiming at whom.
-const AIM_TIME: f32 = 0.35;
+pub const AIM_TIME: f32 = 0.2;
+/// Flight time of a lobbed projectile.
+pub const ARC_TIME: f32 = 0.6;
 /// Blast ring duration.
 pub const EXPLOSION_TIME: f32 = 0.5;
-/// Death collapse duration.
+/// Death topple duration (models without a death clip).
 const DEATH_TIME: f32 = 0.6;
+/// Height at which shots are fired / hit.
+const CHEST: f32 = theme::UNIT_HEIGHT * 0.65;
 
-/// A running animation.
+/// A running animation step.
 #[derive(Debug, Clone)]
 pub enum Anim {
     /// Walk through `points` (world positions), one segment per tile.
-    Walk { entity: Entity, from: Vec3, points: Vec<Vec3>, index: usize, t: f32 },
-    /// Turn to face the target, then fire a tracer.
-    Shot { shooter: Vec3, target: Vec3, outcome: ShotOutcome, reaction: bool, t: f32 },
+    Walk { unit: UnitId, entity: Entity, from: Vec3, points: Vec<Vec3>, index: usize, t: f32 },
+    /// Aim, then fire a projectile that lands at `AIM_TIME + SHOT_TIME`.
+    Shot { shooter: Vec3, target: Vec3, target_unit: UnitId, outcome: ShotOutcome, style: ProjectileStyle, t: f32 },
+    /// A lobbed projectile (grenade) from `from` to `to`.
+    Projectile { from: Vec3, to: Vec3, t: f32 },
     /// Expanding blast ring (drawn by the overlay).
     Explosion { center: Vec3, radius: f32, t: f32 },
-    /// Sink into the floor and despawn.
-    Death { entity: Entity, t: f32 },
-    /// Do nothing for a while (lets banners/floating text breathe).
+    /// Death: topple + sink (primitive) or the model's death clip, then despawn.
+    Death { entity: Entity, t: f32, duration: f32, topple: bool },
+    /// Do nothing for a while (wind-ups, banners).
     Wait { remaining: f32 },
 }
 
-/// Queue of events awaiting presentation plus the animation in progress.
+/// Queue of events awaiting presentation plus the animations in progress.
 #[derive(Resource, Default)]
 pub struct Playback {
     queue: VecDeque<GameEvent>,
+    anims: VecDeque<Anim>,
     current: Option<Anim>,
+    /// Last unit that attacked (the "actor" of kill cams).
+    last_attacker: Option<UnitId>,
 }
 
 impl Playback {
@@ -73,10 +91,10 @@ impl Playback {
 
     /// `true` while events are queued or an animation runs.
     pub fn is_busy(&self) -> bool {
-        self.current.is_some() || !self.queue.is_empty()
+        self.current.is_some() || !self.anims.is_empty() || !self.queue.is_empty()
     }
 
-    /// The animation currently running (used by the overlay to draw tracers).
+    /// The animation currently running (used by the overlay to draw effects).
     pub fn current(&self) -> Option<&Anim> {
         self.current.as_ref()
     }
@@ -84,38 +102,78 @@ impl Playback {
     /// Drops everything (used when restarting a battle).
     pub fn clear(&mut self) {
         self.queue.clear();
+        self.anims.clear();
         self.current = None;
+        self.last_attacker = None;
     }
 }
 
-/// Height at which shots are fired / hit.
-const CHEST: f32 = theme::UNIT_HEIGHT * 0.65;
+/// Everything [`start_event`] needs, bundled as one system parameter.
+#[derive(SystemParam)]
+pub struct Presenter<'w, 's> {
+    commands: Commands<'w, 's>,
+    state: Res<'w, BattleState>,
+    entities: Res<'w, UnitEntities>,
+    library: Res<'w, ModelLibrary>,
+    clips: Res<'w, Assets<AnimationClip>>,
+    director: ResMut<'w, CameraDirector>,
+    rig: Single<'w, 's, &'static mut CameraRig>,
+    log: ResMut<'w, LogMessages>,
+    anim: MessageWriter<'w, AnimCommand>,
+}
 
-#[allow(clippy::too_many_arguments)]
+/// Moves the camera unless a camera script owns it.
+fn look_at(director: &CameraDirector, rig: &mut CameraRig, p: Vec3) {
+    if !director.is_active() {
+        rig.target_focus = p;
+    }
+}
+
+/// Starts camera script `id` (subject to `chance` and the C toggle).
+/// Returns whether a script started.
+fn play_camera(
+    rules: &Ruleset,
+    director: &mut CameraDirector,
+    id: Option<&String>,
+    chance: u32,
+    actor: Vec3,
+    target: Vec3,
+) -> bool {
+    let Some(script) = id.and_then(|id| rules.camera_script(id)) else {
+        return false;
+    };
+    if !director.enabled || !director.roll(chance) {
+        return false;
+    }
+    director.play(script, CameraContext { actor, target });
+    true
+}
+
 fn run_playback(
     time: Res<Time>,
-    mut commands: Commands,
     mut playback: ResMut<Playback>,
-    state: Res<BattleState>,
-    entities: Res<UnitEntities>,
     mut transforms: Query<&mut Transform>,
-    mut rig: Single<&mut CameraRig>,
-    mut log: ResMut<LogMessages>,
+    mut p: Presenter,
 ) {
     let dt = time.delta_secs();
-    // Process instant events and start the next animation. Bounded loop so a
-    // long run of instant events can't stall a frame forever.
+    // Start the next animation, converting events as needed. Bounded so a long
+    // run of instant events can't stall a frame.
     for _ in 0..64 {
         if playback.current.is_some() {
             break;
         }
+        if let Some(next) = playback.anims.pop_front() {
+            playback.current = Some(next);
+            break;
+        }
         let Some(event) = playback.queue.pop_front() else { break };
-        playback.current = start_event(&event, &state.battle, &entities, &mut commands, &mut rig, &mut log, &transforms);
+        let anims = start_event(&event, &mut playback, &mut p, &transforms);
+        playback.anims.extend(anims);
     }
 
     let Some(anim) = playback.current.as_mut() else { return };
     let finished = match anim {
-        Anim::Walk { entity, from, points, index, t } => {
+        Anim::Walk { unit, entity, from, points, index, t } => {
             *t += dt / STEP_TIME;
             while *t >= 1.0 && *index < points.len() {
                 *t -= 1.0;
@@ -126,36 +184,48 @@ fn run_playback(
                 if let Some(next) = points.get(*index) {
                     tr.translation = from.lerp(*next, *t);
                     face(&mut tr, *next);
-                    rig.target_focus = tr.translation;
+                    look_at(&p.director, &mut p.rig, tr.translation);
                 } else {
                     tr.translation = *from;
                 }
             }
-            *index >= points.len()
+            let done = *index >= points.len();
+            if done {
+                p.anim.write(AnimCommand::Walking { unit: *unit, on: false });
+            }
+            done
         }
-        Anim::Shot { shooter, target, outcome, t, .. } => {
+        Anim::Shot { target, target_unit, outcome, t, .. } => {
             let before = *t;
             *t += dt;
-            // Spawn the result text the moment the tracer lands.
-            if before < AIM_TIME + SHOT_TIME && *t >= AIM_TIME + SHOT_TIME {
-                spawn_result_text(&mut commands, *target + Vec3::Y * 0.6, outcome);
+            // The moment the projectile lands: result text + hit reaction.
+            let land = AIM_TIME + SHOT_TIME;
+            if before < land && *t >= land {
+                spawn_result_text(&mut p.commands, *target + Vec3::Y * 0.6, outcome);
+                if matches!(outcome, ShotOutcome::Hit { .. }) {
+                    p.anim.write(AnimCommand::OneShot { unit: *target_unit, slot: "hit".into() });
+                }
             }
-            let _ = shooter;
-            *t >= AIM_TIME + SHOT_TIME + 0.15
+            *t >= land + 0.2
+        }
+        Anim::Projectile { t, .. } => {
+            *t += dt;
+            *t >= ARC_TIME
         }
         Anim::Explosion { t, .. } => {
             *t += dt;
             *t >= EXPLOSION_TIME
         }
-        Anim::Death { entity, t } => {
-            *t += dt / DEATH_TIME;
-            if let Ok(mut tr) = transforms.get_mut(*entity) {
+        Anim::Death { entity, t, duration, topple } => {
+            *t += dt;
+            let k = (*t / *duration).min(1.0);
+            if *topple && let Ok(mut tr) = transforms.get_mut(*entity) {
                 // Topple sideways while sinking.
-                tr.rotation = Quat::from_rotation_z(t.min(1.0) * std::f32::consts::FRAC_PI_2);
-                tr.translation.y = -t.min(1.0) * 0.4;
+                tr.rotation = Quat::from_rotation_z(k * std::f32::consts::FRAC_PI_2);
+                tr.translation.y = -k * 0.4;
             }
-            if *t >= 1.0 {
-                commands.entity(*entity).despawn();
+            if *t >= *duration {
+                p.commands.entity(*entity).despawn();
                 true
             } else {
                 false
@@ -179,125 +249,177 @@ fn face(tr: &mut Transform, point: Vec3) {
     }
 }
 
-/// Converts a core event into an animation (or `None` for instant events).
+/// Default animation slot for an ability without an explicit one.
+fn default_slot(def: &AbilityDef) -> &'static str {
+    match &def.effect {
+        AbilityEffect::Attack(_) if def.targeting == Targeting::Tile => "throw",
+        AbilityEffect::Attack(_) => "shoot",
+        AbilityEffect::Overwatch(_) => "overwatch",
+        AbilityEffect::Defend { .. } => "hunker",
+        AbilityEffect::Reload => "reload",
+        AbilityEffect::Heal { .. } => "heal",
+    }
+}
+
+/// Converts a core event into animation steps (empty for instant events).
 ///
 /// **Add presentation for new event kinds here** (sounds, particles...).
-fn start_event(
-    event: &GameEvent,
-    battle: &Battle,
-    entities: &UnitEntities,
-    commands: &mut Commands,
-    rig: &mut CameraRig,
-    log: &mut LogMessages,
-    transforms: &Query<&mut Transform>,
-) -> Option<Anim> {
+fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, transforms: &Query<&mut Transform>) -> Vec<Anim> {
+    let battle = &p.state.battle;
     let name = |id: UnitId| battle.unit(id).map_or("?".to_string(), |u| u.name.clone());
-    let ability_name = |id: &AbilityId| battle.ability(id).map_or(id.to_string(), |d| d.name.clone());
-    let pos_of = |id: UnitId| -> Option<Vec3> {
-        entities.0.get(&id).and_then(|e| transforms.get(*e).ok()).map(|t| t.translation)
-    };
+    let entity_of = |id: UnitId| p.entities.0.get(&id).copied();
+    let pos_of = |id: UnitId| -> Option<Vec3> { entity_of(id).and_then(|e| transforms.get(e).ok()).map(|t| t.translation) };
+
     match event {
         GameEvent::UnitMoved { unit, from, path } => {
-            let entity = *entities.0.get(unit)?;
-            Some(Anim::Walk {
+            let Some(entity) = entity_of(*unit) else { return vec![] };
+            p.anim.write(AnimCommand::Walking { unit: *unit, on: true });
+            vec![Anim::Walk {
+                unit: *unit,
                 entity,
                 from: grid_to_world(*from),
-                points: path.iter().map(|p| grid_to_world(*p)).collect(),
+                points: path.iter().map(|g| grid_to_world(*g)).collect(),
                 index: 0,
                 t: 0.0,
-            })
+            }]
         }
+
         GameEvent::AbilityUsed { unit, ability, target } => {
-            let label = ability_name(ability);
+            let Some(def) = battle.ability(ability).cloned() else { return vec![] };
+            let pres = battle.rules().presentation_of(ability).cloned().unwrap_or_default();
             let target_text = match target {
                 Target::Unit(t) if t != unit => format!(" on {}", name(*t)),
                 _ => String::new(),
             };
-            log.push(format!("{} uses {label}{target_text}", name(*unit)));
-            let p = pos_of(*unit)?;
-            // Turn towards the target.
+            p.log.push(format!("{} uses {}{target_text}", name(*unit), def.name));
+            let Some(actor) = pos_of(*unit) else { return vec![] };
             let aim = match target {
                 Target::Unit(t) => pos_of(*t),
                 Target::Tile(tile) => Some(grid_to_world(*tile)),
                 Target::None => None,
             };
-            if let (Some(aim), Some(e)) = (aim, entities.0.get(unit))
-                && aim.distance_squared(p) > 0.01 {
-                    commands
-                        .entity(*e)
-                        .insert(Transform::from_translation(p).looking_at(Vec3::new(aim.x, p.y, aim.z), Vec3::Y));
-                }
-            FloatingText::spawn(commands, p + Vec3::Y * 1.6, label.to_uppercase(), theme::UI_TEXT);
-            rig.target_focus = p;
-            Some(Anim::Wait { remaining: 0.35 })
+
+            // Face the target.
+            if let (Some(aim), Some(e)) = (aim, entity_of(*unit))
+                && aim.distance_squared(actor) > 0.01
+            {
+                p.commands
+                    .entity(e)
+                    .insert(Transform::from_translation(actor).looking_at(Vec3::new(aim.x, actor.y, aim.z), Vec3::Y));
+            }
+
+            // Animation, camera, label.
+            let slot = pres.animation.clone().unwrap_or_else(|| default_slot(&def).to_string());
+            p.anim.write(AnimCommand::OneShot { unit: *unit, slot });
+            let scripted = play_camera(battle.rules(), &mut p.director, pres.camera.as_ref(), pres.camera_chance, actor, aim.unwrap_or(actor));
+            if !scripted {
+                look_at(&p.director, &mut p.rig, aim.map_or(actor, |a| (a + actor) / 2.0));
+            }
+            FloatingText::spawn(&mut p.commands, actor + Vec3::Y * 1.6, def.name.to_uppercase(), theme::UI_TEXT);
+
+            let mut steps = vec![Anim::Wait { remaining: pres.windup.max(0.0) }];
+            if pres.projectile == ProjectileStyle::Arc
+                && let Some(to) = aim
+            {
+                steps.push(Anim::Projectile { from: actor + Vec3::Y * CHEST, to: to + Vec3::Y * 0.2, t: 0.0 });
+            }
+            steps
         }
+
         GameEvent::Explosion { center, radius } => {
             let c = grid_to_world(*center);
-            rig.target_focus = c;
-            Some(Anim::Explosion { center: c, radius: *radius, t: 0.0 })
+            look_at(&p.director, &mut p.rig, c);
+            vec![Anim::Explosion { center: c, radius: *radius, t: 0.0 }]
         }
-        GameEvent::AttackResolved { attacker, target, hit_chance, outcome, reaction, origin, .. } => {
-            let s = pos_of(*attacker)?;
-            let t = pos_of(*target)?;
+
+        GameEvent::AttackResolved { attacker, ability, target, hit_chance, outcome, reaction, origin } => {
+            playback.last_attacker = Some(*attacker);
+            let (Some(s), Some(t)) = (pos_of(*attacker), pos_of(*target)) else { return vec![] };
             let verb = if *reaction { "reaction-fires at" } else { "hits at" };
             let result = match outcome {
                 ShotOutcome::Miss => "miss".to_string(),
-                ShotOutcome::Hit { damage, critical } => {
-                    format!("{}{damage} dmg", if *critical { "CRIT " } else { "" })
-                }
+                ShotOutcome::Hit { damage, critical } => format!("{}{damage} dmg", if *critical { "CRIT " } else { "" }),
             };
-            log.push(format!("  {} {verb} {} ({hit_chance}%): {result}", name(*attacker), name(*target)));
+            p.log.push(format!("  {} {verb} {} ({hit_chance}%): {result}", name(*attacker), name(*target)));
+
+            let style = battle.rules().presentation_of(ability).map_or(ProjectileStyle::Tracer, |pr| pr.projectile);
+            let from_attacker = *reaction || battle.unit(*attacker).is_some_and(|u| u.pos == *origin);
             if *reaction {
-                FloatingText::spawn(commands, s + Vec3::Y * 1.6, "OVERWATCH".into(), theme::TRACER);
+                FloatingText::spawn(&mut p.commands, s + Vec3::Y * 1.6, "OVERWATCH".into(), theme::TRACER);
+                p.anim.write(AnimCommand::OneShot { unit: *attacker, slot: "shoot".into() });
             }
-            let from_attacker = battle.unit(*attacker).is_some_and(|u| u.pos == *origin) || *reaction;
-            if from_attacker {
-                // Face the target and fire a tracer.
-                if let Some(e) = entities.0.get(attacker) {
-                    commands.entity(*e).insert(Transform::from_translation(s).looking_at(Vec3::new(t.x, s.y, t.z), Vec3::Y));
+            if from_attacker && !matches!(style, ProjectileStyle::None | ProjectileStyle::Arc) {
+                if let Some(e) = entity_of(*attacker) {
+                    p.commands.entity(e).insert(Transform::from_translation(s).looking_at(Vec3::new(t.x, s.y, t.z), Vec3::Y));
                 }
-                rig.target_focus = (s + t) / 2.0;
-                Some(Anim::Shot {
+                look_at(&p.director, &mut p.rig, (s + t) / 2.0);
+                vec![Anim::Shot {
                     shooter: s + Vec3::Y * CHEST,
                     target: t + Vec3::Y * CHEST,
+                    target_unit: *target,
                     outcome: *outcome,
-                    reaction: *reaction,
+                    style,
                     t: 0.0,
-                })
+                }]
             } else {
-                // Area damage: no tracer, just the result.
-                spawn_result_text(commands, t + Vec3::Y * (CHEST + 0.6), outcome);
-                Some(Anim::Wait { remaining: 0.2 })
+                // Area damage / no projectile: show the result directly.
+                spawn_result_text(&mut p.commands, t + Vec3::Y * (CHEST + 0.6), outcome);
+                if matches!(outcome, ShotOutcome::Hit { .. }) {
+                    p.anim.write(AnimCommand::OneShot { unit: *target, slot: "hit".into() });
+                }
+                vec![Anim::Wait { remaining: 0.2 }]
             }
         }
+
         GameEvent::UnitHealed { unit, amount } => {
-            log.push(format!("  {} recovers {amount} HP", name(*unit)));
-            if let Some(p) = pos_of(*unit) {
-                FloatingText::spawn(commands, p + Vec3::Y * 1.3, format!("+{amount}"), theme::HEAL);
+            p.log.push(format!("  {} recovers {amount} HP", name(*unit)));
+            if let Some(pos) = pos_of(*unit) {
+                FloatingText::spawn(&mut p.commands, pos + Vec3::Y * 1.3, format!("+{amount}"), theme::HEAL);
             }
-            Some(Anim::Wait { remaining: 0.4 })
+            vec![Anim::Wait { remaining: 0.4 }]
         }
+
         GameEvent::UnitKilled { unit } => {
-            log.push(format!("{} is down!", name(*unit)));
-            let entity = *entities.0.get(unit)?;
-            Some(Anim::Death { entity, t: 0.0 })
+            p.log.push(format!("{} is down!", name(*unit)));
+            let Some(entity) = entity_of(*unit) else { return vec![] };
+            let victim = pos_of(*unit).unwrap_or_default();
+
+            // Kill camera: actor = killer, target = victim.
+            let settings = battle.rules().presentation.clone();
+            let killer = playback.last_attacker.and_then(pos_of).unwrap_or(victim);
+            play_camera(battle.rules(), &mut p.director, settings.kill_camera.as_ref(), settings.kill_camera_chance, killer, victim);
+
+            // The model's death clip if it has one, else the procedural topple.
+            p.anim.write(AnimCommand::Died { unit: *unit });
+            let model = battle.unit(*unit).map(|u| u.model.clone()).unwrap_or_default();
+            let clip_len = p
+                .library
+                .clip(&model, "death")
+                .map(|c| p.clips.get(&c.clip).map_or(1.0, |clip| clip.duration() / c.speed.max(0.01)));
+            vec![match clip_len {
+                Some(len) => Anim::Death { entity, t: 0.0, duration: len + 0.4, topple: false },
+                None => Anim::Death { entity, t: 0.0, duration: DEATH_TIME, topple: true },
+            }]
         }
+
         GameEvent::TurnStarted { team, round } => {
             let who = match team {
                 Team::Player => "XCOM",
                 Team::Enemy => "ALIEN",
             };
-            log.push(format!("- Round {round}: {who} turn -"));
-            Some(Anim::Wait { remaining: 0.6 })
+            p.log.push(format!("- Round {round}: {who} turn -"));
+            vec![Anim::Wait { remaining: 0.6 }]
         }
+
         GameEvent::BattleEnded { winner } => {
-            log.push(match winner {
+            p.log.push(match winner {
                 Team::Player => "Mission accomplished!".to_string(),
                 Team::Enemy => "Squad wiped out. Mission failed.".to_string(),
             });
-            None
+            vec![]
         }
-        GameEvent::ActionPointsChanged { .. } => None,
+
+        GameEvent::ActionPointsChanged { .. } => vec![],
     }
 }
 

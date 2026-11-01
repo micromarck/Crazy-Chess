@@ -76,6 +76,23 @@ impl GameModule for GrenadierModule {
             model: "soldier".into(),
         });
 
+        // Visuals: throw animation, lobbed projectile, explosion camera.
+        rules.add_presentation(AbilityPresentation {
+            ability: "frag_grenade".into(),
+            animation: Some("throw".into()),
+            camera: Some("explosion_cam".into()),
+            projectile: ProjectileStyle::Arc,
+            windup: 0.45,
+            ..Default::default()
+        });
+        rules.add_presentation(AbilityPresentation {
+            ability: "medkit".into(),
+            animation: Some("heal".into()),
+            camera: Some("focus_actor".into()),
+            projectile: ProjectileStyle::None,
+            ..Default::default()
+        });
+
         // 3. Modify existing content -----------------------------------------
         rules.grant_ability("rifleman", "medkit");
         rules.add_squad(SquadDef::new(

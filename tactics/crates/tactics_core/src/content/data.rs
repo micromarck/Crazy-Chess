@@ -26,8 +26,8 @@
 //! [`DataModule::to_ron`] to save tuned values back to disk.
 
 use super::{
-    AbilityDef, AiProfile, CombatRules, GameModule, MapDef, ModuleInfo, Ruleset, SquadDef, UnitClass,
-    Weapon,
+    AbilityDef, AbilityPresentation, AiProfile, CameraScriptDef, CombatRules, GameModule, MapDef, ModelDef,
+    ModuleInfo, PresentationSettings, Ruleset, SquadDef, UnitClass, Weapon,
 };
 
 /// "Give this existing class this ability" — lets data modules extend classes
@@ -53,6 +53,13 @@ pub struct DataModule {
     pub maps: Vec<MapDef>,
     pub ai_profiles: Vec<AiProfile>,
     pub grants: Vec<AbilityGrant>,
+    /// 3D models and their animation clips.
+    pub models: Vec<ModelDef>,
+    /// Per-ability visuals (animation, camera script, projectile).
+    pub presentations: Vec<AbilityPresentation>,
+    pub camera_scripts: Vec<CameraScriptDef>,
+    /// Replaces the global presentation settings when present.
+    pub presentation_settings: Option<PresentationSettings>,
 }
 
 /// RON extensions we enable for every file, so authors can skip the
@@ -129,6 +136,18 @@ impl GameModule for DataModule {
         for g in &self.grants {
             rules.grant_ability(&g.class, &g.ability);
         }
+        for m in &self.models {
+            rules.add_model(m.clone());
+        }
+        for p in &self.presentations {
+            rules.add_presentation(p.clone());
+        }
+        for c in &self.camera_scripts {
+            rules.add_camera_script(c.clone());
+        }
+        if let Some(settings) = &self.presentation_settings {
+            rules.presentation = settings.clone();
+        }
     }
 }
 
@@ -174,6 +193,40 @@ mod tests {
         rules.add_module(&DataModule::from_ron(SAMPLE).unwrap());
         assert!(rules.class("rifleman").unwrap().abilities.contains(&"aimed_shot".into()));
         assert!(rules.validate().is_empty(), "{:?}", rules.validate());
+    }
+
+    #[test]
+    fn presentation_sections_parse() {
+        let text = r#"
+            (
+                models: [(
+                    id: "drone",
+                    scene: "models/drone.gltf#Scene0",
+                    fallback: Drone,
+                    animations: { "idle": (clip: "models/drone.gltf#Animation0", looping: true) },
+                )],
+                presentations: [(ability: "shoot", camera: "cam", projectile: Beam)],
+                camera_scripts: [(
+                    id: "cam",
+                    steps: [
+                        Together([Focus(on: Actor, duration: 0.5), Zoom(distance: 8.0, duration: 0.5)]),
+                        FaceAlong(from: Actor, to: Target, offset_degrees: 20.0),
+                        TimeScale(scale: 0.5),
+                        Wait(duration: 1.0),
+                        Restore(duration: 0.5),
+                    ],
+                )],
+            )
+        "#;
+        let module = DataModule::from_ron(text).unwrap_or_else(|e| panic!("{e}"));
+        let mut rules = Ruleset::standard();
+        rules.add_module(&module);
+        assert!(rules.model("drone").unwrap().animations["idle"].looping);
+        assert_eq!(rules.camera_script("cam").unwrap().steps.len(), 5);
+        assert_eq!(
+            rules.presentation_of(&"shoot".into()).unwrap().projectile,
+            crate::content::ProjectileStyle::Beam
+        );
     }
 
     #[test]

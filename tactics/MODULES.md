@@ -1,8 +1,9 @@
 # Modules: adding and editing game content
 
-Everything you can tune — abilities ("moves"), weapons, unit classes, squads,
-maps, AI behaviour and the global combat rules — lives in a **`Ruleset`** that
-is built from **modules**. The rules engine (`tactics_core::battle`) only reads
+Everything you can tune lives in a **`Ruleset`** that is built from
+**modules**: abilities ("moves"), weapons, unit classes, squads, maps, AI
+behaviour, the global combat rules, plus the presentation layer (3D models,
+animation clips, camera scripts and per-ability visuals). The rules engine (`tactics_core::battle`) only reads
 the ruleset, so new content never requires touching the rules code.
 
 ```
@@ -119,6 +120,138 @@ and shows them in the combat log at startup.
 
 ---
 
+## Models, animations and camera scripts
+
+Presentation lives in the same modules but is **never read by the rules
+engine**, so battles stay deterministic and headless tests never load assets.
+The full working example is `crates/tactics_game/assets/modules/drones.ron`
+(an animated glTF drone with its own laser camera).
+
+### Custom models (`models`)
+
+```ron
+models: [
+    (
+        id: "drone",                              // referenced by a class's `model`
+        scene: "models/drone.gltf#Scene0",        // glTF/GLB path under assets/, with label
+        fallback: Drone,                          // Soldier | Alien | Drone: shown while loading / if missing
+        scale: 1.0,
+        offset: (0.0, 0.0, 0.0),                  // from the tile centre, y up
+        yaw_degrees: 0.0,                         // turn the model so it faces -Z
+        animations: {
+            "idle":  (clip: "models/drone.gltf#Animation0", looping: true),
+            "walk":  (clip: "models/drone.gltf#Animation1", looping: true, speed: 1.2),
+            "shoot": (clip: "models/drone.gltf#Animation2"),
+            "hit":   (clip: "models/drone.gltf#Animation3"),
+            "death": (clip: "models/drone.gltf#Animation4"),
+        },
+    ),
+],
+classes: [(id: "drone", model: "drone", /* ... */)],
+```
+
+Model conventions: origin on the ground at the tile centre, 1 unit = 1 tile,
+facing **-Z** (fix with `yaw_degrees`). Put files in
+`crates/tactics_game/assets/models/` (shipped next to the executable on
+desktop, copied by Trunk for the web, packaged by `cargo apk` for Android).
+`tools/gen_drone_gltf.py` shows how the bundled drone was made, if you want to
+generate placeholder art.
+
+### Animation slots
+
+| slot | played when | procedural fallback |
+|---|---|---|
+| `idle` | default (loop) | breathing |
+| `walk` | moving (loop) | bob + lean |
+| `hunker` | while defending (loop) | crouch |
+| `shoot` / `throw` / `overwatch` / `reload` / `heal` | default for that ability effect | recoil / wind-up / brace / tilt / kneel |
+| `cast` | psionic-style abilities (by name) | rise + spin |
+| `hit` | when damaged | flinch |
+| `death` | when killed (held) | topple + sink |
+
+A model only needs the clips it has: every missing slot falls back to the
+procedural animation, so primitive models and half-animated models both work.
+Abilities can name **any** slot (`animation: "slash"`). Add a procedural
+version in `procedural_pose` (`crates/tactics_game/src/animation.rs`) or
+provide a clip on the model.
+
+### Ability visuals (`presentations`)
+
+```ron
+presentations: [
+    (
+        ability: "laser",
+        animation: "shoot",       // slot on the user (default depends on the effect)
+        camera: "laser_cam",      // camera script to run
+        camera_chance: 60,        // % of uses that get the cinematic
+        projectile: Beam,         // Tracer | Beam | Arc | None
+        windup: 0.25,             // seconds from animation start to the effect
+    ),
+],
+presentation_settings: (kill_camera: "kill_cam", kill_camera_chance: 100),
+```
+
+### Camera scripts (`camera_scripts`)
+
+A script is a list of steps run in order; `Together([...])` runs steps at the
+same time. Anchors: `Actor` (who acts), `Target` (unit or tile it's aimed at;
+for the kill cam, the victim), `Midpoint`, `Current`.
+
+| Step | Effect |
+|---|---|
+| `Focus(on: Target, duration: 0.4)` | move the look-at point |
+| `FaceAlong(from: Actor, to: Target, offset_degrees: 25.0, duration: 0.4)` | swing behind `from` looking at `to` (over the shoulder) |
+| `Orbit(degrees: 40.0, duration: 1.0)` | rotate around the focus point |
+| `Zoom(distance: 8.0, duration: 0.4)` | distance from the focus point |
+| `Pitch(degrees: 25.0, duration: 0.4)` | angle above the horizon (90 = top-down) |
+| `Shake(strength: 0.3, duration: 0.5)` | camera shake, fading out |
+| `TimeScale(scale: 0.35)` | slow motion (reset by `Restore` / end of script) |
+| `Wait(duration: 1.0)` | hold |
+| `Restore(duration: 0.5)` | glide back to the player's camera |
+
+```ron
+camera_scripts: [
+    (
+        id: "laser_cam",
+        steps: [
+            Together([Focus(on: Actor, duration: 0.3), Zoom(distance: 7.0, duration: 0.3)]),
+            Together([
+                Focus(on: Midpoint, duration: 0.5),
+                FaceAlong(from: Actor, to: Target, offset_degrees: -30.0, duration: 0.5),
+                Pitch(degrees: 20.0, duration: 0.5),
+            ]),
+            Wait(duration: 0.8),
+            Restore(duration: 0.5),
+        ],
+    ),
+],
+```
+
+Built-in scripts (base module): `over_shoulder`, `kill_cam`, `explosion_cam`,
+`focus_actor`. While a script runs, the player's camera controls and the game
+pause. **Space** skips the script and **C** turns cinematic cameras on/off.
+Durations are in real time, so slow motion doesn't stretch them.
+
+From Rust you can run any script directly (cutscenes, mission intros):
+
+```rust
+fn intro(mut director: ResMut<CameraDirector>, state: Res<BattleState>) {
+    if let Some(script) = state.battle.rules().camera_script("over_shoulder") {
+        director.play(script, CameraContext { actor: Vec3::ZERO, target: Vec3::new(10.0, 0.0, -10.0) });
+    }
+}
+```
+
+Known limitation: the camera has no collision, so a scripted angle can end up
+behind a wall. Adding a ray-cast from the focus point that shortens the
+distance would fix it (`camera.rs`, `apply_rig`).
+
+To add a new **step type**: add a variant to `CameraStep`
+(`tactics_core/src/content/presentation.rs`) and handle it in `Running::start`
+and `Running::apply` (`tactics_game/src/camera_director.rs`).
+
+---
+
 ## Reference
 
 ### Ability (`AbilityDef`)
@@ -184,9 +317,12 @@ crit = weapon crit (weapon damage only) + crit_bonus + flank_crit_bonus (if flan
 | `ai_profiles` | `AiProfile` | `id` (`"default"` drives the enemy), `config: (shoot_threshold, area_min_score, heal_below, ...)` |
 | `combat` | `CombatRules` | `min_hit, max_hit, falloff_per_tile, close_bonus_per_tile, max_close_bonus, action_points` |
 | `grants` | `AbilityGrant` | `(class, ability)`: add a move to an existing class |
+| `models` | `ModelDef` | see "Models, animations and camera scripts" |
+| `presentations` | `AbilityPresentation` | `ability, animation, camera, camera_chance, projectile, windup` |
+| `camera_scripts` | `CameraScriptDef` | `id, steps` |
+| `presentation_settings` | `PresentationSettings` | `kill_camera, kill_camera_chance` |
 
-`model` is a renderer hint: `"alien"` gets the big-headed mesh, anything else
-the soldier mesh.
+A class's `model` is the id of a `ModelDef` (base game: `"soldier"`, `"alien"`).
 
 ---
 
@@ -321,19 +457,18 @@ a new crate (`tactics_campaign`) with its own module types (`ResearchDef`,
 battle and reads the battle result back. In Bevy, add a `GameState` with
 `Campaign` / `Battle` states around the existing plugins.
 
-### 8. Presentation: models, VFX, sound per content
+### 8. Sound and particle effects
+Models, animations and camera scripts are implemented (see above). Sound and
+particles would extend `AbilityPresentation` the same way:
 ```rust
-pub struct PresentationDef {
-    pub id: String,                    // ability, class or terrain id it decorates
-    pub model: Option<String>,         // glTF path, e.g. "models/sectoid.glb#Scene0"
-    pub animation: Option<String>,
-    pub sfx: Option<String>, pub vfx: Option<String>,
-    pub icon: Option<String>,          // HUD button icon
+pub struct AbilityPresentation { /* ... */
+    pub sfx: Option<String>,          // "sounds/laser.ogg", played on AbilityUsed
+    pub impact_sfx: Option<String>,
+    pub vfx: Option<String>,          // particle preset id, spawned at the target
 }
 ```
-Kept separate from rules data so headless servers and tests never load
-assets. Hooks: `units.rs`, `board.rs`, `playback.rs` and `hud.rs` look these
-up by id.
+Hooks: enable Bevy's `audio` feature, play the sounds in `playback.rs`'s
+`start_event`, and add a particle crate or a small gizmo-based emitter.
 
 ### 9. AI behaviours
 Today an AI profile is a set of weights (`AiConfig`). Next steps:

@@ -20,6 +20,7 @@ pub const SELECTED: Color = Color::srgb(0.4, 1.0, 0.6);
 pub const TARGET: Color = Color::srgb(1.0, 0.35, 0.3);
 pub const TRACER: Color = Color::srgb(1.0, 0.9, 0.4);
 pub const HEAL: Color = Color::srgb(0.4, 1.0, 0.5);
+pub const BEAM: Color = Color::srgb(0.55, 0.4, 1.0);
 pub const EXPLOSION: Color = Color::srgb(1.0, 0.55, 0.15);
 pub const COVER_HALF: Color = Color::srgb(0.5, 0.75, 1.0);
 pub const COVER_FULL: Color = Color::srgb(0.2, 0.5, 1.0);

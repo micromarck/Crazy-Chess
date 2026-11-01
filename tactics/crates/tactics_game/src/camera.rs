@@ -10,6 +10,10 @@
 //! | Pan    | WASD / arrows, middle-drag | one-finger drag |
 //! | Rotate | Q / E (45° steps), right-drag | two-finger twist |
 //! | Zoom   | mouse wheel, Z / X | pinch |
+//!
+//! Camera *scripts* (cinematics) drive the same rig through
+//! [`CameraDirector`](crate::camera_director::CameraDirector); player input
+//! is ignored while one runs.
 
 use std::f32::consts::{FRAC_PI_4, TAU};
 
@@ -20,6 +24,7 @@ use tactics_core::grid::GridPos;
 
 use crate::FrameSet;
 use crate::coords::grid_to_world;
+use crate::camera_director::CameraDirector;
 use crate::input::pointer_over_ui;
 use crate::state::BattleState;
 
@@ -55,6 +60,9 @@ pub struct CameraRig {
     pub target_distance: f32,
     /// Angle above the horizon, radians.
     pub pitch: f32,
+    pub target_pitch: f32,
+    /// Current shake strength (set by camera scripts, 0 = none).
+    pub shake: f32,
     /// Allowed focus area (map bounds), so the camera can't get lost.
     pub bounds: Rect,
 }
@@ -114,6 +122,8 @@ fn spawn_camera(mut commands: Commands, state: Res<BattleState>) {
         target_yaw: 0.0,
         target_distance: 18.0,
         pitch: 0.95,
+        target_pitch: 0.95,
+        shake: 0.0,
         // grid y maps to -Z, so the far corner has the most negative z.
         bounds: Rect::from_corners(Vec2::new(0.0, 0.0), Vec2::new(far.x, far.z)),
     };
@@ -122,12 +132,16 @@ fn spawn_camera(mut commands: Commands, state: Res<BattleState>) {
 
 /// Converts orbit parameters into a camera transform.
 fn rig_transform(rig: &CameraRig) -> Transform {
+    rig_transform_at(rig, rig.focus)
+}
+
+fn rig_transform_at(rig: &CameraRig, focus: Vec3) -> Transform {
     let offset = Vec3::new(
         rig.yaw.sin() * rig.pitch.cos(),
         rig.pitch.sin(),
         rig.yaw.cos() * rig.pitch.cos(),
     ) * rig.distance;
-    Transform::from_translation(rig.focus + offset).looking_at(rig.focus, Vec3::Y)
+    Transform::from_translation(focus + offset).looking_at(focus, Vec3::Y)
 }
 
 #[allow(clippy::too_many_arguments)] // Bevy systems take their inputs as parameters.
@@ -139,8 +153,12 @@ fn keyboard_mouse_controls(
     scroll: Res<AccumulatedMouseScroll>,
     hover_map: Res<HoverMap>,
     ui_nodes: Query<(), With<Node>>,
+    director: Res<CameraDirector>,
     mut rig: Single<&mut CameraRig>,
 ) {
+    if director.is_active() {
+        return; // a camera script owns the camera
+    }
     let dt = time.delta_secs();
     let over_ui = pointer_over_ui(&hover_map, &ui_nodes);
     let speed = rig.target_distance * 1.2 * dt;
@@ -200,8 +218,12 @@ fn touch_controls(
     hover_map: Res<HoverMap>,
     ui_nodes: Query<(), With<Node>>,
     mut gesture: ResMut<TouchGesture>,
+    director: Res<CameraDirector>,
     mut rig: Single<&mut CameraRig>,
 ) {
+    if director.is_active() {
+        return;
+    }
     if touches.any_just_pressed() && touches.iter().count() == 1 {
         gesture.dragged = false;
         gesture.over_ui = pointer_over_ui(&hover_map, &ui_nodes);
@@ -237,17 +259,25 @@ fn touch_controls(
 }
 
 /// Eases the rig towards its targets and writes the camera transform.
-fn apply_rig(time: Res<Time>, mut q: Single<(&mut CameraRig, &mut Transform)>) {
+/// Uses real time so slow motion (camera scripts) doesn't make the camera sluggish.
+fn apply_rig(time: Res<Time<Real>>, mut q: Single<(&mut CameraRig, &mut Transform)>) {
     let (rig, transform) = &mut *q;
     let t = 1.0 - (-CameraRig::SMOOTHING * time.delta_secs()).exp();
     rig.focus = rig.focus.lerp(rig.target_focus, t);
     rig.distance += (rig.target_distance - rig.distance) * t;
     rig.yaw += (rig.target_yaw - rig.yaw) * t;
+    rig.pitch += (rig.target_pitch - rig.pitch) * t;
     // Keep angles bounded without visible jumps.
     if rig.yaw.abs() > TAU * 4.0 {
         let wrap = (rig.yaw / TAU).trunc() * TAU;
         rig.yaw -= wrap;
         rig.target_yaw -= wrap;
     }
-    **transform = rig_transform(rig);
+    // Shake: jitter the look-at point (deterministic noise from time).
+    let mut focus = rig.focus;
+    if rig.shake > 0.0 {
+        let e = time.elapsed_secs();
+        focus += Vec3::new((e * 53.0).sin(), (e * 37.0 + 1.0).sin() * 0.5, (e * 61.0 + 2.0).sin()) * rig.shake * 0.3;
+    }
+    **transform = rig_transform_at(rig, focus);
 }

@@ -198,33 +198,57 @@ fn draw_health_bars(
     }
 }
 
-/// Draws the projectile of the shot currently being played back.
+/// Draws projectiles and explosions of the animation being played back.
 fn draw_tracer(mut gizmos: Gizmos, playback: Res<Playback>) {
-    const AIM: f32 = 0.35;
-    const FLY: f32 = 0.45;
-    if let Some(Anim::Explosion { center, radius, t }) = playback.current() {
-        let k = (t / crate::playback::EXPLOSION_TIME).min(1.0);
-        for i in 0..3 {
-            let r = radius * (k + i as f32 * 0.15).min(1.0);
-            ground_circle(&mut gizmos, *center + Vec3::Y * (0.1 + i as f32 * 0.2), r.max(0.05), theme::EXPLOSION.with_alpha(1.0 - k));
+    use crate::playback::{AIM_TIME, ARC_TIME, EXPLOSION_TIME, SHOT_TIME};
+    use tactics_core::content::ProjectileStyle;
+    match playback.current() {
+        Some(Anim::Explosion { center, radius, t }) => {
+            let k = (t / EXPLOSION_TIME).min(1.0);
+            for i in 0..3 {
+                let r = radius * (k + i as f32 * 0.15).min(1.0);
+                ground_circle(&mut gizmos, *center + Vec3::Y * (0.1 + i as f32 * 0.2), r.max(0.05), theme::EXPLOSION.with_alpha(1.0 - k));
+            }
+            gizmos.sphere(Isometry3d::from_translation(*center + Vec3::Y * 0.4), radius * k * 0.6, theme::TRACER.with_alpha(1.0 - k));
         }
-        gizmos.sphere(Isometry3d::from_translation(*center + Vec3::Y * 0.4), radius * k * 0.6, theme::TRACER.with_alpha(1.0 - k));
-    }
-    if let Some(Anim::Shot { shooter, target, outcome, t, .. }) = playback.current() {
-        let mut end = *target;
-        if matches!(outcome, ShotOutcome::Miss) {
-            // Misses fly past the target.
-            let dir = (*target - *shooter).normalize_or_zero();
-            let side = dir.cross(Vec3::Y).normalize_or_zero();
-            end = *target + side * 0.6 + dir * 2.0;
+        Some(Anim::Projectile { from, to, t }) => {
+            // Parabola from `from` to `to`, apex proportional to distance.
+            let height = (from.distance(*to) * 0.35).max(0.8);
+            let at = |k: f32| from.lerp(*to, k) + Vec3::Y * (4.0 * height * k * (1.0 - k));
+            let k = (t / ARC_TIME).min(1.0);
+            gizmos.linestrip((0..=12).map(|i| at(k * i as f32 / 12.0)), theme::EXPLOSION.with_alpha(0.6));
+            gizmos.sphere(Isometry3d::from_translation(at(k)), 0.09, theme::TRACER);
         }
-        if *t < AIM {
-            gizmos.line(*shooter, *target, theme::TARGET.with_alpha(0.3));
-        } else {
-            let k = ((*t - AIM) / FLY).min(1.0);
-            let head = shooter.lerp(end, k);
-            let tail = shooter.lerp(end, (k - 0.25).max(0.0));
-            gizmos.line(tail, head, theme::TRACER);
+        Some(Anim::Shot { shooter, target, outcome, style, t, .. }) => {
+            let mut end = *target;
+            if matches!(outcome, ShotOutcome::Miss) {
+                // Misses fly past the target.
+                let dir = (*target - *shooter).normalize_or_zero();
+                let side = dir.cross(Vec3::Y).normalize_or_zero();
+                end = *target + side * 0.6 + dir * 2.0;
+            }
+            if *t < AIM_TIME {
+                gizmos.line(*shooter, *target, theme::TARGET.with_alpha(0.3));
+                return;
+            }
+            let k = ((*t - AIM_TIME) / SHOT_TIME).min(1.0);
+            match style {
+                ProjectileStyle::Beam => {
+                    // A beam extends quickly and lingers, drawn as a bundle of lines.
+                    let head = shooter.lerp(end, (k * 2.5).min(1.0));
+                    let fade = 1.0 - ((k - 0.6) / 0.4).clamp(0.0, 1.0);
+                    for (i, off) in [Vec3::ZERO, Vec3::Y * 0.025, -Vec3::Y * 0.025, Vec3::X * 0.025].iter().enumerate() {
+                        let c = if i == 0 { Color::WHITE } else { theme::BEAM };
+                        gizmos.line(*shooter + *off, head + *off, c.with_alpha(fade));
+                    }
+                }
+                _ => {
+                    let head = shooter.lerp(end, k);
+                    let tail = shooter.lerp(end, (k - 0.25).max(0.0));
+                    gizmos.line(tail, head, theme::TRACER);
+                }
+            }
         }
+        _ => {}
     }
 }

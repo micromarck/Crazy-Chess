@@ -55,15 +55,20 @@
 //! | Maps | [`MapDef`] | ✅ |
 //! | AI profiles | [`AiProfile`] | ✅ |
 //! | Global combat rules | [`CombatRules`] | ✅ |
+//! | 3D models + animation clips | [`ModelDef`] | ✅ |
+//! | Ability visuals (animation, camera, projectile) | [`AbilityPresentation`] | ✅ |
+//! | Camera scripts | [`CameraScriptDef`] | ✅ |
 //! | Status effects, terrain types, items, objectives, campaign… | — | planned, see `MODULES.md` |
 
 pub mod ability;
 #[cfg(feature = "data")]
 pub mod data;
+pub mod presentation;
 
 use std::collections::BTreeMap;
 
 pub use ability::*;
+pub use presentation::*;
 
 use crate::ai::AiConfig;
 pub use crate::unit::{UnitClass, UnitStats, Weapon};
@@ -193,6 +198,11 @@ pub struct Ruleset {
     squads: BTreeMap<String, SquadDef>,
     maps: BTreeMap<String, MapDef>,
     ai_profiles: BTreeMap<String, AiProfile>,
+    // Presentation (read only by frontends).
+    pub presentation: PresentationSettings,
+    models: BTreeMap<String, ModelDef>,
+    ability_presentations: BTreeMap<AbilityId, AbilityPresentation>,
+    camera_scripts: BTreeMap<String, CameraScriptDef>,
     modules: Vec<ModuleInfo>,
     // FUTURE module types slot in here as additional maps, e.g.
     //   status_effects: BTreeMap<String, StatusEffectDef>,
@@ -250,6 +260,18 @@ impl Ruleset {
 
     pub fn add_ai_profile(&mut self, profile: AiProfile) {
         self.ai_profiles.insert(profile.id.clone(), profile);
+    }
+
+    pub fn add_model(&mut self, model: ModelDef) {
+        self.models.insert(model.id.clone(), model);
+    }
+
+    pub fn add_presentation(&mut self, p: AbilityPresentation) {
+        self.ability_presentations.insert(p.ability.clone(), p);
+    }
+
+    pub fn add_camera_script(&mut self, script: CameraScriptDef) {
+        self.camera_scripts.insert(script.id.clone(), script);
     }
 
     /// Gives an existing class an extra ability (no-op if already known or the
@@ -318,6 +340,31 @@ impl Ruleset {
         self.ai_profiles.values()
     }
 
+    pub fn model(&self, id: &str) -> Option<&ModelDef> {
+        self.models.get(id)
+    }
+
+    pub fn models(&self) -> impl Iterator<Item = &ModelDef> {
+        self.models.values()
+    }
+
+    /// Visuals of an ability (`None` = frontend defaults).
+    pub fn presentation_of(&self, ability: &AbilityId) -> Option<&AbilityPresentation> {
+        self.ability_presentations.get(ability)
+    }
+
+    pub fn presentations(&self) -> impl Iterator<Item = &AbilityPresentation> {
+        self.ability_presentations.values()
+    }
+
+    pub fn camera_script(&self, id: &str) -> Option<&CameraScriptDef> {
+        self.camera_scripts.get(id)
+    }
+
+    pub fn camera_scripts(&self) -> impl Iterator<Item = &CameraScriptDef> {
+        self.camera_scripts.values()
+    }
+
     /// Checks cross-references (classes → weapons/abilities, squads → classes).
     /// Returns human-readable problems; empty means consistent.
     pub fn validate(&self) -> Vec<String> {
@@ -332,6 +379,24 @@ impl Ruleset {
                 }
             }
         }
+        for class in self.classes.values() {
+            if !class.model.is_empty() && !self.models.contains_key(&class.model) {
+                problems.push(format!("class '{}' uses unknown model '{}'", class.id, class.model));
+            }
+        }
+        for p in self.ability_presentations.values() {
+            if !self.abilities.contains_key(&p.ability) {
+                problems.push(format!("presentation for unknown ability '{}'", p.ability));
+            }
+            if let Some(cam) = &p.camera
+                && !self.camera_scripts.contains_key(cam) {
+                    problems.push(format!("ability '{}' uses unknown camera script '{cam}'", p.ability));
+                }
+        }
+        if let Some(cam) = &self.presentation.kill_camera
+            && !self.camera_scripts.contains_key(cam) {
+                problems.push(format!("kill camera uses unknown camera script '{cam}'"));
+            }
         for squad in self.squads.values() {
             for m in &squad.members {
                 if !self.classes.contains_key(&m.class) {

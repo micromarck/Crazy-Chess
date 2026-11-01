@@ -8,6 +8,7 @@ use tactics_core::prelude::*;
 
 use crate::FrameSet;
 use crate::camera::CameraRig;
+use crate::camera_director::CameraDirector;
 use crate::playback::Playback;
 use crate::state::BattleState;
 
@@ -36,9 +37,10 @@ fn enemy_think(
     mut brain: ResMut<EnemyBrain>,
     mut state: ResMut<BattleState>,
     mut playback: ResMut<Playback>,
+    director: Res<CameraDirector>,
     mut rig: Single<&mut CameraRig>,
 ) {
-    if playback.is_busy() || state.battle.is_over() || state.battle.active_team() != Team::Enemy {
+    if playback.is_busy() || director.is_active() || state.battle.is_over() || state.battle.active_team() != Team::Enemy {
         brain.delay.reset();
         return;
     }

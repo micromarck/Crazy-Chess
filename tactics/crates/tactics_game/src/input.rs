@@ -21,6 +21,7 @@ use tactics_core::prelude::*;
 
 use crate::FrameSet;
 use crate::camera::{CameraRig, CameraSystems, TouchGesture};
+use crate::camera_director::CameraDirector;
 use crate::coords::world_to_grid;
 use crate::hud::LogMessages;
 use crate::playback::Playback;
@@ -45,9 +46,10 @@ impl Plugin for InputPlugin {
     }
 }
 
-/// Run condition: it's the player's turn and nothing is animating.
-pub fn player_can_act(state: Res<BattleState>, playback: Res<Playback>) -> bool {
-    !playback.is_busy() && !state.battle.is_over() && state.battle.active_team() == Team::Player
+/// Run condition: it's the player's turn and nothing is animating (including
+/// camera scripts).
+pub fn player_can_act(state: Res<BattleState>, playback: Res<Playback>, director: Res<CameraDirector>) -> bool {
+    !playback.is_busy() && !director.is_active() && !state.battle.is_over() && state.battle.active_team() == Team::Player
 }
 
 /// Where the pointer is this frame, in window coordinates (mouse or first touch).
@@ -272,11 +274,12 @@ pub fn next_ready_unit(battle: &Battle, current: Option<UnitId>) -> Option<UnitI
 fn auto_select(
     state: Res<BattleState>,
     playback: Res<Playback>,
+    director: Res<CameraDirector>,
     mut selection: ResMut<Selection>,
     mut rig: Single<&mut CameraRig>,
     mut focused_round: Local<u32>,
 ) {
-    if playback.is_busy() || state.battle.active_team() != Team::Player || state.battle.is_over() {
+    if playback.is_busy() || director.is_active() || state.battle.active_team() != Team::Player || state.battle.is_over() {
         return;
     }
     let valid = selection.unit.and_then(|id| state.battle.unit(id)).is_some_and(|u| u.can_act());

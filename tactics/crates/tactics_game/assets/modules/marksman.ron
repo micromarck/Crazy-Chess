@@ -54,6 +54,12 @@
         ),
     ],
 
+    // How the moves look: animation slot, projectile, camera script.
+    presentations: [
+        (ability: "aimed_shot", animation: "shoot", camera: "over_shoulder", camera_chance: 100, windup: 0.5),
+        (ability: "psi_bolt", animation: "cast", projectile: Beam, windup: 0.5),
+    ],
+
     // Give existing classes the new moves without redefining the classes.
     grants: [
         (class: "sniper", ability: "aimed_shot"),

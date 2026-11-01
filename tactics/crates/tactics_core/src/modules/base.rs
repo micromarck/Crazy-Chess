@@ -33,7 +33,100 @@ impl GameModule for BaseModule {
         register_weapons(rules);
         register_classes(rules);
         register_squads_maps_ai(rules);
+        register_presentation(rules);
     }
+}
+
+/// Models, camera scripts and ability visuals. Pure data for the frontend.
+fn register_presentation(rules: &mut Ruleset) {
+    use CameraAnchor::*;
+    use CameraStep::*;
+
+    // Primitive models (no assets needed). Replace with glTF scenes by
+    // registering a ModelDef with the same id and a `scene` path.
+    rules.add_model(ModelDef::primitive("soldier", PrimitiveShape::Soldier));
+    rules.add_model(ModelDef::primitive("alien", PrimitiveShape::Alien));
+
+    // XCOM-style over-the-shoulder shot.
+    rules.add_camera_script(CameraScriptDef {
+        id: "over_shoulder".into(),
+        steps: vec![
+            Together(vec![
+                Focus { on: Midpoint, duration: 0.45 },
+                FaceAlong { from: Actor, to: Target, offset_degrees: 25.0, duration: 0.45 },
+                Zoom { distance: 9.0, duration: 0.45 },
+                Pitch { degrees: 25.0, duration: 0.45 },
+            ]),
+            Wait { duration: 1.1 },
+            Restore { duration: 0.5 },
+        ],
+    });
+
+    // Slow-motion orbit around the victim.
+    rules.add_camera_script(CameraScriptDef {
+        id: "kill_cam".into(),
+        steps: vec![
+            TimeScale { scale: 0.35 },
+            Together(vec![
+                Focus { on: Target, duration: 0.35 },
+                Zoom { distance: 6.5, duration: 0.35 },
+                Pitch { degrees: 30.0, duration: 0.35 },
+            ]),
+            Orbit { degrees: 40.0, duration: 1.0 },
+            Restore { duration: 0.5 },
+        ],
+    });
+
+    // Pull back and shake for explosions.
+    rules.add_camera_script(CameraScriptDef {
+        id: "explosion_cam".into(),
+        steps: vec![
+            Together(vec![
+                Focus { on: Target, duration: 0.4 },
+                Zoom { distance: 13.0, duration: 0.4 },
+                Pitch { degrees: 60.0, duration: 0.4 },
+            ]),
+            Wait { duration: 0.35 },
+            Shake { strength: 0.35, duration: 0.5 },
+            Restore { duration: 0.6 },
+        ],
+    });
+
+    // A short look at the unit (stances, buffs).
+    rules.add_camera_script(CameraScriptDef {
+        id: "focus_actor".into(),
+        steps: vec![
+            Together(vec![Focus { on: Actor, duration: 0.35 }, Zoom { distance: 10.0, duration: 0.35 }]),
+            Wait { duration: 0.4 },
+            Restore { duration: 0.4 },
+        ],
+    });
+
+    let present = |ability: &str, animation: &str| AbilityPresentation {
+        ability: AbilityId::new(ability),
+        animation: Some(animation.into()),
+        ..Default::default()
+    };
+    rules.add_presentation(AbilityPresentation {
+        camera: Some("over_shoulder".into()),
+        camera_chance: 50,
+        ..present(ids::SHOOT, "shoot")
+    });
+    rules.add_presentation(AbilityPresentation {
+        projectile: ProjectileStyle::None,
+        ..present(ids::OVERWATCH, "overwatch")
+    });
+    rules.add_presentation(AbilityPresentation {
+        projectile: ProjectileStyle::None,
+        ..present(ids::HUNKER, "hunker")
+    });
+    rules.add_presentation(AbilityPresentation {
+        projectile: ProjectileStyle::None,
+        windup: 0.6,
+        ..present(ids::RELOAD, "reload")
+    });
+
+    rules.presentation = PresentationSettings { kill_camera: Some("kill_cam".into()), kill_camera_chance: 100 };
 }
 
 fn register_abilities(rules: &mut Ruleset) {
