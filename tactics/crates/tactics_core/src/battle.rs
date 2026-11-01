@@ -1,36 +1,46 @@
 //! The battle: authoritative game state and the rules that change it.
 //!
-//! [`Battle`] owns the map, every unit, the turn order and the RNG. Its public
-//! surface is intentionally small:
+//! [`Battle`] owns the map, the [`Ruleset`] (all content), every unit, the
+//! turn order and the RNG. Its public surface is intentionally small:
 //!
-//! * **Queries** (`unit`, `movement_range`, `shot_preview`, `visible_enemies`,
-//!   ...) are read-only and cheap enough to call every frame from a UI.
+//! * **Queries** (`unit`, `movement_range`, `preview`, `visible_enemies`, ...)
+//!   are read-only and cheap enough to call every frame from a UI.
 //! * [`Battle::validate`] says whether an [`Action`] is legal without changing
 //!   anything.
 //! * [`Battle::apply`] performs an action and returns the resulting
-//!   [`GameEvent`]s. It is the **only** way to mutate the battle.
+//!   [`GameEvent`]s. It is the **only** way to mutate the battle state
+//!   (content can be tuned live through [`Battle::rules_mut`]).
 //!
 //! Turn structure (XCOM-like):
-//! 1. All units of the active team get [`Unit::MAX_ACTION_POINTS`].
-//!    Their overwatch / hunker states from the previous turn expire.
-//! 2. Units act in any order. Moving costs 1 AP per `mobility` worth of
-//!    movement points; shooting, overwatch and hunkering consume all remaining AP.
-//! 3. The turn ends when the team issues [`Action::EndTurn`] or automatically
-//!    when no unit of the active team can act any more.
+//! 1. All units of the active team get `rules.combat.action_points` AP; their
+//!    overwatch/defend states expire and ability cooldowns tick down.
+//! 2. Units act in any order: move (1 AP per `mobility` worth of movement) or
+//!    use abilities (cost defined per ability).
+//! 3. The turn ends on [`Action::EndTurn`] or automatically when no unit of the
+//!    active team can act any more.
+//!
+//! ## How an ability resolves
+//! [`Action::UseAbility`] → look up the [`AbilityDef`] → check AP, ammo,
+//! cooldown, charges and the target (kind, range, line of sight) → emit
+//! [`GameEvent::AbilityUsed`] → pay costs → run the [`AbilityEffect`] → spend AP.
+//! Adding a new *kind* of effect means adding an `AbilityEffect` variant and
+//! one match arm in [`Battle::run_effect`].
 
-use crate::action::{Action, ActionError};
-use crate::combat::{preview_shot, ShotPreview};
+use crate::action::{Action, ActionError, Target};
+use crate::combat::{ShotPreview, preview_attack};
+use crate::content::{AbilityDef, AbilityEffect, AbilityId, AbilityRange, AttackProfile, Ruleset, Targeting};
 use crate::event::{GameEvent, ShotOutcome};
 use crate::grid::{GridPos, Map};
 use crate::pathfinding::{self, ReachableSet};
 use crate::rng::GameRng;
-use crate::unit::{Team, Unit, UnitId, UnitTemplate};
+use crate::unit::{Team, Unit, UnitId};
 use crate::visibility;
 
 /// Authoritative state of one tactical engagement.
 #[derive(Debug, Clone)]
 pub struct Battle {
     map: Map,
+    rules: Ruleset,
     /// Indexed by `UnitId.0`. Dead units stay in the list (hp <= 0) so ids remain stable.
     units: Vec<Unit>,
     active_team: Team,
@@ -40,10 +50,11 @@ pub struct Battle {
 }
 
 impl Battle {
-    /// Creates an empty battle on `map`. The player team moves first.
-    pub fn new(map: Map, seed: u64) -> Self {
+    /// Creates an empty battle on `map` using `rules`. The player team moves first.
+    pub fn new(map: Map, rules: Ruleset, seed: u64) -> Self {
         Self {
             map,
+            rules,
             units: Vec::new(),
             active_team: Team::Player,
             round: 1,
@@ -52,27 +63,43 @@ impl Battle {
         }
     }
 
-    /// Places a new unit on the map and returns its id.
+    /// Places a new unit of class `class` on the map and returns its id.
     ///
-    /// # Panics
-    /// Panics if `pos` is not walkable or already occupied; spawning is a setup
-    /// step and a bad spawn is a programming error, not a gameplay situation.
-    pub fn spawn(&mut self, template: UnitTemplate, team: Team, pos: GridPos) -> UnitId {
-        assert!(self.map.is_walkable(pos), "cannot spawn on non-walkable tile {pos}");
-        assert!(self.unit_at(pos).is_none(), "tile {pos} already occupied");
+    /// Fails if the class (or its weapon) isn't registered, or the tile is not
+    /// free — data modules can be wrong, so this reports instead of panicking.
+    pub fn spawn(&mut self, class: &str, name: impl Into<String>, team: Team, pos: GridPos) -> Result<UnitId, String> {
+        let class = self.rules.class(class).ok_or_else(|| format!("unknown unit class '{class}'"))?;
+        let mut weapon = self
+            .rules
+            .weapon(&class.weapon)
+            .ok_or_else(|| format!("class '{}' uses unknown weapon '{}'", class.id, class.weapon))?
+            .clone();
+        if !self.map.is_walkable(pos) {
+            return Err(format!("cannot spawn on non-walkable tile {pos}"));
+        }
+        if self.unit_at(pos).is_some() {
+            return Err(format!("tile {pos} already occupied"));
+        }
+        weapon.ammo = weapon.clip_size;
         let id = UnitId(self.units.len() as u32);
-        self.units.push(Unit {
+        let unit = Unit {
             id,
-            name: template.name,
+            name: name.into(),
+            class: class.id.clone(),
             team,
             pos,
-            hp: template.stats.max_hp,
-            action_points: if team == self.active_team { Unit::MAX_ACTION_POINTS } else { 0 },
-            stats: template.stats,
-            weapon: template.weapon,
+            hp: class.stats.max_hp,
+            action_points: if team == self.active_team { self.rules.combat.action_points } else { 0 },
+            stats: class.stats,
+            weapon,
+            abilities: class.abilities.clone(),
+            cooldowns: Default::default(),
+            charges: Default::default(),
             status: Default::default(),
-        });
-        id
+            model: class.model.clone(),
+        };
+        self.units.push(unit);
+        Ok(id)
     }
 
     // ------------------------------------------------------------------
@@ -81,6 +108,16 @@ impl Battle {
 
     pub fn map(&self) -> &Map {
         &self.map
+    }
+
+    /// All content (abilities, weapons, classes...) this battle uses.
+    pub fn rules(&self) -> &Ruleset {
+        &self.rules
+    }
+
+    /// Live content tuning (in-game editor). Changes apply from the next action.
+    pub fn rules_mut(&mut self) -> &mut Ruleset {
+        &mut self.rules
     }
 
     pub fn active_team(&self) -> Team {
@@ -145,26 +182,61 @@ impl Battle {
         self.living(team).any(|u| self.can_unit_see(u, pos))
     }
 
-    /// Living enemies that `id` could legally shoot right now (ignoring AP/ammo).
+    /// Living enemies within weapon range and sight of `id`.
     pub fn visible_enemies(&self, id: UnitId) -> Vec<UnitId> {
-        let Some(shooter) = self.unit(id) else {
+        let Some(u) = self.unit(id) else {
             return Vec::new();
         };
-        self.living(shooter.team.opponent())
-            .filter(|t| self.check_shot_geometry(shooter, t).is_ok())
+        let range = u.weapon.max_range.min(u.stats.sight);
+        self.living(u.team.opponent())
+            .filter(|t| u.pos.distance(t.pos) <= range && visibility::has_line_of_sight(&self.map, u.pos, t.pos))
             .map(|t| t.id)
             .collect()
     }
 
-    /// Hit/crit preview for a shot. Fails if the shot would be illegal geometrically.
-    pub fn shot_preview(&self, shooter: UnitId, target: UnitId) -> Result<ShotPreview, ActionError> {
-        let s = self.living_unit(shooter)?;
-        let t = self.living_unit(target)?;
-        if s.team == t.team {
-            return Err(ActionError::InvalidTarget(target));
+    /// Looks up an ability definition.
+    pub fn ability(&self, id: &AbilityId) -> Option<&AbilityDef> {
+        self.rules.ability(id)
+    }
+
+    /// Maximum reach of `def` when used by `unit`, in tiles.
+    pub fn ability_range(&self, unit: &Unit, def: &AbilityDef) -> f32 {
+        match def.range {
+            AbilityRange::Weapon => unit.weapon.max_range.min(unit.stats.sight),
+            AbilityRange::Fixed(r) => r,
         }
-        self.check_shot_geometry(s, t)?;
-        Ok(preview_shot(&self.map, s, t, false))
+    }
+
+    /// Remaining uses of a limited ability (`None` = unlimited).
+    pub fn charges_left(&self, unit: &Unit, def: &AbilityDef) -> Option<u32> {
+        def.charges.map(|max| unit.charges.get(&def.id).copied().unwrap_or(max))
+    }
+
+    /// The first single-target enemy attack the unit knows ("primary shot").
+    pub fn primary_attack(&self, unit: &Unit) -> Option<&AbilityDef> {
+        unit.abilities
+            .iter()
+            .filter_map(|a| self.rules.ability(a))
+            .find(|d| d.is_direct_attack())
+    }
+
+    /// Who an ability would hit and with what odds, without rolling.
+    /// Returns one entry per affected unit (several for area attacks).
+    pub fn preview(&self, unit: UnitId, ability: &AbilityId, target: Target) -> Result<Vec<(UnitId, ShotPreview)>, ActionError> {
+        let user = self.living_unit(unit)?;
+        let def = self.rules.ability(ability).ok_or_else(|| ActionError::UnknownAbility(ability.clone()))?;
+        let point = self.check_target(user, def, target)?;
+        let AbilityEffect::Attack(profile) = &def.effect else {
+            return Ok(Vec::new());
+        };
+        Ok(self
+            .attack_victims(user, profile, point, target)
+            .into_iter()
+            .map(|(victim, origin)| {
+                let v = &self.units[victim.0 as usize];
+                (victim, preview_attack(&self.rules.combat, &self.map, origin, user, v, profile))
+            })
+            .collect())
     }
 
     /// Does any unit of the active team still have action points?
@@ -184,18 +256,6 @@ impl Battle {
         Ok(unit)
     }
 
-    /// Range and line-of-sight checks shared by normal and reaction fire.
-    fn check_shot_geometry(&self, shooter: &Unit, target: &Unit) -> Result<(), ActionError> {
-        let dist = shooter.pos.distance(target.pos);
-        if dist > shooter.weapon.max_range || dist > shooter.stats.sight {
-            return Err(ActionError::OutOfRange);
-        }
-        if !visibility::has_line_of_sight(&self.map, shooter.pos, target.pos) {
-            return Err(ActionError::NoLineOfSight);
-        }
-        Ok(())
-    }
-
     /// Checks that `id` exists, is alive, belongs to the active team and has AP.
     fn ready_actor(&self, id: UnitId) -> Result<&Unit, ActionError> {
         let unit = self.living_unit(id)?;
@@ -208,45 +268,81 @@ impl Battle {
         Ok(unit)
     }
 
+    /// Validates the target of an ability and returns the point it is aimed at.
+    fn check_target(&self, user: &Unit, def: &AbilityDef, target: Target) -> Result<GridPos, ActionError> {
+        let point = match (def.targeting, target) {
+            (Targeting::SelfOnly, Target::None) => return Ok(user.pos),
+            (Targeting::SelfOnly, Target::Unit(id)) if id == user.id => return Ok(user.pos),
+            (Targeting::Enemy, Target::Unit(id)) | (Targeting::Ally, Target::Unit(id)) => {
+                let t = self.living_unit(id).map_err(|_| ActionError::InvalidTarget(id))?;
+                let wants_enemy = def.targeting == Targeting::Enemy;
+                if (t.team != user.team) != wants_enemy {
+                    return Err(ActionError::InvalidTarget(id));
+                }
+                t.pos
+            }
+            (Targeting::Tile, Target::Tile(p)) if self.map.in_bounds(p) => p,
+            _ => return Err(ActionError::WrongTarget),
+        };
+        if user.pos.distance(point) > self.ability_range(user, def) {
+            return Err(ActionError::OutOfRange);
+        }
+        if def.requires_los && !visibility::has_line_of_sight(&self.map, user.pos, point) {
+            return Err(ActionError::NoLineOfSight);
+        }
+        Ok(point)
+    }
+
     /// Returns `Ok(())` if `action` could be applied right now.
     pub fn validate(&self, action: &Action) -> Result<(), ActionError> {
         if self.is_over() {
             return Err(ActionError::BattleOver);
         }
-        match *action {
+        match action {
             Action::Move { unit, to } => {
-                let u = self.ready_actor(unit)?;
-                if to == u.pos || !self.movement_range(unit).contains(to) {
-                    return Err(ActionError::Unreachable(to));
+                let u = self.ready_actor(*unit)?;
+                if *to == u.pos || !self.movement_range(*unit).contains(*to) {
+                    return Err(ActionError::Unreachable(*to));
                 }
                 Ok(())
             }
-            Action::Shoot { unit, target } => {
-                let s = self.ready_actor(unit)?;
-                if s.weapon.ammo <= 0 {
+            Action::UseAbility { unit, ability, target } => {
+                let u = self.ready_actor(*unit)?;
+                let def = self.rules.ability(ability).ok_or_else(|| ActionError::UnknownAbility(ability.clone()))?;
+                if !u.has_ability(ability) {
+                    return Err(ActionError::AbilityNotKnown(ability.clone()));
+                }
+                if u.action_points < def.cost.required() {
+                    return Err(ActionError::NoActionPoints(*unit));
+                }
+                let cd = u.cooldown(ability);
+                if cd > 0 {
+                    return Err(ActionError::OnCooldown { ability: ability.clone(), turns: cd });
+                }
+                if self.charges_left(u, def) == Some(0) {
+                    return Err(ActionError::NoCharges(ability.clone()));
+                }
+                if u.weapon.ammo < def.ammo_cost {
                     return Err(ActionError::OutOfAmmo);
                 }
-                let t = self.living_unit(target)?;
-                if t.team == s.team {
-                    return Err(ActionError::InvalidTarget(target));
+                // Effect-specific requirements.
+                match &def.effect {
+                    AbilityEffect::Overwatch(_) if u.weapon.ammo <= 0 => return Err(ActionError::OutOfAmmo),
+                    AbilityEffect::Reload if u.weapon.ammo >= u.weapon.clip_size => {
+                        return Err(ActionError::AlreadyFullAmmo);
+                    }
+                    _ => {}
                 }
-                self.check_shot_geometry(s, t)
-            }
-            Action::Overwatch { unit } => {
-                let u = self.ready_actor(unit)?;
-                if u.weapon.ammo <= 0 {
-                    return Err(ActionError::OutOfAmmo);
-                }
-                Ok(())
-            }
-            Action::Reload { unit } => {
-                let u = self.ready_actor(unit)?;
-                if u.weapon.ammo >= u.weapon.clip_size {
-                    return Err(ActionError::AlreadyFullAmmo);
+                let point = self.check_target(u, def, *target)?;
+                if let AbilityEffect::Heal { .. } = def.effect {
+                    let healee = self.unit_at(point).ok_or(ActionError::WrongTarget)?;
+                    if healee.hp >= healee.stats.max_hp {
+                        return Err(ActionError::NothingToHeal);
+                    }
                 }
                 Ok(())
             }
-            Action::Hunker { unit } | Action::Wait { unit } => self.ready_actor(unit).map(|_| ()),
+            Action::Wait { unit } => self.ready_actor(*unit).map(|_| ()),
             Action::EndTurn => Ok(()),
         }
     }
@@ -268,26 +364,7 @@ impl Battle {
 
         match action {
             Action::Move { unit, to } => self.do_move(unit, to, &mut events),
-            Action::Shoot { unit, target } => {
-                self.resolve_shot(unit, target, false, &mut events);
-                self.spend_all_ap(unit, &mut events);
-            }
-            Action::Overwatch { unit } => {
-                self.unit_mut(unit).status.overwatch = true;
-                events.push(GameEvent::OverwatchSet { unit });
-                self.spend_all_ap(unit, &mut events);
-            }
-            Action::Hunker { unit } => {
-                self.unit_mut(unit).status.hunkered = true;
-                events.push(GameEvent::Hunkered { unit });
-                self.spend_all_ap(unit, &mut events);
-            }
-            Action::Reload { unit } => {
-                let u = self.unit_mut(unit);
-                u.weapon.ammo = u.weapon.clip_size;
-                events.push(GameEvent::Reloaded { unit });
-                self.spend_ap(unit, 1, &mut events);
-            }
+            Action::UseAbility { unit, ability, target } => self.use_ability(unit, ability, target, &mut events),
             Action::Wait { unit } => self.spend_all_ap(unit, &mut events),
             Action::EndTurn => {
                 self.end_turn(&mut events);
@@ -314,10 +391,79 @@ impl Battle {
         self.spend_ap(id, ap, events);
     }
 
+    /// Pays costs, runs the effect, spends AP. Assumes `validate` passed.
+    fn use_ability(&mut self, unit: UnitId, ability: AbilityId, target: Target, events: &mut Vec<GameEvent>) {
+        let def = self.rules.ability(&ability).cloned().expect("validated");
+        let point = self.check_target(&self.units[unit.0 as usize], &def, target).expect("validated");
+        events.push(GameEvent::AbilityUsed { unit, ability: ability.clone(), target });
+
+        // Costs.
+        let charges = self.charges_left(&self.units[unit.0 as usize], &def);
+        let u = self.unit_mut(unit);
+        u.weapon.ammo -= def.ammo_cost;
+        if def.cooldown > 0 {
+            u.cooldowns.insert(ability.clone(), def.cooldown);
+        }
+        if let Some(left) = charges {
+            u.charges.insert(ability.clone(), left.saturating_sub(1));
+        }
+
+        self.run_effect(unit, &def, point, target, events);
+
+        match def.cost {
+            crate::content::ApCost::EndsTurn => self.spend_all_ap(unit, events),
+            crate::content::ApCost::Points(n) => self.spend_ap(unit, n, events),
+        }
+    }
+
+    /// Executes an ability's effect. **Add new effect kinds here.**
+    fn run_effect(&mut self, unit: UnitId, def: &AbilityDef, point: GridPos, target: Target, events: &mut Vec<GameEvent>) {
+        match &def.effect {
+            AbilityEffect::Attack(profile) => {
+                if profile.area_radius > 0.0 {
+                    events.push(GameEvent::Explosion { center: point, radius: profile.area_radius });
+                }
+                let user = self.units[unit.0 as usize].clone();
+                for (victim, origin) in self.attack_victims(&user, profile, point, target) {
+                    self.resolve_attack(unit, victim, &def.id, origin, profile, false, events);
+                }
+            }
+            AbilityEffect::Overwatch(_) => self.unit_mut(unit).status.overwatch = Some(def.id.clone()),
+            AbilityEffect::Defend { defense_bonus } => self.unit_mut(unit).status.defense_bonus = *defense_bonus,
+            AbilityEffect::Reload => {
+                let u = self.unit_mut(unit);
+                u.weapon.ammo = u.weapon.clip_size;
+            }
+            AbilityEffect::Heal { amount } => {
+                if let Some(healee) = self.unit_at(point).map(|u| u.id) {
+                    let h = self.unit_mut(healee);
+                    let before = h.hp;
+                    h.hp = (h.hp + amount).min(h.stats.max_hp);
+                    let healed = h.hp - before;
+                    events.push(GameEvent::UnitHealed { unit: healee, amount: healed });
+                }
+            }
+        }
+    }
+
+    /// Units an attack affects, each with the origin used for cover/range.
+    fn attack_victims(&self, user: &Unit, profile: &AttackProfile, point: GridPos, target: Target) -> Vec<(UnitId, GridPos)> {
+        if profile.area_radius > 0.0 {
+            self.units
+                .iter()
+                .filter(|u| u.is_alive() && u.pos.distance(point) <= profile.area_radius)
+                .map(|u| (u.id, point))
+                .collect()
+        } else if let Target::Unit(id) = target {
+            vec![(id, user.pos)]
+        } else {
+            self.unit_at(point).map(|u| vec![(u.id, user.pos)]).unwrap_or_default()
+        }
+    }
+
     /// Moves step by step so overwatchers can interrupt mid-path.
     fn do_move(&mut self, id: UnitId, to: GridPos, events: &mut Vec<GameEvent>) {
         let range = self.movement_range(id);
-        // Validated above, so the path exists.
         let path = range.path_to(to).unwrap_or_default();
         let cost = range.cost(to).unwrap_or(0);
         let ap_cost = self.move_cost_ap(id, cost);
@@ -330,57 +476,76 @@ impl Battle {
             self.unit_mut(id).pos = step;
             segment.push(step);
 
-            if let Some(watcher) = self.find_overwatcher(id) {
+            if let Some((watcher, ability)) = self.find_overwatcher(id) {
                 // Flush the walked part first so the frontend animates in order.
-                events.push(GameEvent::UnitMoved {
-                    unit: id,
-                    from: segment_start,
-                    path: std::mem::take(&mut segment),
-                });
+                events.push(GameEvent::UnitMoved { unit: id, from: segment_start, path: std::mem::take(&mut segment) });
                 segment_start = step;
-                self.unit_mut(watcher).status.overwatch = false;
-                self.resolve_shot(watcher, id, true, events);
+                self.unit_mut(watcher).status.overwatch = None;
+                self.unit_mut(watcher).weapon.ammo -= 1;
+                let watcher_pos = self.units[watcher.0 as usize].pos;
+                let profile = self
+                    .rules
+                    .ability(&ability)
+                    .and_then(|d| d.effect.attack_profile().cloned())
+                    .unwrap_or_default();
+                self.resolve_attack(watcher, id, &ability, watcher_pos, &profile, true, events);
                 if !self.units[id.0 as usize].is_alive() {
                     return;
                 }
             }
         }
         if !segment.is_empty() {
-            events.push(GameEvent::UnitMoved {
-                unit: id,
-                from: segment_start,
-                path: segment,
-            });
+            events.push(GameEvent::UnitMoved { unit: id, from: segment_start, path: segment });
         }
     }
 
     /// First enemy on overwatch that can see and reach `mover` at its current tile.
-    fn find_overwatcher(&self, mover: UnitId) -> Option<UnitId> {
+    fn find_overwatcher(&self, mover: UnitId) -> Option<(UnitId, AbilityId)> {
         let m = &self.units[mover.0 as usize];
-        self.living(m.team.opponent())
-            .filter(|w| w.status.overwatch && w.weapon.ammo > 0)
-            .find(|w| self.check_shot_geometry(w, m).is_ok())
-            .map(|w| w.id)
+        self.living(m.team.opponent()).find_map(|w| {
+            let ability = w.status.overwatch.clone()?;
+            let def = self.rules.ability(&ability)?;
+            let in_range = w.pos.distance(m.pos) <= self.ability_range(w, def).min(w.stats.sight);
+            (w.weapon.ammo > 0 && in_range && visibility::has_line_of_sight(&self.map, w.pos, m.pos))
+                .then_some((w.id, ability))
+        })
     }
 
-    /// Rolls a shot and applies damage. Does not touch action points.
-    fn resolve_shot(&mut self, shooter: UnitId, target: UnitId, reaction: bool, events: &mut Vec<GameEvent>) {
-        let preview = preview_shot(&self.map, &self.units[shooter.0 as usize], &self.units[target.0 as usize], reaction);
-        self.unit_mut(shooter).weapon.ammo -= 1;
-
-        let outcome = if self.rng.roll_percent(preview.hit_chance) {
+    /// Rolls one attack and applies damage. Does not touch AP or ammo.
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_attack(
+        &mut self,
+        attacker: UnitId,
+        target: UnitId,
+        ability: &AbilityId,
+        origin: GridPos,
+        profile: &AttackProfile,
+        reaction: bool,
+        events: &mut Vec<GameEvent>,
+    ) {
+        let preview = preview_attack(
+            &self.rules.combat,
+            &self.map,
+            origin,
+            &self.units[attacker.0 as usize],
+            &self.units[target.0 as usize],
+            profile,
+        );
+        let hit = preview.hit_chance >= 100 || self.rng.roll_percent(preview.hit_chance);
+        let outcome = if hit {
             let critical = self.rng.roll_percent(preview.crit_chance);
-            let weapon = &self.units[shooter.0 as usize].weapon;
-            let (lo, hi, bonus) = (weapon.damage_min, weapon.damage_max, weapon.crit_bonus);
-            let damage = self.rng.range_inclusive(lo, hi) + if critical { bonus } else { 0 };
+            let (lo, hi) = preview.damage;
+            let damage = (self.rng.range_inclusive(lo, hi) + if critical { preview.crit_damage } else { 0 }).max(0);
             ShotOutcome::Hit { damage, critical }
         } else {
             ShotOutcome::Miss
         };
 
-        events.push(GameEvent::ShotFired {
-            shooter,
+        events.push(GameEvent::AttackResolved {
+            attacker,
+            ability: ability.clone(),
             target,
+            origin,
             hit_chance: preview.hit_chance,
             outcome,
             reaction,
@@ -388,12 +553,14 @@ impl Battle {
 
         if let ShotOutcome::Hit { damage, .. } = outcome {
             let t = self.unit_mut(target);
-            t.hp -= damage;
-            if t.hp <= 0 {
-                t.hp = 0;
-                t.action_points = 0;
-                t.status = Default::default();
-                events.push(GameEvent::UnitKilled { unit: target });
+            if t.is_alive() {
+                t.hp -= damage;
+                if t.hp <= 0 {
+                    t.hp = 0;
+                    t.action_points = 0;
+                    t.status = Default::default();
+                    events.push(GameEvent::UnitKilled { unit: target });
+                }
             }
         }
     }
@@ -412,7 +579,6 @@ impl Battle {
     }
 
     fn end_turn(&mut self, events: &mut Vec<GameEvent>) {
-        // Units of the ending team lose any unused AP.
         for u in self.units.iter_mut().filter(|u| u.team == self.active_team) {
             u.action_points = 0;
         }
@@ -420,13 +586,18 @@ impl Battle {
         if self.active_team == Team::Player {
             self.round += 1;
         }
-        // Refresh the incoming team. Overwatch/hunker expire now (they protected
-        // the unit during the opponent's turn and have done their job).
+        // Refresh the incoming team: AP back, reactive stances expire (they
+        // protected the unit during the opponent's turn), cooldowns tick.
         let team = self.active_team;
+        let ap = self.rules.combat.action_points;
         for u in self.units.iter_mut().filter(|u| u.team == team && u.is_alive()) {
-            u.action_points = Unit::MAX_ACTION_POINTS;
-            u.status.overwatch = false;
-            u.status.hunkered = false;
+            u.action_points = ap;
+            u.status.overwatch = None;
+            u.status.defense_bonus = 0;
+            u.cooldowns.retain(|_, turns| {
+                *turns = turns.saturating_sub(1);
+                *turns > 0
+            });
         }
         events.push(GameEvent::TurnStarted { team, round: self.round });
     }
@@ -435,39 +606,47 @@ impl Battle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::unit::UnitTemplate;
+    use crate::content::{ApCost, Ruleset};
+    use crate::modules::GrenadierModule;
 
-    fn duel(art: &str) -> (Battle, UnitId, UnitId) {
-        let map = Map::from_ascii(art);
-        let mut b = Battle::new(map, 1234);
-        let a = b.spawn(UnitTemplate::rifleman("A"), Team::Player, Map::find_markers(art, 'A')[0]);
-        let e = b.spawn(UnitTemplate::alien_grunt("E"), Team::Enemy, Map::find_markers(art, 'E')[0]);
+    fn rules() -> Ruleset {
+        let mut r = Ruleset::standard();
+        r.add_module(&GrenadierModule);
+        r
+    }
+
+    /// One player unit of `class` at `A`, one sectoid at `E`.
+    fn duel(art: &str, class: &str) -> (Battle, UnitId, UnitId) {
+        let mut b = Battle::new(Map::from_ascii(art), rules(), 1234);
+        let a = b.spawn(class, "A", Team::Player, Map::find_markers(art, 'A')[0]).unwrap();
+        let e = b.spawn("sectoid", "E", Team::Enemy, Map::find_markers(art, 'E')[0]).unwrap();
         (b, a, e)
     }
 
+    fn shoot(a: UnitId, e: UnitId) -> Action {
+        Action::ability(a, "shoot", Target::Unit(e))
+    }
+
+    const OPEN: &str = "
+        ..E..
+        .....
+        ..A..
+    ";
+
     #[test]
     fn move_costs_ap_and_dash_costs_two() {
-        let (mut b, a, _) = duel(
-            "
+        let art = "
             E.........
             ..........
             A.........
-            ",
-        );
-        // 3 orthogonal steps = 6 MP <= 12 mobility -> 1 AP.
+        ";
+        let (mut b, a, _) = duel(art, "rifleman");
         b.apply(Action::Move { unit: a, to: GridPos::new(3, 0) }).unwrap();
         assert_eq!(b.unit(a).unwrap().action_points, 1);
 
-        let (mut b, a, _) = duel(
-            "
-            E.........
-            ..........
-            A.........
-            ",
-        );
-        // 8 orthogonal steps = 16 MP > 12 -> 2 AP (dash), turn passes automatically.
+        let (mut b, a, _) = duel(art, "rifleman");
         b.apply(Action::Move { unit: a, to: GridPos::new(8, 0) }).unwrap();
-        assert_eq!(b.active_team(), Team::Enemy);
+        assert_eq!(b.active_team(), Team::Enemy, "dash used both AP, turn passed");
     }
 
     #[test]
@@ -478,26 +657,19 @@ mod tests {
             HHHHH
             ..A..
             ",
+            "rifleman",
         );
-        assert_eq!(
-            b.validate(&Action::Shoot { unit: a, target: e }),
-            Err(ActionError::NoLineOfSight)
-        );
+        assert_eq!(b.validate(&shoot(a, e)), Err(ActionError::NoLineOfSight));
     }
 
     #[test]
     fn shooting_uses_ammo_and_ends_unit_turn() {
-        let (mut b, a, e) = duel(
-            "
-            ..E..
-            .....
-            ..A..
-            ",
-        );
-        let events = b.apply(Action::Shoot { unit: a, target: e }).unwrap();
-        assert!(events.iter().any(|ev| matches!(ev, GameEvent::ShotFired { .. })));
-        assert_eq!(b.unit(a).unwrap().weapon.ammo, b.unit(a).unwrap().weapon.clip_size - 1);
-        // Only unit on the team is out of AP, so the turn passed (unless the shot ended the battle).
+        let (mut b, a, e) = duel(OPEN, "rifleman");
+        let events = b.apply(shoot(a, e)).unwrap();
+        assert!(matches!(events[0], GameEvent::AbilityUsed { .. }));
+        assert!(events.iter().any(|ev| matches!(ev, GameEvent::AttackResolved { .. })));
+        let u = b.unit(a).unwrap();
+        assert_eq!(u.weapon.ammo, u.weapon.clip_size - 1);
         assert!(b.is_over() || b.active_team() == Team::Enemy);
     }
 
@@ -510,40 +682,98 @@ mod tests {
             .........
             A........
         ";
-        let (mut b, a, e) = duel(art);
-        b.apply(Action::Overwatch { unit: a }).unwrap(); // also ends player turn
+        let (mut b, a, e) = duel(art, "rifleman");
+        b.apply(Action::ability(a, "overwatch", Target::None)).unwrap();
         assert_eq!(b.active_team(), Team::Enemy);
         let events = b.apply(Action::Move { unit: e, to: GridPos::new(4, 2) }).unwrap();
-        let reaction = events
+        assert!(
+            events.iter().any(|ev| matches!(ev, GameEvent::AttackResolved { reaction: true, .. })),
+            "overwatch should fire: {events:?}"
+        );
+        assert!(b.unit(a).unwrap().status.overwatch.is_none(), "overwatch is consumed");
+    }
+
+    #[test]
+    fn unknown_and_unlearned_abilities_are_rejected() {
+        let (b, a, _) = duel(OPEN, "assault");
+        assert_eq!(
+            b.validate(&Action::ability(a, "nope", Target::None)),
+            Err(ActionError::UnknownAbility("nope".into()))
+        );
+        // Assaults don't get the grenadier's grenade.
+        assert_eq!(
+            b.validate(&Action::ability(a, "frag_grenade", Target::Tile(GridPos::new(2, 2)))),
+            Err(ActionError::AbilityNotKnown("frag_grenade".into()))
+        );
+    }
+
+    #[test]
+    fn grenade_hits_area_and_uses_its_charge() {
+        let art = "
+            .......
+            ..EE...
+            .......
+            .......
+            A......
+        ";
+        let mut b = Battle::new(Map::from_ascii(art), rules(), 7);
+        let a = b.spawn("grenadier", "G", Team::Player, GridPos::new(0, 0)).unwrap();
+        let e1 = b.spawn("sectoid", "E1", Team::Enemy, GridPos::new(2, 3)).unwrap();
+        let e2 = b.spawn("sectoid", "E2", Team::Enemy, GridPos::new(3, 3)).unwrap();
+        let throw = Action::ability(a, "frag_grenade", Target::Tile(GridPos::new(2, 3)));
+
+        let preview = b.preview(a, &"frag_grenade".into(), Target::Tile(GridPos::new(2, 3))).unwrap();
+        assert_eq!(preview.len(), 2);
+        assert!(preview.iter().all(|(_, p)| p.hit_chance == 100));
+
+        let events = b.apply(throw.clone()).unwrap();
+        let hits: Vec<_> = events
             .iter()
-            .any(|ev| matches!(ev, GameEvent::ShotFired { reaction: true, .. }));
-        assert!(reaction, "overwatch should fire: {events:?}");
-        assert!(!b.unit(a).unwrap().status.overwatch, "overwatch is consumed");
+            .filter_map(|ev| match ev {
+                GameEvent::AttackResolved { target, outcome: ShotOutcome::Hit { .. }, .. } => Some(*target),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(hits, vec![e1, e2]);
+        assert_eq!(b.validate(&throw), Err(ActionError::NoCharges("frag_grenade".into())));
+    }
+
+    #[test]
+    fn heal_and_cooldowns() {
+        let mut r = rules();
+        // Give the medkit a cooldown to exercise that path too.
+        r.ability_mut(&"medkit".into()).unwrap().cooldown = 2;
+        r.ability_mut(&"medkit".into()).unwrap().cost = ApCost::Points(1);
+        let art = "
+            E....
+            .....
+            A....
+        ";
+        let mut b = Battle::new(Map::from_ascii(art), r, 3);
+        let a = b.spawn("rifleman", "A", Team::Player, GridPos::new(0, 0)).unwrap();
+        b.spawn("sectoid", "E", Team::Enemy, GridPos::new(0, 2)).unwrap();
+        let heal = Action::ability(a, "medkit", Target::Unit(a));
+        assert_eq!(b.validate(&heal), Err(ActionError::NothingToHeal));
+        b.units[a.0 as usize].hp = 2;
+        let events = b.apply(heal.clone()).unwrap();
+        assert!(events.contains(&GameEvent::UnitHealed { unit: a, amount: 4 }));
+        assert!(matches!(b.validate(&heal), Err(ActionError::OnCooldown { turns: 2, .. })));
     }
 
     #[test]
     fn same_seed_same_battle() {
         let run = || {
-            let (mut b, a, e) = duel(
-                "
-                ..E..
-                .....
-                ..A..
-                ",
-            );
+            let (mut b, a, e) = duel(OPEN, "rifleman");
             let mut log = Vec::new();
             for _ in 0..6 {
                 if b.is_over() {
                     break;
                 }
-                let action = match b.active_team() {
-                    Team::Player => Action::Shoot { unit: a, target: e },
-                    Team::Enemy => Action::Shoot { unit: e, target: a },
-                };
-                let action = if b.validate(&action) == Err(ActionError::OutOfAmmo) {
-                    Action::Reload { unit: action.actor().unwrap() }
+                let (me, them) = if b.active_team() == Team::Player { (a, e) } else { (e, a) };
+                let action = if b.validate(&shoot(me, them)) == Err(ActionError::OutOfAmmo) {
+                    Action::ability(me, "reload", Target::None)
                 } else {
-                    action
+                    shoot(me, them)
                 };
                 log.extend(b.apply(action).unwrap());
             }
@@ -553,31 +783,13 @@ mod tests {
     }
 
     #[test]
-    fn killing_last_enemy_ends_battle() {
-        let (mut b, a, e) = duel(
-            "
-            .E.
-            ...
-            .A.
-            ",
-        );
-        b.units[e.0 as usize].hp = 1;
-        // Close range, open ground: keep shooting (reloading as needed) until it lands.
-        for _ in 0..20 {
-            if b.is_over() {
-                break;
-            }
-            if b.active_team() == Team::Enemy {
-                b.apply(Action::EndTurn).unwrap();
-                continue;
-            }
-            let shoot = Action::Shoot { unit: a, target: e };
-            if b.validate(&shoot) == Err(ActionError::OutOfAmmo) {
-                b.apply(Action::Reload { unit: a }).unwrap();
-            } else {
-                b.apply(shoot).unwrap();
-            }
+    fn live_tuning_changes_odds() {
+        let (mut b, a, e) = duel(OPEN, "rifleman");
+        let before = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.hit_chance;
+        if let AbilityEffect::Attack(p) = &mut b.rules_mut().ability_mut(&"shoot".into()).unwrap().effect {
+            p.accuracy_bonus = -30;
         }
-        assert_eq!(b.winner(), Some(Team::Player));
+        let after = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.hit_chance;
+        assert_eq!(after, before - 30);
     }
 }

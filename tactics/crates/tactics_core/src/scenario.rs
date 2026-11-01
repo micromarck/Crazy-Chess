@@ -4,10 +4,11 @@
 //! the ASCII format from [`Map::from_ascii`] doubles as a simple text format.
 
 use crate::battle::Battle;
+use crate::content::Ruleset;
 use crate::grid::{GridPos, Map, Terrain};
 use crate::pathfinding;
 use crate::rng::GameRng;
-use crate::unit::{Team, UnitTemplate};
+use crate::unit::Team;
 
 /// Hand-made demo map. `A` = player spawn, `E` = enemy spawn
 /// (`h` half cover, `H` full cover, `#` void). Top row is north.
@@ -30,34 +31,24 @@ pub const DEMO_MAP: &str = "
     ......................
 ";
 
-/// The default player squad.
-fn player_squad() -> Vec<UnitTemplate> {
-    vec![
-        UnitTemplate::rifleman("Sgt. Vance"),
-        UnitTemplate::assault("Cpl. Okoye"),
-        UnitTemplate::sniper("Spc. Moreau"),
-        UnitTemplate::rifleman("Pvt. Kowalski"),
-    ]
+/// Spawns the ruleset's squad `squad_id` for `team` on the given tiles (extra
+/// members without a tile are left behind). Problems are logged to stderr and
+/// skipped so a broken data module can't crash the game.
+fn deploy(battle: &mut Battle, squad_id: &str, team: Team, spots: &[GridPos]) {
+    let members = battle.rules().squad(squad_id).map(|s| s.members.clone()).unwrap_or_default();
+    for (member, pos) in members.iter().zip(spots) {
+        if let Err(e) = battle.spawn(&member.class, member.name.clone(), team, *pos) {
+            eprintln!("scenario: could not deploy {}: {e}", member.name);
+        }
+    }
 }
 
-/// Alien pod names.
-fn enemy_squad(count: usize) -> Vec<UnitTemplate> {
-    (0..count)
-        .map(|i| UnitTemplate::alien_grunt(format!("Sectoid {}", i + 1)))
-        .collect()
-}
-
-/// The hand-authored demo battle.
-pub fn demo(seed: u64) -> Battle {
-    let map = Map::from_ascii(DEMO_MAP);
-    let mut battle = Battle::new(map, seed);
-    for (template, pos) in player_squad().into_iter().zip(Map::find_markers(DEMO_MAP, 'A')) {
-        battle.spawn(template, Team::Player, pos);
-    }
-    let enemy_spawns = Map::find_markers(DEMO_MAP, 'E');
-    for (template, pos) in enemy_squad(enemy_spawns.len()).into_iter().zip(enemy_spawns) {
-        battle.spawn(template, Team::Enemy, pos);
-    }
+/// The hand-authored demo battle (map id `"demo"`, squads `"player"` / `"enemy"`).
+pub fn demo(rules: &Ruleset, seed: u64) -> Battle {
+    let ascii = rules.map("demo").map_or(DEMO_MAP, |m| m.ascii.as_str()).to_string();
+    let mut battle = Battle::new(Map::from_ascii(&ascii), rules.clone(), seed);
+    deploy(&mut battle, "player", Team::Player, &Map::find_markers(&ascii, 'A'));
+    deploy(&mut battle, "enemy", Team::Enemy, &Map::find_markers(&ascii, 'E'));
     battle
 }
 
@@ -100,19 +91,17 @@ pub fn generate_map(width: i32, height: i32, seed: u64) -> Map {
     }
 }
 
-/// A procedurally generated 24×20 skirmish: 4 soldiers vs 5 aliens.
-pub fn skirmish(seed: u64) -> Battle {
+/// A procedurally generated 24×20 skirmish with the `"player"` and `"enemy"` squads.
+pub fn skirmish(rules: &Ruleset, seed: u64) -> Battle {
     let (w, h) = (24, 20);
     let map = generate_map(w, h, seed);
-    let mut battle = Battle::new(map, seed.wrapping_mul(31).wrapping_add(7));
-    let player_spots = [(1, 1), (2, 1), (1, 2), (3, 2)];
-    for (t, (x, y)) in player_squad().into_iter().zip(player_spots) {
-        battle.spawn(t, Team::Player, GridPos::new(x, y));
-    }
-    let enemy_spots = [(w - 2, h - 2), (w - 3, h - 2), (w - 2, h - 3), (w - 4, h - 3), (w - 3, h - 4)];
-    for (t, (x, y)) in enemy_squad(enemy_spots.len()).into_iter().zip(enemy_spots) {
-        battle.spawn(t, Team::Enemy, GridPos::new(x, y));
-    }
+    let mut battle = Battle::new(map, rules.clone(), seed.wrapping_mul(31).wrapping_add(7));
+    let spots = |list: &[(i32, i32)]| list.iter().map(|&(x, y)| GridPos::new(x, y)).collect::<Vec<_>>();
+    // Up to 6 per side; spawn zones are cleared by `generate_map`.
+    let player = spots(&[(1, 1), (2, 1), (1, 2), (3, 2), (2, 3), (3, 1)]);
+    let enemy = spots(&[(w - 2, h - 2), (w - 3, h - 2), (w - 2, h - 3), (w - 4, h - 3), (w - 3, h - 4), (w - 4, h - 2)]);
+    deploy(&mut battle, "player", Team::Player, &player);
+    deploy(&mut battle, "enemy", Team::Enemy, &enemy);
     battle
 }
 
@@ -122,7 +111,7 @@ mod tests {
 
     #[test]
     fn demo_has_both_squads() {
-        let b = demo(0);
+        let b = demo(&Ruleset::standard(), 0);
         assert_eq!(b.living(Team::Player).count(), 4);
         assert!(b.living(Team::Enemy).count() >= 3);
     }

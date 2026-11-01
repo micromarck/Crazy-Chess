@@ -74,10 +74,12 @@ fn setup_assets(
 
 /// Spawns the visual hierarchy for one unit. Children: head and gun.
 fn spawn_unit(commands: &mut Commands, assets: &UnitAssets, unit: &Unit) -> Entity {
-    let (mat, head) = match unit.team {
-        Team::Player => (&assets.player, &assets.head),
-        Team::Enemy => (&assets.enemy, &assets.big_head),
+    // Team decides the colour; the class's `model` hint decides the shape.
+    let mat = match unit.team {
+        Team::Player => &assets.player,
+        Team::Enemy => &assets.enemy,
     };
+    let head = if unit.model == "alien" { &assets.big_head } else { &assets.head };
     let body_h = theme::UNIT_HEIGHT - 0.3;
     commands
         .spawn((

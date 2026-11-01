@@ -39,6 +39,8 @@ const STEP_TIME: f32 = 0.16;
 const SHOT_TIME: f32 = 0.45;
 /// Pause before a shot so the player sees who is aiming at whom.
 const AIM_TIME: f32 = 0.35;
+/// Blast ring duration.
+pub const EXPLOSION_TIME: f32 = 0.5;
 /// Death collapse duration.
 const DEATH_TIME: f32 = 0.6;
 
@@ -49,6 +51,8 @@ pub enum Anim {
     Walk { entity: Entity, from: Vec3, points: Vec<Vec3>, index: usize, t: f32 },
     /// Turn to face the target, then fire a tracer.
     Shot { shooter: Vec3, target: Vec3, outcome: ShotOutcome, reaction: bool, t: f32 },
+    /// Expanding blast ring (drawn by the overlay).
+    Explosion { center: Vec3, radius: f32, t: f32 },
     /// Sink into the floor and despawn.
     Death { entity: Entity, t: f32 },
     /// Do nothing for a while (lets banners/floating text breathe).
@@ -134,15 +138,14 @@ fn run_playback(
             *t += dt;
             // Spawn the result text the moment the tracer lands.
             if before < AIM_TIME + SHOT_TIME && *t >= AIM_TIME + SHOT_TIME {
-                let (text, color) = match outcome {
-                    ShotOutcome::Miss => ("MISSED".to_string(), theme::UI_DIM),
-                    ShotOutcome::Hit { damage, critical: true } => (format!("CRIT {damage}"), theme::TRACER),
-                    ShotOutcome::Hit { damage, .. } => (format!("-{damage}"), theme::TARGET),
-                };
-                FloatingText::spawn(&mut commands, *target + Vec3::Y * 0.6, text, color);
+                spawn_result_text(&mut commands, *target + Vec3::Y * 0.6, outcome);
             }
             let _ = shooter;
             *t >= AIM_TIME + SHOT_TIME + 0.15
+        }
+        Anim::Explosion { t, .. } => {
+            *t += dt;
+            *t >= EXPLOSION_TIME
         }
         Anim::Death { entity, t } => {
             *t += dt / DEATH_TIME;
@@ -177,6 +180,8 @@ fn face(tr: &mut Transform, point: Vec3) {
 }
 
 /// Converts a core event into an animation (or `None` for instant events).
+///
+/// **Add presentation for new event kinds here** (sounds, particles...).
 fn start_event(
     event: &GameEvent,
     battle: &Battle,
@@ -187,6 +192,7 @@ fn start_event(
     transforms: &Query<&mut Transform>,
 ) -> Option<Anim> {
     let name = |id: UnitId| battle.unit(id).map_or("?".to_string(), |u| u.name.clone());
+    let ability_name = |id: &AbilityId| battle.ability(id).map_or(id.to_string(), |d| d.name.clone());
     let pos_of = |id: UnitId| -> Option<Vec3> {
         entities.0.get(&id).and_then(|e| transforms.get(*e).ok()).map(|t| t.translation)
     };
@@ -201,49 +207,80 @@ fn start_event(
                 t: 0.0,
             })
         }
-        GameEvent::ShotFired { shooter, target, hit_chance, outcome, reaction } => {
-            let s = pos_of(*shooter)?;
+        GameEvent::AbilityUsed { unit, ability, target } => {
+            let label = ability_name(ability);
+            let target_text = match target {
+                Target::Unit(t) if t != unit => format!(" on {}", name(*t)),
+                _ => String::new(),
+            };
+            log.push(format!("{} uses {label}{target_text}", name(*unit)));
+            let p = pos_of(*unit)?;
+            // Turn towards the target.
+            let aim = match target {
+                Target::Unit(t) => pos_of(*t),
+                Target::Tile(tile) => Some(grid_to_world(*tile)),
+                Target::None => None,
+            };
+            if let (Some(aim), Some(e)) = (aim, entities.0.get(unit))
+                && aim.distance_squared(p) > 0.01 {
+                    commands
+                        .entity(*e)
+                        .insert(Transform::from_translation(p).looking_at(Vec3::new(aim.x, p.y, aim.z), Vec3::Y));
+                }
+            FloatingText::spawn(commands, p + Vec3::Y * 1.6, label.to_uppercase(), theme::UI_TEXT);
+            rig.target_focus = p;
+            Some(Anim::Wait { remaining: 0.35 })
+        }
+        GameEvent::Explosion { center, radius } => {
+            let c = grid_to_world(*center);
+            rig.target_focus = c;
+            Some(Anim::Explosion { center: c, radius: *radius, t: 0.0 })
+        }
+        GameEvent::AttackResolved { attacker, target, hit_chance, outcome, reaction, origin, .. } => {
+            let s = pos_of(*attacker)?;
             let t = pos_of(*target)?;
-            // Face each other.
-            if let Some(e) = entities.0.get(shooter) {
-                commands.entity(*e).insert(Transform::from_translation(s).looking_at(Vec3::new(t.x, s.y, t.z), Vec3::Y));
-            }
-            rig.target_focus = (s + t) / 2.0;
-            let verb = if *reaction { "reaction-fires at" } else { "shoots at" };
+            let verb = if *reaction { "reaction-fires at" } else { "hits at" };
             let result = match outcome {
                 ShotOutcome::Miss => "miss".to_string(),
                 ShotOutcome::Hit { damage, critical } => {
                     format!("{}{damage} dmg", if *critical { "CRIT " } else { "" })
                 }
             };
-            log.push(format!("{} {verb} {} ({hit_chance}%): {result}", name(*shooter), name(*target)));
+            log.push(format!("  {} {verb} {} ({hit_chance}%): {result}", name(*attacker), name(*target)));
             if *reaction {
                 FloatingText::spawn(commands, s + Vec3::Y * 1.6, "OVERWATCH".into(), theme::TRACER);
             }
-            Some(Anim::Shot {
-                shooter: s + Vec3::Y * CHEST,
-                target: t + Vec3::Y * CHEST,
-                outcome: *outcome,
-                reaction: *reaction,
-                t: 0.0,
-            })
+            let from_attacker = battle.unit(*attacker).is_some_and(|u| u.pos == *origin) || *reaction;
+            if from_attacker {
+                // Face the target and fire a tracer.
+                if let Some(e) = entities.0.get(attacker) {
+                    commands.entity(*e).insert(Transform::from_translation(s).looking_at(Vec3::new(t.x, s.y, t.z), Vec3::Y));
+                }
+                rig.target_focus = (s + t) / 2.0;
+                Some(Anim::Shot {
+                    shooter: s + Vec3::Y * CHEST,
+                    target: t + Vec3::Y * CHEST,
+                    outcome: *outcome,
+                    reaction: *reaction,
+                    t: 0.0,
+                })
+            } else {
+                // Area damage: no tracer, just the result.
+                spawn_result_text(commands, t + Vec3::Y * (CHEST + 0.6), outcome);
+                Some(Anim::Wait { remaining: 0.2 })
+            }
+        }
+        GameEvent::UnitHealed { unit, amount } => {
+            log.push(format!("  {} recovers {amount} HP", name(*unit)));
+            if let Some(p) = pos_of(*unit) {
+                FloatingText::spawn(commands, p + Vec3::Y * 1.3, format!("+{amount}"), theme::HEAL);
+            }
+            Some(Anim::Wait { remaining: 0.4 })
         }
         GameEvent::UnitKilled { unit } => {
             log.push(format!("{} is down!", name(*unit)));
             let entity = *entities.0.get(unit)?;
             Some(Anim::Death { entity, t: 0.0 })
-        }
-        GameEvent::OverwatchSet { unit } | GameEvent::Hunkered { unit } | GameEvent::Reloaded { unit } => {
-            let label = match event {
-                GameEvent::OverwatchSet { .. } => "OVERWATCH",
-                GameEvent::Hunkered { .. } => "HUNKER DOWN",
-                _ => "RELOAD",
-            };
-            if let Some(p) = pos_of(*unit) {
-                FloatingText::spawn(commands, p + Vec3::Y * 1.6, label.into(), theme::UI_TEXT);
-                rig.target_focus = p;
-            }
-            Some(Anim::Wait { remaining: 0.5 })
         }
         GameEvent::TurnStarted { team, round } => {
             let who = match team {
@@ -262,4 +299,14 @@ fn start_event(
         }
         GameEvent::ActionPointsChanged { .. } => None,
     }
+}
+
+/// "-4", "CRIT 6" or "MISSED" above a unit.
+fn spawn_result_text(commands: &mut Commands, at: Vec3, outcome: &ShotOutcome) {
+    let (text, color) = match outcome {
+        ShotOutcome::Miss => ("MISSED".to_string(), theme::UI_DIM),
+        ShotOutcome::Hit { damage, critical: true } => (format!("CRIT {damage}"), theme::TRACER),
+        ShotOutcome::Hit { damage, .. } => (format!("-{damage}"), theme::TARGET),
+    };
+    FloatingText::spawn(commands, at, text, color);
 }

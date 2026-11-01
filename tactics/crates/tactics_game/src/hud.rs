@@ -3,13 +3,15 @@
 //! Layout (absolute-positioned panels over the 3D view):
 //! ```text
 //! ┌ turn / round ─────────────────────────── combat log ┐
-//! │                                                     │
-//! │                 floating combat text                │
-//! │                                                     │
-//! └ selected unit ─── hover info ───────── [buttons] ───┘
+//! │ [module editor (F1)]                                 │
+//! │                 floating combat text                 │
+//! │                                       hover/odds info│
+//! └ selected unit ── [ability buttons…] [Next][End Turn] ┘
 //! ```
-//! Buttons are large enough for fingers and send the same [`PlayerCommand`]s
-//! as the keyboard shortcuts, so the game is fully playable on touch screens.
+//! The ability bar is **generated from the selected unit's abilities**, so
+//! moves added by modules get a button (and a number-key hotkey) automatically.
+//! Buttons are finger-sized and send the same [`PlayerCommand`]s as the
+//! keyboard, so the game is fully playable on touch screens.
 
 use std::collections::VecDeque;
 
@@ -22,8 +24,9 @@ use tactics_core::prelude::*;
 use crate::FrameSet;
 use crate::camera::CameraRig;
 use crate::coords::grid_to_world;
+use crate::input::target_for;
 use crate::playback::Playback;
-use crate::state::{BattleReset, BattleState, PlayerCommand, Selection};
+use crate::state::{BattleReset, BattleState, ModuleLoadLog, PlayerCommand, Selection};
 use crate::theme;
 
 pub struct HudPlugin;
@@ -31,7 +34,7 @@ pub struct HudPlugin;
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LogMessages>()
-            .add_systems(Startup, spawn_hud)
+            .add_systems(Startup, (spawn_hud, show_module_log))
             .add_systems(Update, handle_restart.in_set(FrameSet::Logic))
             .add_systems(
                 Update,
@@ -39,6 +42,7 @@ impl Plugin for HudPlugin {
                     update_turn_text,
                     update_unit_panel,
                     update_hover_info,
+                    rebuild_ability_bar,
                     update_log,
                     update_game_over,
                     style_buttons,
@@ -55,6 +59,9 @@ impl Plugin for HudPlugin {
 
 #[derive(Component)]
 struct TurnText;
+/// The selected-unit panel (hidden while the editor is open).
+#[derive(Component)]
+pub struct UnitPanel;
 #[derive(Component)]
 struct UnitPanelText;
 #[derive(Component)]
@@ -65,13 +72,27 @@ struct LogText;
 struct GameOverPanel;
 #[derive(Component)]
 struct GameOverText;
+/// Container whose children are the selected unit's ability buttons.
+#[derive(Component)]
+struct AbilityBar;
+
+/// Visual state of a HUD button, used by [`style_buttons`].
+#[derive(Component, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ButtonLook {
+    #[default]
+    Normal,
+    /// Currently selected (e.g. the ability being targeted).
+    Active,
+    /// Can't be used right now (still clickable: it explains why in the log).
+    Disabled,
+}
 
 /// Recent combat log lines.
 #[derive(Resource, Default)]
 pub struct LogMessages(VecDeque<String>);
 
 impl LogMessages {
-    const MAX: usize = 7;
+    const MAX: usize = 8;
 
     pub fn push(&mut self, line: String) {
         info!("{line}");
@@ -107,18 +128,18 @@ impl FloatingText {
 }
 
 // ----------------------------------------------------------------------
-// Construction
+// Construction helpers (also used by the editor)
 // ----------------------------------------------------------------------
 
-fn text(size: f32, color: Color) -> (TextFont, TextColor) {
+pub fn text(size: f32, color: Color) -> (TextFont, TextColor) {
     (TextFont { font_size: FontSize::Px(size), ..default() }, TextColor(color))
 }
 
-fn panel() -> (BackgroundColor, BorderColor) {
+pub fn panel() -> (BackgroundColor, BorderColor) {
     (BackgroundColor(theme::UI_PANEL), BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.08)))
 }
 
-fn panel_node(extra: Node) -> Node {
+pub fn panel_node(extra: Node) -> Node {
     Node {
         position_type: PositionType::Absolute,
         padding: UiRect::all(px(10)),
@@ -129,16 +150,17 @@ fn panel_node(extra: Node) -> Node {
     }
 }
 
-/// A finger-sized button that emits `command` when activated.
-fn hud_button(label: &str, key: &str, command: PlayerCommand) -> impl Bundle {
+/// A button that sends message `msg` when activated. `size` = (min width, height).
+pub fn message_button<M: Message + Clone>(label: &str, sub: &str, msg: M, size: (f32, f32), look: ButtonLook) -> impl Bundle {
     (
         Button,
         Hovered::default(),
+        look,
         Node {
-            min_width: px(96),
-            height: px(56),
+            min_width: px(size.0),
+            height: px(size.1),
             margin: UiRect::left(px(6)),
-            padding: UiRect::horizontal(px(10)),
+            padding: UiRect::horizontal(px(8)),
             flex_direction: FlexDirection::Column,
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
@@ -146,14 +168,19 @@ fn hud_button(label: &str, key: &str, command: PlayerCommand) -> impl Bundle {
             ..default()
         },
         BackgroundColor(theme::UI_BUTTON),
-        observe(move |_: On<Activate>, mut out: MessageWriter<PlayerCommand>| {
-            out.write(command);
+        observe(move |_: On<Activate>, mut out: MessageWriter<M>| {
+            out.write(msg.clone());
         }),
         children![
-            (Text::new(label.to_string()), text(16.0, theme::UI_TEXT), Pickable::IGNORE),
-            (Text::new(key.to_string()), text(11.0, theme::UI_DIM), Pickable::IGNORE),
+            (Text::new(label.to_string()), text(15.0, theme::UI_TEXT), Pickable::IGNORE),
+            (Text::new(sub.to_string()), text(11.0, theme::UI_DIM), Pickable::IGNORE),
         ],
     )
+}
+
+/// A finger-sized HUD button.
+fn hud_button(label: &str, key: &str, command: PlayerCommand, look: ButtonLook) -> impl Bundle {
+    message_button(label, key, command, (88.0, 56.0), look)
 }
 
 fn spawn_hud(mut commands: Commands) {
@@ -166,40 +193,43 @@ fn spawn_hud(mut commands: Commands) {
 
     // Top-right: combat log.
     commands.spawn((
-        panel_node(Node { top: px(12), right: px(12), max_width: px(420), ..default() }),
+        panel_node(Node { top: px(12), right: px(12), max_width: px(440), ..default() }),
         panel(),
         children![(LogText, Text::new(""), text(13.0, theme::UI_DIM))],
     ));
 
     // Bottom-left: selected unit.
     commands.spawn((
-        panel_node(Node { bottom: px(12), left: px(12), min_width: px(220), ..default() }),
+        UnitPanel,
+        panel_node(Node { bottom: px(80), left: px(12), min_width: px(220), ..default() }),
         panel(),
         children![(UnitPanelText, Text::new(""), text(15.0, theme::UI_TEXT))],
     ));
 
-    // Bottom-centre (above buttons on narrow screens): hover info.
+    // Right, above the buttons: hover info / odds.
     commands.spawn((
-        panel_node(Node { bottom: px(84), right: px(12), max_width: px(360), ..default() }),
+        panel_node(Node { bottom: px(80), right: px(12), max_width: px(380), ..default() }),
         panel(),
         children![(HoverInfoText, Text::new(""), text(14.0, theme::UI_TEXT))],
     ));
 
-    // Bottom-right: action buttons.
+    // Bottom row: [ability buttons...] [Next] [End Turn]. Wraps on narrow screens.
     commands.spawn((
         Node {
             position_type: PositionType::Absolute,
             bottom: px(12),
+            left: px(6),
             right: px(12),
             flex_direction: FlexDirection::Row,
+            flex_wrap: FlexWrap::WrapReverse,
+            justify_content: JustifyContent::FlexEnd,
             ..default()
         },
+        Pickable::IGNORE,
         children![
-            hud_button("Next", "Tab", PlayerCommand::NextUnit),
-            hud_button("Overwatch", "O", PlayerCommand::Overwatch),
-            hud_button("Hunker", "H", PlayerCommand::Hunker),
-            hud_button("Reload", "R", PlayerCommand::Reload),
-            hud_button("End Turn", "Enter", PlayerCommand::EndTurn),
+            (AbilityBar, Node { flex_direction: FlexDirection::Row, ..default() }, Pickable::IGNORE),
+            hud_button("Next", "Tab", PlayerCommand::NextUnit, ButtonLook::Normal),
+            hud_button("End Turn", "Enter", PlayerCommand::EndTurn, ButtonLook::Normal),
         ],
     ));
 
@@ -217,15 +247,27 @@ fn spawn_hud(mut commands: Commands) {
         },
         Pickable::IGNORE,
         children![(
-            panel_node(Node { position_type: PositionType::Relative, align_items: AlignItems::Center, padding: UiRect::all(px(24)), ..default() }),
+            panel_node(Node {
+                position_type: PositionType::Relative,
+                align_items: AlignItems::Center,
+                padding: UiRect::all(px(24)),
+                ..default()
+            }),
             panel(),
             children![
                 (GameOverText, Text::new(""), text(32.0, theme::UI_TEXT)),
                 (Node { height: px(16), ..default() }),
-                hud_button("New Battle", "F5", PlayerCommand::Restart),
+                hud_button("New Battle", "F5", PlayerCommand::Restart, ButtonLook::Normal),
             ],
         )],
     ));
+}
+
+fn show_module_log(load: Res<ModuleLoadLog>, mut log: ResMut<LogMessages>) {
+    for line in &load.0 {
+        log.push(line.clone());
+    }
+    log.push("F1: module editor".into());
 }
 
 // ----------------------------------------------------------------------
@@ -251,22 +293,24 @@ fn update_turn_text(state: Res<BattleState>, mut q: Single<&mut Text, With<TurnT
 }
 
 fn update_unit_panel(state: Res<BattleState>, selection: Res<Selection>, mut q: Single<&mut Text, With<UnitPanelText>>) {
-    let s = match selection.unit.and_then(|id| state.battle.unit(id)) {
+    let b = &state.battle;
+    let s = match selection.unit.and_then(|id| b.unit(id)) {
         Some(u) => {
+            let class = b.rules().class(&u.class).map_or(u.class.as_str(), |c| c.name.as_str());
             let mut status = Vec::new();
-            if u.status.overwatch {
-                status.push("Overwatch");
+            if u.status.overwatch.is_some() {
+                status.push("Overwatch".to_string());
             }
-            if u.status.hunkered {
-                status.push("Hunkered");
+            if u.status.defense_bonus > 0 {
+                status.push(format!("Defending +{}", u.status.defense_bonus));
             }
             format!(
-                "{}\nHP {}/{}   AP {}/{}\n{}  ammo {}/{}\nAim {}  Mobility {}{}",
+                "{} ({class})\nHP {}/{}   AP {}/{}\n{}  ammo {}/{}\nAim {}  Mobility {}{}",
                 u.name,
                 u.hp,
                 u.stats.max_hp,
                 u.action_points,
-                Unit::MAX_ACTION_POINTS,
+                b.rules().combat.action_points,
                 u.weapon.name,
                 u.weapon.ammo,
                 u.weapon.clip_size,
@@ -282,31 +326,46 @@ fn update_unit_panel(state: Res<BattleState>, selection: Res<Selection>, mut q: 
     }
 }
 
+/// Formats a shot preview with its modifier breakdown.
+fn describe_preview(name: &str, hp: (i32, i32), p: &ShotPreview, out: &mut String) {
+    out.push_str(&format!(
+        "{name}  HP {}/{}\nHIT {}%   CRIT {}%   DMG {}-{}\n",
+        hp.0, hp.1, p.hit_chance, p.crit_chance, p.damage.0, p.damage.1
+    ));
+    for (label, value) in &p.breakdown {
+        out.push_str(&format!("  {label}: {value:+}\n"));
+    }
+}
+
 fn update_hover_info(state: Res<BattleState>, selection: Res<Selection>, mut q: Single<&mut Text, With<HoverInfoText>>) {
     let b = &state.battle;
     let mut s = String::new();
     if let (Some(sel), Some(hover)) = (selection.unit, selection.hovered) {
-        if let Some(target) = b.unit_at(hover).filter(|u| u.team == Team::Enemy) {
-            match b.shot_preview(sel, target.id) {
-                Ok(p) => {
-                    s = format!(
-                        "{}  HP {}/{}\nHIT {}%   CRIT {}%   DMG {}-{}\n",
-                        target.name, target.hp, target.stats.max_hp, p.hit_chance, p.crit_chance, p.damage.0, p.damage.1
-                    );
-                    for (label, value) in &p.breakdown {
-                        s.push_str(&format!("  {label}: {value:+}\n"));
+        // Which ability are we previewing? The pending one, or the primary
+        // attack when hovering an enemy.
+        let ability = selection.pending.clone().or_else(|| {
+            b.unit_at(hover)
+                .filter(|u| u.team == Team::Enemy)
+                .and_then(|_| b.unit(sel).and_then(|u| b.primary_attack(u)).map(|d| d.id.clone()))
+        });
+        if let Some(def) = ability.as_ref().and_then(|a| b.ability(a)) {
+            s = format!("[{}]\n", def.name);
+            match target_for(b, def, hover).map(|t| (t, b.preview(sel, &def.id, t))) {
+                Some((_, Ok(previews))) if !previews.is_empty() => {
+                    for (victim, p) in &previews {
+                        if let Some(v) = b.unit(*victim) {
+                            describe_preview(&v.name, (v.hp, v.stats.max_hp), p, &mut s);
+                        }
                     }
                 }
-                Err(e) => s = format!("{}: {e}", target.name),
+                Some((_, Ok(_))) => s.push_str(&def.description),
+                Some((_, Err(e))) => s.push_str(&format!("{e}")),
+                None => s.push_str("Pick a target (Esc to cancel)"),
             }
         } else if let Some(cost) = selection.range.as_ref().and_then(|r| r.cost(hover)).filter(|c| *c > 0) {
             let ap = b.move_cost_ap(sel, cost);
             let cover = tactics_core::cover::best_cover_at(b.map(), hover);
-            s = format!(
-                "{} - {ap} AP\nCover: {:?}",
-                if ap > 1 { "Dash" } else { "Move" },
-                cover
-            );
+            s = format!("{} - {ap} AP\nCover: {cover:?}", if ap > 1 { "Dash" } else { "Move" });
         }
     }
     if s.is_empty() {
@@ -315,6 +374,68 @@ fn update_hover_info(state: Res<BattleState>, selection: Res<Selection>, mut q: 
     if q.0 != s {
         q.0 = s;
     }
+}
+
+/// What the ability bar was last built for: (unit, pending ability, revision).
+type AbilityBarKey = (Option<UnitId>, Option<AbilityId>, u64);
+
+/// Rebuilds the ability buttons whenever the selection, pending ability or
+/// battle state changes.
+fn rebuild_ability_bar(
+    mut commands: Commands,
+    state: Res<BattleState>,
+    selection: Res<Selection>,
+    bar: Single<Entity, With<AbilityBar>>,
+    mut last_key: Local<Option<AbilityBarKey>>,
+) {
+    let key = (selection.unit, selection.pending.clone(), state.revision);
+    if last_key.as_ref() == Some(&key) {
+        return;
+    }
+    *last_key = Some(key);
+
+    let mut bar = commands.entity(*bar);
+    bar.despawn_related::<Children>();
+    let b = &state.battle;
+    let Some(unit) = selection.unit.and_then(|id| b.unit(id)) else { return };
+
+    bar.with_children(|parent| {
+        for (slot, id) in unit.abilities.iter().enumerate() {
+            let Some(def) = b.ability(id) else { continue };
+            // Probe with no target: target errors are fine (they'll be picked
+            // next), cost errors mean the button is disabled.
+            let probe = Action::UseAbility { unit: unit.id, ability: id.clone(), target: Target::None };
+            let usable = matches!(
+                b.validate(&probe),
+                Ok(())
+                    | Err(ActionError::WrongTarget
+                        | ActionError::OutOfRange
+                        | ActionError::NoLineOfSight
+                        | ActionError::InvalidTarget(_)
+                        | ActionError::NothingToHeal)
+            );
+            let look = if selection.pending.as_ref() == Some(id) {
+                ButtonLook::Active
+            } else if usable {
+                ButtonLook::Normal
+            } else {
+                ButtonLook::Disabled
+            };
+            let cost = match def.cost {
+                ApCost::Points(n) => format!("{n} AP"),
+                ApCost::EndsTurn => "ends turn".into(),
+            };
+            let mut sub = format!("{} | {cost}", slot + 1);
+            if let Some(left) = b.charges_left(unit, def) {
+                sub.push_str(&format!(" | x{left}"));
+            }
+            let cd = unit.cooldown(id);
+            if cd > 0 {
+                sub.push_str(&format!(" | cd {cd}"));
+            }
+            parent.spawn(hud_button(&def.name, &sub, PlayerCommand::UseAbility(id.clone()), look));
+        }
+    });
 }
 
 fn update_log(log: Res<LogMessages>, mut q: Single<&mut Text, With<LogText>>) {
@@ -343,11 +464,12 @@ fn update_game_over(
     }
 }
 
-fn style_buttons(mut q: Query<(&Hovered, Has<Pressed>, &mut BackgroundColor), With<Button>>) {
-    for (hovered, pressed, mut bg) in &mut q {
-        let color = match (hovered.get(), pressed) {
-            (_, true) => theme::UI_BUTTON_PRESSED,
-            (true, false) => theme::UI_BUTTON_HOVER,
+fn style_buttons(mut q: Query<(&Hovered, Has<Pressed>, &ButtonLook, &mut BackgroundColor), With<Button>>) {
+    for (hovered, pressed, look, mut bg) in &mut q {
+        let color = match (look, hovered.get(), pressed) {
+            (_, _, true) | (ButtonLook::Active, _, _) => theme::UI_BUTTON_PRESSED,
+            (ButtonLook::Disabled, _, _) => theme::UI_BUTTON_DISABLED,
+            (_, true, false) => theme::UI_BUTTON_HOVER,
             _ => theme::UI_BUTTON,
         };
         if bg.0 != color {
@@ -379,7 +501,8 @@ fn animate_floating_text(
     }
 }
 
-/// Restart: build a fresh procedural skirmish with a new seed.
+/// Restart: build a fresh procedural skirmish with a new seed, keeping the
+/// current (possibly live-edited) ruleset.
 #[allow(clippy::too_many_arguments)]
 fn handle_restart(
     mut commands_in: MessageReader<PlayerCommand>,
@@ -396,7 +519,8 @@ fn handle_restart(
         return;
     }
     let seed = state.seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-    state.battle = scenario::skirmish(seed);
+    let rules = state.battle.rules().clone();
+    state.battle = scenario::skirmish(&rules, seed);
     state.seed = seed;
     state.revision += 1;
     playback.clear();

@@ -1,14 +1,19 @@
-//! Player input: tile hovering, clicks/taps on the board, keyboard shortcuts.
+//! Player input: tile hovering, clicks/taps on the board, keyboard shortcuts,
+//! and ability targeting.
 //!
 //! The pointer (mouse cursor or a finger) is turned into a ray from the camera,
-//! intersected with the ground plane, and converted into a [`GridPos`]. A
-//! click/tap then means, in priority order:
-//! 1. on a friendly unit → select it;
-//! 2. on a visible enemy → shoot it with the selected unit;
-//! 3. on a reachable tile → move there.
+//! intersected with the ground plane, and converted into a [`GridPos`].
 //!
-//! Everything is translated into core [`Action`]s or [`PlayerCommand`]s; this
-//! module never touches unit data directly.
+//! A click/tap means, in priority order:
+//! 1. **targeting mode** (an ability is pending) → use it on the clicked
+//!    unit/tile;
+//! 2. on a friendly unit → select it;
+//! 3. on an enemy → use the selected unit's primary attack;
+//! 4. on a reachable tile → move there.
+//!
+//! Abilities are activated from HUD buttons or number keys. Self-targeted ones
+//! (overwatch, reload...) fire immediately; the others enter targeting mode
+//! (Esc or pressing the button again cancels).
 
 use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
@@ -17,6 +22,7 @@ use tactics_core::prelude::*;
 use crate::FrameSet;
 use crate::camera::{CameraRig, CameraSystems, TouchGesture};
 use crate::coords::world_to_grid;
+use crate::hud::LogMessages;
 use crate::playback::Playback;
 use crate::state::{BattleState, PlayerCommand, Selection};
 
@@ -29,9 +35,7 @@ impl Plugin for InputPlugin {
             (
                 update_hover,
                 keyboard_shortcuts,
-                (board_click, handle_commands)
-                    .chain()
-                    .run_if(player_can_act),
+                (board_click, handle_commands).chain().run_if(player_can_act),
                 auto_select,
             )
                 .chain()
@@ -56,10 +60,8 @@ fn pointer_position(window: &Window, touches: &Touches) -> Option<Vec2> {
 
 /// Is the pointer over any UI node? Uses Bevy picking's hover map, which works
 /// for mouse and touch alike.
-fn pointer_over_ui(hover_map: &HoverMap, nodes: &Query<(), With<Node>>) -> bool {
-    hover_map
-        .values()
-        .any(|hits| hits.keys().any(|e| nodes.contains(*e)))
+pub fn pointer_over_ui(hover_map: &HoverMap, nodes: &Query<(), With<Node>>) -> bool {
+    hover_map.values().any(|hits| hits.keys().any(|e| nodes.contains(*e)))
 }
 
 fn update_hover(
@@ -80,9 +82,7 @@ fn update_hover(
 fn keyboard_shortcuts(keys: Res<ButtonInput<KeyCode>>, mut commands: MessageWriter<PlayerCommand>) {
     let bindings = [
         (KeyCode::Tab, PlayerCommand::NextUnit),
-        (KeyCode::KeyO, PlayerCommand::Overwatch),
-        (KeyCode::KeyH, PlayerCommand::Hunker),
-        (KeyCode::KeyR, PlayerCommand::Reload),
+        (KeyCode::Escape, PlayerCommand::CancelTargeting),
         (KeyCode::Enter, PlayerCommand::EndTurn),
         (KeyCode::F5, PlayerCommand::Restart),
     ];
@@ -90,6 +90,32 @@ fn keyboard_shortcuts(keys: Res<ButtonInput<KeyCode>>, mut commands: MessageWrit
         if keys.just_pressed(key) {
             commands.write(command);
         }
+    }
+    // Number keys 1-9 trigger the selected unit's abilities in order.
+    let digits = [
+        KeyCode::Digit1,
+        KeyCode::Digit2,
+        KeyCode::Digit3,
+        KeyCode::Digit4,
+        KeyCode::Digit5,
+        KeyCode::Digit6,
+        KeyCode::Digit7,
+        KeyCode::Digit8,
+        KeyCode::Digit9,
+    ];
+    for (slot, key) in digits.into_iter().enumerate() {
+        if keys.just_pressed(key) {
+            commands.write(PlayerCommand::AbilitySlot(slot));
+        }
+    }
+}
+
+/// The target an ability would get if the player clicked `tile`.
+pub fn target_for(battle: &Battle, def: &AbilityDef, tile: GridPos) -> Option<Target> {
+    match def.targeting {
+        Targeting::SelfOnly => Some(Target::None),
+        Targeting::Enemy | Targeting::Ally => battle.unit_at(tile).map(|u| Target::Unit(u.id)),
+        Targeting::Tile => Some(Target::Tile(tile)),
     }
 }
 
@@ -104,36 +130,53 @@ fn board_click(
     mut state: ResMut<BattleState>,
     mut selection: ResMut<Selection>,
     mut playback: ResMut<Playback>,
+    mut log: ResMut<LogMessages>,
     mut rig: Single<&mut CameraRig>,
 ) {
     let tapped = touches.any_just_released() && !gesture.dragged;
-    if !(buttons.just_pressed(MouseButton::Left) || tapped) {
-        return;
-    }
-    if pointer_over_ui(&hover_map, &ui_nodes) {
+    if !(buttons.just_pressed(MouseButton::Left) || tapped) || pointer_over_ui(&hover_map, &ui_nodes) {
         return;
     }
     let Some(tile) = selection.hovered else { return };
     let battle = &state.battle;
 
-    // 1. Select a friendly unit.
-    if let Some(unit) = battle.unit_at(tile)
-        && unit.team == Team::Player {
-            selection.unit = Some(unit.id);
-            rig.focus_on(tile);
+    // 1. Targeting mode.
+    if let (Some(unit), Some(ability)) = (selection.unit, selection.pending.clone()) {
+        let Some(def) = battle.ability(&ability) else { return };
+        let Some(target) = target_for(battle, def, tile) else {
+            log.push(format!("{}: pick a valid target (Esc to cancel)", def.name));
             return;
+        };
+        let action = Action::UseAbility { unit, ability, target };
+        match state.apply(action, &mut playback) {
+            Ok(()) => selection.pending = None,
+            Err(e) => log.push(format!("Can't do that: {e}")),
         }
-
-    let Some(selected) = selection.unit else { return };
-
-    // 2. Shoot an enemy.
-    if let Some(target) = battle.unit_at(tile).filter(|u| u.team == Team::Enemy) {
-        let action = Action::Shoot { unit: selected, target: target.id };
-        let _ = state.apply(action, &mut playback);
         return;
     }
 
-    // 3. Move.
+    // 2. Select a friendly unit.
+    if let Some(unit) = battle.unit_at(tile).filter(|u| u.team == Team::Player) {
+        selection.select(Some(unit.id));
+        rig.focus_on(tile);
+        return;
+    }
+
+    let Some(selected) = selection.unit else { return };
+
+    // 3. Primary attack on an enemy.
+    if let Some(enemy) = battle.unit_at(tile).filter(|u| u.team == Team::Enemy) {
+        let Some(primary) = battle.unit(selected).and_then(|u| battle.primary_attack(u)).map(|d| d.id.clone()) else {
+            return;
+        };
+        let action = Action::UseAbility { unit: selected, ability: primary, target: Target::Unit(enemy.id) };
+        if let Err(e) = state.apply(action, &mut playback) {
+            log.push(format!("Can't shoot: {e}"));
+        }
+        return;
+    }
+
+    // 4. Move.
     let action = Action::Move { unit: selected, to: tile };
     if battle.validate(&action).is_ok() {
         let _ = state.apply(action, &mut playback);
@@ -146,44 +189,81 @@ fn handle_commands(
     mut state: ResMut<BattleState>,
     mut selection: ResMut<Selection>,
     mut playback: ResMut<Playback>,
+    mut log: ResMut<LogMessages>,
     mut rig: Single<&mut CameraRig>,
 ) {
     for command in commands.read() {
-        let unit = selection.unit;
-        let action = match (command, unit) {
-            (PlayerCommand::NextUnit, _) => {
-                selection.unit = next_ready_unit(&state.battle, unit);
-                if let Some(u) = selection.unit.and_then(|id| state.battle.unit(id)) {
+        let ability = match command {
+            PlayerCommand::NextUnit => {
+                let next = next_ready_unit(&state.battle, selection.unit);
+                selection.select(next);
+                if let Some(u) = next.and_then(|id| state.battle.unit(id)) {
                     rig.focus_on(u.pos);
                 }
-                None
+                continue;
             }
-            (PlayerCommand::Overwatch, Some(unit)) => Some(Action::Overwatch { unit }),
-            (PlayerCommand::Hunker, Some(unit)) => Some(Action::Hunker { unit }),
-            (PlayerCommand::Reload, Some(unit)) => Some(Action::Reload { unit }),
-            (PlayerCommand::EndTurn, _) => Some(Action::EndTurn),
+            PlayerCommand::CancelTargeting => {
+                selection.pending = None;
+                continue;
+            }
+            PlayerCommand::EndTurn => {
+                selection.pending = None;
+                let _ = state.apply(Action::EndTurn, &mut playback);
+                continue;
+            }
             // Restart is handled by the HUD (it works even when the battle is over).
-            _ => None,
+            PlayerCommand::Restart => continue,
+            PlayerCommand::UseAbility(id) => id.clone(),
+            PlayerCommand::AbilitySlot(slot) => {
+                let Some(id) = selection
+                    .unit
+                    .and_then(|u| state.battle.unit(u))
+                    .and_then(|u| u.abilities.get(*slot).cloned())
+                else {
+                    continue;
+                };
+                id
+            }
         };
-        if let Some(action) = action {
-            let _ = state.apply(action, &mut playback);
+        let Some(unit) = selection.unit else { continue };
+        let Some(def) = state.battle.ability(&ability) else { continue };
+
+        if def.targeting == Targeting::SelfOnly {
+            selection.pending = None;
+            let name = def.name.clone();
+            if let Err(e) = state.apply(Action::UseAbility { unit, ability, target: Target::None }, &mut playback) {
+                log.push(format!("Can't {name}: {e}"));
+            }
+        } else if selection.pending.as_ref() == Some(&ability) {
+            selection.pending = None; // pressing it again cancels
+        } else {
+            // Check costs now so the player isn't left targeting something unusable.
+            let probe = Action::UseAbility { unit, ability: ability.clone(), target: Target::None };
+            match state.battle.validate(&probe) {
+                Ok(())
+                | Err(
+                    ActionError::WrongTarget
+                    | ActionError::OutOfRange
+                    | ActionError::NoLineOfSight
+                    | ActionError::InvalidTarget(_)
+                    | ActionError::NothingToHeal,
+                ) => {
+                    log.push(format!("{}: choose a target", def.name));
+                    selection.pending = Some(ability);
+                }
+                Err(e) => log.push(format!("Can't {}: {e}", def.name)),
+            }
         }
     }
 }
 
 /// The next friendly unit (after `current`, wrapping) that still has AP.
 pub fn next_ready_unit(battle: &Battle, current: Option<UnitId>) -> Option<UnitId> {
-    let ready: Vec<UnitId> = battle
-        .living(Team::Player)
-        .filter(|u| u.can_act())
-        .map(|u| u.id)
-        .collect();
+    let ready: Vec<UnitId> = battle.living(Team::Player).filter(|u| u.can_act()).map(|u| u.id).collect();
     if ready.is_empty() {
         return None;
     }
-    let idx = current
-        .and_then(|c| ready.iter().position(|id| *id > c))
-        .unwrap_or(0);
+    let idx = current.and_then(|c| ready.iter().position(|id| *id > c)).unwrap_or(0);
     Some(ready[idx])
 }
 
@@ -199,16 +279,14 @@ fn auto_select(
     if playback.is_busy() || state.battle.active_team() != Team::Player || state.battle.is_over() {
         return;
     }
-    let valid = selection
-        .unit
-        .and_then(|id| state.battle.unit(id))
-        .is_some_and(|u| u.can_act());
+    let valid = selection.unit.and_then(|id| state.battle.unit(id)).is_some_and(|u| u.can_act());
     // At the start of each player turn, bring the camera back to the squad.
     let new_turn = *focused_round != state.battle.round();
     *focused_round = state.battle.round();
     if !valid || new_turn {
         if !valid {
-            selection.unit = next_ready_unit(&state.battle, selection.unit);
+            let next = next_ready_unit(&state.battle, selection.unit);
+            selection.select(next);
         }
         if let Some(u) = selection.unit.and_then(|id| state.battle.unit(id)) {
             rig.focus_on(u.pos);

@@ -5,20 +5,28 @@ A well-commented base for an XCOM-style game: 3D rendering via
 engine-agnostic crate. It targets **Windows, Linux, macOS, Android and the Web**
 from one codebase.
 
+All content (moves with their accuracy and cover penalties, weapons, classes,
+squads, maps, AI tuning) comes from **modules** written in Rust or as RON data
+files, and can be tuned live with the **in-game editor (F1)**.
+See **[MODULES.md](MODULES.md)** for the how-to, the full field reference and
+the roadmap of future module types.
+
 ```
 tactics/
 ├── Cargo.toml                 workspace + build profiles
 ├── .cargo/config.toml         per-target flags (wasm)
 └── crates/
-    ├── tactics_core/          pure Rust rules — no dependencies
+    ├── tactics_core/          pure Rust rules (serde/ron only for data modules)
     │   └── src/
+    │       ├── content/       Ruleset, GameModule trait, AbilityDef, RON loader
+    │       ├── modules/       base game + example "grenadier" module
     │       ├── grid.rs        tiles, terrain, coordinates, ASCII maps
     │       ├── pathfinding.rs Dijkstra movement range + A*
     │       ├── visibility.rs  symmetric line of sight
     │       ├── cover.rs       directional cover & flanking
-    │       ├── unit.rs        units, weapons, templates
+    │       ├── unit.rs        units, weapons, classes
     │       ├── combat.rs      hit / crit / damage formulas with breakdown
-    │       ├── action.rs      the commands players & AI can issue
+    │       ├── action.rs      Move / UseAbility / Wait / EndTurn
     │       ├── event.rs       what happened (consumed by the renderer)
     │       ├── battle.rs      authoritative state, turns, overwatch
     │       ├── ai.rs          utility-based enemy AI
@@ -28,6 +36,8 @@ tactics/
         ├── src/
         │   ├── lib.rs         app setup, plugin wiring, Android entry
         │   ├── main.rs        desktop / web entry
+        │   ├── content.rs     module load order (Rust, bundled RON, modules/ folder)
+        │   ├── editor.rs      F1 in-game ability editor
         │   ├── state.rs       BattleState resource (only mutation point)
         │   ├── board.rs       level meshes
         │   ├── units.rs       unit meshes + id→entity map
@@ -36,9 +46,10 @@ tactics/
         │   ├── enemy_turn.rs  runs the AI with pacing
         │   ├── playback.rs    animates the GameEvent queue
         │   ├── overlay.rs     gizmo overlays (range, path, cover, HP)
-        │   ├── hud.rs         bevy_ui HUD + touch buttons
+        │   ├── hud.rs         bevy_ui HUD, per-unit ability bar
         │   ├── coords.rs      grid ↔ world conversion
         │   └── theme.rs       colours & sizes
+        ├── assets/modules/      bundled data modules (marksman.ron)
         ├── index.html, Trunk.toml   web build
         └── android/res              Android launcher icon
 ```
@@ -62,6 +73,11 @@ tactics/
 
 ## Gameplay included
 
+* Abilities defined as data: AP cost, ammo, cooldown, charges, targeting (self /
+  enemy / ally / tile), range, and attack stats (base accuracy, accuracy bonus,
+  half/full cover penalties, crit, damage, area radius).
+* Included moves: Shoot, Overwatch, Hunker Down, Reload (base); Frag Grenade,
+  Medkit + Grenadier class (Rust example module); Aimed Shot, Psi Bolt (RON example).
 * 2 action points per unit; move (1 AP) or dash (2 AP), blue/yellow range overlay.
 * Directional half/full cover, flanking (+crit), cover shields on hover.
 * Hit chance = aim − defence − cover − hunker ± range falloff, shown with a full breakdown.
@@ -78,7 +94,9 @@ tactics/
 | Pan | WASD / arrows / middle drag | One-finger drag |
 | Rotate | Q / E, right drag | Two-finger twist |
 | Zoom | Wheel, Z / X | Pinch |
-| Next unit / Overwatch / Hunker / Reload / End turn | Tab / O / H / R / Enter | HUD buttons |
+| Abilities of the selected unit | 1-9 (Esc cancels targeting) | ability buttons |
+| Next unit / End turn | Tab / Enter | HUD buttons |
+| Module editor | F1 | Edit button |
 | New battle | F5 | button on game-over screen |
 
 ## Building
@@ -92,6 +110,7 @@ cargo run -p tactics_game            # dev build (deps optimised, game code fast
 cargo run -p tactics_game --release  # release
 cargo test -p tactics_core           # rules test-suite
 cargo run -p tactics_core --example autobattle -- 20   # headless AI-vs-AI balance check
+cargo test -p tactics_core --no-default-features      # rules with zero dependencies
 ```
 
 Linux needs a few system libraries:
@@ -135,12 +154,13 @@ Bevy's `examples/mobile` template, and switch the feature to
 
 ## Extending the framework
 
+Content (new moves, weapons, classes, squads, maps, AI tuning) → **[MODULES.md](MODULES.md)**.
+
 | Want to… | Where |
 |---|---|
-| Add a new ability (grenade, medkit) | add a variant to `Action`, validate + apply it in `battle.rs`, emit an event; animate it in `playback.rs`; add a button in `hud.rs` |
-| New unit class / weapon | a constructor in `unit.rs` (`UnitTemplate`, `Weapon`) |
-| New terrain (doors, destructibles) | `Terrain` in `grid.rs` — walkability, sight and cover are derived from it |
+| New move from existing effect kinds | a RON or Rust module — no engine changes |
+| New *kind* of effect (teleport, smoke…) | `AbilityEffect` + `Battle::run_effect` + `playback.rs` (see MODULES.md) |
 | Fog of war | `Battle::team_can_see`; hide enemy visuals in `units.rs` and filter the AI in `ai.rs` |
 | Real art | replace the primitive meshes in `board.rs` / `units.rs` with glTF scenes from `assets/` |
 | Save / load, networking | serialize `Battle` (or seed + action log) — all state is plain data |
-| Strategy layer (base, research) | a new Bevy `State` around the battle; the core crate already doesn't care |
+| Strategy layer (base, research) | a new Bevy `State` around the battle; see "Future module types" in MODULES.md |

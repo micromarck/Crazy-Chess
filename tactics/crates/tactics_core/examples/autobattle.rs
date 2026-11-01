@@ -10,10 +10,13 @@ use tactics_core::prelude::*;
 fn main() {
     let battles: u64 = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(10);
     let config = AiConfig::default();
+    // Same module list as the game uses by default.
+    let mut rules = Ruleset::standard();
+    rules.add_module(&modules::GrenadierModule);
     let (mut player_wins, mut enemy_wins, mut undecided) = (0, 0, 0);
 
     for seed in 0..battles {
-        let mut battle = scenario::skirmish(seed);
+        let mut battle = scenario::skirmish(&rules, seed);
         let mut actions = 0;
         while !battle.is_over() && battle.round() <= 60 {
             let action = ai::next_team_action(&battle, &config);

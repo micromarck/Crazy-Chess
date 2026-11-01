@@ -25,7 +25,7 @@ impl Plugin for OverlayPlugin {
         app.add_systems(
             Update,
             (
-                (draw_movement, draw_targets).run_if(player_can_act),
+                (draw_movement, draw_targets, draw_targeting).run_if(player_can_act),
                 draw_hover,
                 draw_health_bars,
                 draw_tracer,
@@ -47,6 +47,9 @@ fn tile_rect(gizmos: &mut Gizmos, pos: GridPos, scale: f32, color: Color) {
 }
 
 fn draw_movement(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Selection>) {
+    if selection.pending.is_some() {
+        return; // targeting mode replaces the movement overlay
+    }
     let (Some(id), Some(range)) = (selection.unit, selection.range.as_ref()) else { return };
     let battle = &state.battle;
     let Some(unit) = battle.unit(id) else { return };
@@ -92,6 +95,9 @@ fn draw_cover_shields(gizmos: &mut Gizmos, map: &Map, pos: GridPos) {
 }
 
 fn draw_targets(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Selection>) {
+    if selection.pending.is_some() {
+        return;
+    }
     let Some(id) = selection.unit else { return };
     let battle = &state.battle;
     let Some(unit) = battle.unit(id) else { return };
@@ -105,6 +111,46 @@ fn draw_targets(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Sele
             gizmos.line(grid_to_world(unit.pos) + up, grid_to_world(t.pos) + up, color);
         }
     }
+}
+
+/// A flat circle on the ground.
+fn ground_circle(gizmos: &mut Gizmos, center: Vec3, radius: f32, color: Color) {
+    let iso = Isometry3d::new(center + Vec3::Y * LIFT, Quat::from_rotation_x(std::f32::consts::FRAC_PI_2));
+    gizmos.circle(iso, radius, color).resolution(48);
+}
+
+/// Targeting mode: ability range, valid targets and the area of effect.
+fn draw_targeting(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Selection>) {
+    let (Some(id), Some(ability)) = (selection.unit, selection.pending.as_ref()) else { return };
+    let battle = &state.battle;
+    let (Some(unit), Some(def)) = (battle.unit(id), battle.ability(ability)) else { return };
+
+    tile_rect(&mut gizmos, unit.pos, 0.95, theme::SELECTED);
+    ground_circle(&mut gizmos, grid_to_world(unit.pos), battle.ability_range(unit, def), theme::MOVE_FAR.with_alpha(0.5));
+
+    // Highlight every unit this ability could legally be used on.
+    if matches!(def.targeting, Targeting::Enemy | Targeting::Ally) {
+        for other in battle.units().iter().filter(|u| u.is_alive()) {
+            let action = Action::UseAbility { unit: id, ability: ability.clone(), target: Target::Unit(other.id) };
+            if battle.validate(&action).is_ok() {
+                let color = if def.targeting == Targeting::Enemy { theme::TARGET } else { theme::HEAL };
+                tile_rect(&mut gizmos, other.pos, 0.9, color);
+            }
+        }
+    }
+
+    // Area preview under the cursor.
+    if let (Some(profile), Some(hover)) = (def.effect.attack_profile(), selection.hovered)
+        && profile.area_radius > 0.0 {
+            let ok = battle
+                .validate(&Action::UseAbility { unit: id, ability: ability.clone(), target: Target::Tile(hover) })
+                .is_ok();
+            let color = if ok { theme::EXPLOSION } else { theme::UI_DIM };
+            ground_circle(&mut gizmos, grid_to_world(hover), profile.area_radius, color);
+            for u in battle.units().iter().filter(|u| u.is_alive() && u.pos.distance(hover) <= profile.area_radius) {
+                tile_rect(&mut gizmos, u.pos, 0.7, color);
+            }
+        }
 }
 
 fn draw_hover(mut gizmos: Gizmos, selection: Res<Selection>) {
@@ -142,7 +188,7 @@ fn draw_health_bars(
             gizmos.line(a, b, c);
             gizmos.line(a + Vec3::Y * 0.03, b + Vec3::Y * 0.03, c);
         }
-        if unit.status.overwatch {
+        if unit.status.overwatch.is_some() {
             gizmos.circle(
                 Isometry3d::new(base + Vec3::Y * 0.2, Quat::IDENTITY),
                 0.08,
@@ -156,6 +202,14 @@ fn draw_health_bars(
 fn draw_tracer(mut gizmos: Gizmos, playback: Res<Playback>) {
     const AIM: f32 = 0.35;
     const FLY: f32 = 0.45;
+    if let Some(Anim::Explosion { center, radius, t }) = playback.current() {
+        let k = (t / crate::playback::EXPLOSION_TIME).min(1.0);
+        for i in 0..3 {
+            let r = radius * (k + i as f32 * 0.15).min(1.0);
+            ground_circle(&mut gizmos, *center + Vec3::Y * (0.1 + i as f32 * 0.2), r.max(0.05), theme::EXPLOSION.with_alpha(1.0 - k));
+        }
+        gizmos.sphere(Isometry3d::from_translation(*center + Vec3::Y * 0.4), radius * k * 0.6, theme::TRACER.with_alpha(1.0 - k));
+    }
     if let Some(Anim::Shot { shooter, target, outcome, t, .. }) = playback.current() {
         let mut end = *target;
         if matches!(outcome, ShotOutcome::Miss) {

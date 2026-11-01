@@ -1,0 +1,62 @@
+// Example DATA module: adds moves without writing any Rust.
+//
+// Every field is optional and falls back to its default (see MODULES.md for
+// the full reference). Abilities with an existing id replace the original,
+// so this format can also rebalance the base game.
+//
+// This file is compiled into the game (see src/content.rs) so it works on the
+// web and Android too. On desktop you can also drop extra .ron files into a
+// `modules/` folder next to where you run the game.
+(
+    info: (
+        id: "marksman",
+        name: "Marksman Pack",
+        version: "1.0",
+        author: "Tactics",
+        description: "Aimed Shot for snipers and a cover-ignoring Psi Bolt for sectoids.",
+    ),
+
+    abilities: [
+        (
+            id: "aimed_shot",
+            name: "Aimed Shot",
+            description: "A slow, careful shot: +20 aim and cover matters less. 2 AP, 1 turn cooldown.",
+            cost: Points(2),
+            ammo_cost: 1,
+            cooldown: 1,
+            targeting: Enemy,
+            range: Weapon,
+            requires_los: true,
+            effect: Attack(
+                accuracy_bonus: 20,
+                half_cover_penalty: 10,   // default 20
+                full_cover_penalty: 25,   // default 40
+                crit_bonus: 15,
+            ),
+        ),
+        (
+            id: "psi_bolt",
+            name: "Psi Bolt",
+            description: "Fixed 75% accuracy that almost ignores cover. 2-3 damage, 2 turn cooldown.",
+            cost: EndsTurn,
+            cooldown: 2,
+            targeting: Enemy,
+            range: Fixed(9.0),
+            requires_los: true,
+            effect: Attack(
+                base_accuracy: 75,        // ignore the unit's aim stat
+                half_cover_penalty: 0,
+                full_cover_penalty: 10,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                damage: Fixed(min: 2, max: 3),
+            ),
+        ),
+    ],
+
+    // Give existing classes the new moves without redefining the classes.
+    grants: [
+        (class: "sniper", ability: "aimed_shot"),
+        (class: "sectoid", ability: "psi_bolt"),
+    ],
+)

@@ -1,9 +1,17 @@
 [package]
 name = "tactics_core"
-description = "Engine-agnostic rules, state and AI for a turn-based squad tactics game."
+description = "Engine-agnostic rules, content modules and AI for a turn-based squad tactics game."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+# `data` lets modules be written as RON data files (and lets the in-game editor
+# save them). Disable default features for a dependency-free rules engine.
+default = ["data"]
+data = ["dep:serde", "dep:ron"]
+
 [dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+ron = { version = "0.12", optional = true }

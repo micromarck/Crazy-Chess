@@ -1,121 +1,116 @@
-//! Hit-chance and damage math.
+//! Hit-chance and damage math for attack abilities.
 //!
-//! Everything here is a pure function of the battle state, so the UI can show
-//! an exact preview ("72% to hit, 18% crit") and the AI can evaluate shots
-//! without rolling dice. The actual rolls happen in [`crate::battle`].
+//! Everything here is a pure function, so the UI can show an exact preview
+//! ("72% to hit, 18% crit") and the AI can evaluate attacks without rolling
+//! dice. The rolls themselves happen in [`crate::battle`].
 //!
-//! The formula, XCOM-style:
+//! All numbers come from data: the ability's [`AttackProfile`] (base accuracy,
+//! cover penalties, crit and damage modifiers), the attacker's weapon and stats,
+//! and the global [`CombatRules`]. Each term is recorded in
+//! [`ShotPreview::breakdown`] so players can see *why* a shot is 35%.
 //!
 //! ```text
-//! hit  = aim - target.defense - cover_bonus + range_modifier [- reaction penalty]
-//! crit = weapon.crit + (flanked ? FLANK_CRIT_BONUS : 0)
+//! hit  = (profile.base_accuracy or attacker.aim) + profile.accuracy_bonus
+//!        - target.defense - target.status.defense_bonus
+//!        - profile.{half,full}_cover_penalty        (if in cover vs. origin)
+//!        ± range modifier                             (if profile.range_falloff)
+//! crit = weapon.crit (weapon damage only) + profile.crit_bonus
+//!        + profile.flank_crit_bonus                   (if flanked)
 //! ```
-//! Each term is recorded in a [`ShotPreview::breakdown`] so players can see *why*
-//! a shot is 35%.
 
-use crate::cover::{cover_against, CoverResult};
-use crate::grid::{CoverLevel, Map};
+use crate::content::{AttackProfile, CombatRules, DamageSource};
+use crate::cover::{CoverResult, cover_against};
+use crate::grid::{CoverLevel, GridPos, Map};
 use crate::unit::Unit;
 
-/// Defense bonus granted by half cover.
-pub const HALF_COVER_BONUS: i32 = 20;
-/// Defense bonus granted by full cover.
-pub const FULL_COVER_BONUS: i32 = 40;
-/// Extra defense while hunkered (stacks with cover).
-pub const HUNKER_BONUS: i32 = 30;
-/// Extra crit chance against a flanked target.
-pub const FLANK_CRIT_BONUS: i32 = 40;
-/// Accuracy penalty for reaction (overwatch) shots.
-pub const REACTION_PENALTY: i32 = 15;
-/// Accuracy lost per tile beyond the weapon's optimal range.
-pub const FALLOFF_PER_TILE: f32 = 3.0;
-/// Accuracy gained per tile closer than optimal range (capped).
-pub const CLOSE_BONUS_PER_TILE: f32 = 2.0;
-/// Cap on the close-range bonus.
-pub const MAX_CLOSE_BONUS: i32 = 15;
-
-/// Hit-chance bounds. XCOM famously allows 100% shots; we keep a sliver of
-/// uncertainty at the top and a "hail mary" at the bottom.
-pub const MIN_HIT: i32 = 1;
-pub const MAX_HIT: i32 = 99;
-
-/// Full description of a potential shot, before any dice are rolled.
+/// Full description of a potential attack, before any dice are rolled.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShotPreview {
-    /// Final, clamped hit chance in percent.
+    /// Final hit chance in percent (100 for attacks that cannot miss).
     pub hit_chance: i32,
-    /// Final, clamped critical chance in percent (applies only on a hit).
+    /// Final critical chance in percent (applies only on a hit).
     pub crit_chance: i32,
-    /// Cover evaluation from the shooter's point of view.
+    /// Cover of the target as seen from the attack origin.
     pub cover: CoverResult,
-    /// Distance in tiles.
+    /// Distance in tiles from the attack origin.
     pub distance: f32,
     /// Damage range on a normal hit.
     pub damage: (i32, i32),
+    /// Extra damage on a crit.
+    pub crit_damage: i32,
     /// Human-readable modifiers, e.g. `("Half cover", -20)`.
-    pub breakdown: Vec<(&'static str, i32)>,
+    pub breakdown: Vec<(String, i32)>,
 }
 
 impl ShotPreview {
-    /// Expected damage of the shot, used by the AI to rank targets.
-    pub fn expected_damage(&self, crit_bonus: i32) -> f32 {
+    /// Expected damage, used by the AI to rank options.
+    pub fn expected_damage(&self) -> f32 {
         let avg = (self.damage.0 + self.damage.1) as f32 / 2.0;
         let p_hit = self.hit_chance as f32 / 100.0;
         let p_crit = self.crit_chance as f32 / 100.0;
-        p_hit * (avg + p_crit * crit_bonus as f32)
+        p_hit * (avg + p_crit * self.crit_damage as f32)
     }
 }
 
-/// Computes the shot preview for `shooter` firing at `target`.
+/// Computes the preview of `attacker` hitting `target` with `profile`.
 ///
-/// This does **not** check line of sight, range or ammo; that is the job of
-/// [`crate::battle::Battle::validate`]. Keeping the math separate means it can be
-/// evaluated for hypothetical positions (AI) as well.
-pub fn preview_shot(map: &Map, shooter: &Unit, target: &Unit, reaction: bool) -> ShotPreview {
-    let cover = cover_against(map, target.pos, shooter.pos);
-    let distance = shooter.pos.distance(target.pos);
-    let weapon = &shooter.weapon;
-    let mut breakdown: Vec<(&'static str, i32)> = vec![("Aim", shooter.stats.aim)];
+/// `origin` is where the attack comes from for cover and range purposes: the
+/// attacker's tile for shots, the blast centre for area attacks. Legality
+/// (range, line of sight, ammo) is checked separately by the battle.
+pub fn preview_attack(
+    rules: &CombatRules,
+    map: &Map,
+    origin: GridPos,
+    attacker: &Unit,
+    target: &Unit,
+    profile: &AttackProfile,
+) -> ShotPreview {
+    let cover = cover_against(map, target.pos, origin);
+    let distance = origin.distance(target.pos);
+    let weapon = &attacker.weapon;
+    let mut breakdown: Vec<(String, i32)> = Vec::new();
+    let mut push = |label: &str, value: i32| {
+        if value != 0 {
+            breakdown.push((label.to_string(), value));
+        }
+    };
 
-    if target.stats.defense != 0 {
-        breakdown.push(("Defense", -target.stats.defense));
+    match profile.base_accuracy {
+        Some(base) => push("Base accuracy", base),
+        None => push("Aim", attacker.stats.aim),
     }
-
+    push("Ability", profile.accuracy_bonus);
+    push("Defense", -target.stats.defense);
+    push("Defending", -target.status.defense_bonus);
     match cover.level {
-        CoverLevel::Half => breakdown.push(("Half cover", -HALF_COVER_BONUS)),
-        CoverLevel::Full => breakdown.push(("Full cover", -FULL_COVER_BONUS)),
+        CoverLevel::Half => push("Half cover", -profile.half_cover_penalty),
+        CoverLevel::Full => push("Full cover", -profile.full_cover_penalty),
         CoverLevel::None => {}
     }
-
-    if target.status.hunkered {
-        breakdown.push(("Hunkered", -HUNKER_BONUS));
+    if profile.range_falloff {
+        let range_mod = if distance > weapon.optimal_range {
+            -((distance - weapon.optimal_range) * rules.falloff_per_tile).round() as i32
+        } else {
+            (((weapon.optimal_range - distance) * rules.close_bonus_per_tile).round() as i32)
+                .min(rules.max_close_bonus)
+        };
+        push("Range", range_mod);
     }
 
-    // Range: lose accuracy beyond optimal, gain a little when closing in.
-    let range_mod = if distance > weapon.optimal_range {
-        -((distance - weapon.optimal_range) * FALLOFF_PER_TILE).round() as i32
+    let hit_chance = if profile.can_miss {
+        breakdown.iter().map(|(_, v)| *v).sum::<i32>().clamp(rules.min_hit, rules.max_hit)
     } else {
-        (((weapon.optimal_range - distance) * CLOSE_BONUS_PER_TILE).round() as i32)
-            .min(MAX_CLOSE_BONUS)
+        100
     };
-    if range_mod != 0 {
-        breakdown.push(("Range", range_mod));
-    }
 
-    if reaction {
-        breakdown.push(("Reaction shot", -REACTION_PENALTY));
-    }
-
-    let hit_chance = breakdown
-        .iter()
-        .map(|(_, v)| *v)
-        .sum::<i32>()
-        .clamp(MIN_HIT, MAX_HIT);
-
-    let mut crit_chance = weapon.crit_chance;
-    if cover.flanked {
-        crit_chance += FLANK_CRIT_BONUS;
-        breakdown.push(("Flanked (crit)", FLANK_CRIT_BONUS));
+    let (damage, crit_damage, weapon_crit) = match profile.damage {
+        DamageSource::Weapon => ((weapon.damage_min, weapon.damage_max), weapon.crit_bonus, weapon.crit_chance),
+        DamageSource::Fixed { min, max } => ((min, max), 0, 0),
+    };
+    let mut crit_chance = weapon_crit + profile.crit_bonus;
+    if cover.flanked && profile.flank_crit_bonus != 0 {
+        crit_chance += profile.flank_crit_bonus;
+        breakdown.push(("Flanked (crit)".into(), profile.flank_crit_bonus));
     }
 
     ShotPreview {
@@ -123,7 +118,8 @@ pub fn preview_shot(map: &Map, shooter: &Unit, target: &Unit, reaction: bool) ->
         crit_chance: crit_chance.clamp(0, 100),
         cover,
         distance,
-        damage: (weapon.damage_min, weapon.damage_max),
+        damage: (damage.0 + profile.damage_bonus, damage.1 + profile.damage_bonus),
+        crit_damage,
         breakdown,
     }
 }
@@ -131,54 +127,62 @@ pub fn preview_shot(map: &Map, shooter: &Unit, target: &Unit, reaction: bool) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grid::GridPos;
-    use crate::unit::{Team, UnitId, UnitStatus, UnitTemplate};
+    use crate::content::Ruleset;
+    use crate::grid::Terrain;
+    use crate::unit::{Team, UnitId, UnitStatus};
 
     fn make(team: Team, pos: GridPos) -> Unit {
-        let t = UnitTemplate::rifleman("t");
+        let rules = Ruleset::standard();
+        let class = rules.class("rifleman").unwrap();
         Unit {
             id: UnitId(0),
-            name: t.name,
+            name: "t".into(),
+            class: class.id.clone(),
             team,
             pos,
-            hp: t.stats.max_hp,
+            hp: class.stats.max_hp,
             action_points: 2,
-            stats: t.stats,
-            weapon: t.weapon,
+            stats: class.stats,
+            weapon: rules.weapon(&class.weapon).unwrap().clone(),
+            abilities: class.abilities.clone(),
+            cooldowns: Default::default(),
+            charges: Default::default(),
             status: UnitStatus::default(),
+            model: String::new(),
         }
     }
 
     #[test]
-    fn cover_reduces_hit_chance() {
-        let open = Map::new(10, 10);
-        let mut covered = Map::new(10, 10);
-        covered.set_terrain(GridPos::new(5, 6), crate::grid::Terrain::HighCover);
-
+    fn cover_penalties_come_from_the_profile() {
+        let rules = CombatRules::default();
+        let mut map = Map::new(10, 10);
+        // Shooter south of target; half cover south of target.
+        map.set_terrain(GridPos::new(5, 4), Terrain::LowCover);
         let shooter = make(Team::Player, GridPos::new(5, 0));
         let target = make(Team::Enemy, GridPos::new(5, 5));
+        let open_map = Map::new(10, 10);
 
-        // Shooter is south of target; place cover south of target instead.
-        let mut south_cover = Map::new(10, 10);
-        south_cover.set_terrain(GridPos::new(5, 4), crate::grid::Terrain::LowCover);
+        let standard = AttackProfile::default();
+        let precise = AttackProfile { half_cover_penalty: 5, ..Default::default() };
 
-        let p_open = preview_shot(&open, &shooter, &target, false);
-        let p_behind = preview_shot(&covered, &shooter, &target, false);
-        let p_half = preview_shot(&south_cover, &shooter, &target, false);
+        let open = preview_attack(&rules, &open_map, shooter.pos, &shooter, &target, &standard);
+        let covered = preview_attack(&rules, &map, shooter.pos, &shooter, &target, &standard);
+        let covered_precise = preview_attack(&rules, &map, shooter.pos, &shooter, &target, &precise);
 
-        assert!(p_open.cover.flanked);
-        assert_eq!(p_behind.hit_chance, p_open.hit_chance); // cover is on the wrong side
-        assert_eq!(p_half.hit_chance, p_open.hit_chance - HALF_COVER_BONUS);
-        assert!(p_open.crit_chance > p_half.crit_chance);
+        assert!(open.cover.flanked);
+        assert_eq!(covered.hit_chance, open.hit_chance - 20);
+        assert_eq!(covered_precise.hit_chance, open.hit_chance - 5);
     }
 
     #[test]
-    fn reaction_penalty_applies() {
+    fn base_accuracy_overrides_aim_and_can_miss_false_always_hits() {
+        let rules = CombatRules::default();
         let map = Map::new(10, 10);
         let a = make(Team::Player, GridPos::new(0, 0));
         let b = make(Team::Enemy, GridPos::new(0, 6));
-        let normal = preview_shot(&map, &a, &b, false);
-        let reaction = preview_shot(&map, &a, &b, true);
-        assert_eq!(normal.hit_chance - REACTION_PENALTY, reaction.hit_chance);
+        let fixed = AttackProfile { base_accuracy: Some(50), range_falloff: false, ..Default::default() };
+        assert_eq!(preview_attack(&rules, &map, a.pos, &a, &b, &fixed).hit_chance, 50);
+        let sure = AttackProfile { can_miss: false, ..Default::default() };
+        assert_eq!(preview_attack(&rules, &map, a.pos, &a, &b, &sure).hit_chance, 100);
     }
 }

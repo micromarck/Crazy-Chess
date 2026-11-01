@@ -43,7 +43,9 @@ fn enemy_think(
         return;
     }
     // Look at the unit about to act during the "thinking" pause.
-    let action = ai::next_team_action(&state.battle, &brain.config);
+    // Modules can retune the AI by registering an AI profile called "default".
+    let config = state.battle.rules().ai_profile("default").map_or(brain.config, |p| p.config);
+    let action = ai::next_team_action(&state.battle, &config);
     if let Some(pos) = action.actor().and_then(|id| state.battle.unit(id)).map(|u| u.pos) {
         rig.focus_on(pos);
     }

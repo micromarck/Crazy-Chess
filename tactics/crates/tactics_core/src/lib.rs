@@ -5,8 +5,12 @@
 //! line of sight, percentage-based shooting, overwatch reaction fire and a
 //! utility AI.
 //!
-//! This crate has **no dependencies** and knows nothing about rendering, input
-//! or time. That makes it:
+//! All content (abilities, weapons, classes, maps...) comes from **modules**;
+//! see [`content`] and `MODULES.md`.
+//!
+//! This crate knows nothing about rendering, input or time, and with
+//! `default-features = false` has **no dependencies** (the default `data`
+//! feature adds serde + RON for data-file modules). That makes it:
 //! * **portable** — it compiles for every target Rust supports (desktop, Android,
 //!   WebAssembly, a headless dedicated server...);
 //! * **deterministic** — same seed + same actions = same battle;
@@ -31,9 +35,11 @@
 //! | [`pathfinding`] | movement range (Dijkstra) and A* |
 //! | [`visibility`] | line of sight |
 //! | [`cover`] | directional cover and flanking |
-//! | [`unit`] | unit/weapon data and templates |
+//! | [`content`] | the module system: `Ruleset`, `GameModule`, ability definitions |
+//! | [`modules`] | built-in modules (base game + example add-on) |
+//! | [`unit`] | units, weapons, classes |
 //! | [`combat`] | hit / crit / damage math |
-//! | [`action`] | commands and validation errors |
+//! | [`action`] | commands (`Move`, `UseAbility`...) and validation errors |
 //! | [`event`] | the event stream frontends animate |
 //! | [`battle`] | authoritative state + rules |
 //! | [`ai`] | enemy decision making |
@@ -44,7 +50,8 @@
 //! ```
 //! use tactics_core::prelude::*;
 //!
-//! let mut battle = scenario::demo(42);
+//! let rules = Ruleset::standard(); // or add your own modules
+//! let mut battle = scenario::demo(&rules, 42);
 //! let soldier = battle.living(Team::Player).next().unwrap().id;
 //! let dest = battle.movement_range(soldier).iter().next().unwrap().0;
 //! let events = battle.apply(Action::Move { unit: soldier, to: dest }).unwrap();
@@ -55,9 +62,11 @@ pub mod action;
 pub mod ai;
 pub mod battle;
 pub mod combat;
+pub mod content;
 pub mod cover;
 pub mod event;
 pub mod grid;
+pub mod modules;
 pub mod pathfinding;
 pub mod rng;
 pub mod scenario;
@@ -66,14 +75,19 @@ pub mod visibility;
 
 /// Everything a frontend typically needs, in one import.
 pub mod prelude {
-    pub use crate::action::{Action, ActionError};
+    pub use crate::action::{Action, ActionError, Target};
     pub use crate::ai::{self, AiConfig};
     pub use crate::battle::Battle;
     pub use crate::combat::ShotPreview;
+    pub use crate::content::{
+        AbilityDef, AbilityEffect, AbilityId, AbilityRange, ApCost, AttackProfile, DamageSource, GameModule,
+        ModuleInfo, Ruleset, Targeting,
+    };
     pub use crate::cover::{cover_against, cover_around, CoverResult};
     pub use crate::event::{GameEvent, ShotOutcome};
     pub use crate::grid::{CoverLevel, Direction, GridPos, Map, Terrain};
     pub use crate::pathfinding::ReachableSet;
     pub use crate::scenario;
-    pub use crate::unit::{Team, Unit, UnitId, UnitStats, UnitTemplate, Weapon};
+    pub use crate::modules;
+    pub use crate::unit::{Team, Unit, UnitClass, UnitId, UnitStats, Weapon};
 }

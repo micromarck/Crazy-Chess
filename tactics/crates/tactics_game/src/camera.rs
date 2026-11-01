@@ -14,11 +14,13 @@
 use std::f32::consts::{FRAC_PI_4, TAU};
 
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
+use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
 use tactics_core::grid::GridPos;
 
 use crate::FrameSet;
 use crate::coords::grid_to_world;
+use crate::input::pointer_over_ui;
 use crate::state::BattleState;
 
 pub struct CameraPlugin;
@@ -93,6 +95,8 @@ impl CameraRig {
 #[derive(Resource, Default)]
 pub struct TouchGesture {
     pub dragged: bool,
+    /// The gesture started on a UI panel (it scrolls the UI, not the camera).
+    pub over_ui: bool,
 }
 
 /// Pixels a pointer must travel before a press counts as a drag.
@@ -126,15 +130,19 @@ fn rig_transform(rig: &CameraRig) -> Transform {
     Transform::from_translation(rig.focus + offset).looking_at(rig.focus, Vec3::Y)
 }
 
+#[allow(clippy::too_many_arguments)] // Bevy systems take their inputs as parameters.
 fn keyboard_mouse_controls(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     buttons: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
+    hover_map: Res<HoverMap>,
+    ui_nodes: Query<(), With<Node>>,
     mut rig: Single<&mut CameraRig>,
 ) {
     let dt = time.delta_secs();
+    let over_ui = pointer_over_ui(&hover_map, &ui_nodes);
     let speed = rig.target_distance * 1.2 * dt;
 
     let mut pan = Vec2::ZERO;
@@ -175,7 +183,8 @@ fn keyboard_mouse_controls(
         MouseScrollUnit::Line => scroll.delta.y,
         MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
     };
-    if lines != 0.0 {
+    // The wheel scrolls UI panels (e.g. the editor) when the pointer is over them.
+    if lines != 0.0 && !over_ui {
         rig.zoom(1.0 - lines * 0.1);
     }
     if keys.pressed(KeyCode::KeyZ) {
@@ -188,11 +197,17 @@ fn keyboard_mouse_controls(
 
 fn touch_controls(
     touches: Res<Touches>,
+    hover_map: Res<HoverMap>,
+    ui_nodes: Query<(), With<Node>>,
     mut gesture: ResMut<TouchGesture>,
     mut rig: Single<&mut CameraRig>,
 ) {
     if touches.any_just_pressed() && touches.iter().count() == 1 {
         gesture.dragged = false;
+        gesture.over_ui = pointer_over_ui(&hover_map, &ui_nodes);
+    }
+    if gesture.over_ui {
+        return;
     }
     let active: Vec<_> = touches.iter().collect();
     match active.as_slice() {

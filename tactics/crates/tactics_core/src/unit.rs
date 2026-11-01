@@ -1,9 +1,15 @@
-//! Units (soldiers, aliens, robots...) and the data that describes them.
+//! Units and the data that describes them.
 //!
-//! Units are plain data. All behaviour lives in [`crate::battle`], which keeps
-//! the rules in one place and makes units trivial to serialize, clone for AI
-//! look-ahead, or display in a UI.
+//! * [`Weapon`] and [`UnitClass`] are **content** — registered in a
+//!   [`Ruleset`](crate::content::Ruleset) by modules.
+//! * [`Unit`] is a live **instance** on the battlefield, created from a class
+//!   by [`Battle::spawn`](crate::battle::Battle::spawn).
+//!
+//! Units are plain data; all behaviour lives in [`crate::battle`].
 
+use std::collections::BTreeMap;
+
+use crate::content::AbilityId;
 use crate::grid::GridPos;
 
 /// Stable identifier for a unit within a battle. Never reused, even after death,
@@ -28,13 +34,17 @@ impl Team {
     }
 }
 
-/// A weapon profile. Copy-able template plus the per-instance ammo counter.
+/// A weapon profile. Abilities with `DamageSource::Weapon` / `AbilityRange::Weapon`
+/// read their numbers from here, so one "shoot" ability works with every gun.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
 pub struct Weapon {
+    /// Unique id used by [`UnitClass::weapon`].
+    pub id: String,
     pub name: String,
     pub damage_min: i32,
     pub damage_max: i32,
-    /// Base critical-hit chance (percent) before flanking bonuses.
+    /// Base critical-hit chance (percent).
     pub crit_chance: i32,
     /// Extra damage on a critical hit.
     pub crit_bonus: i32,
@@ -44,15 +54,16 @@ pub struct Weapon {
     pub max_range: f32,
     /// Magazine size.
     pub clip_size: i32,
-    /// Rounds currently loaded.
+    /// Rounds currently loaded (instance state: set to `clip_size` on spawn).
+    #[cfg_attr(feature = "data", serde(skip))]
     pub ammo: i32,
 }
 
-impl Weapon {
-    /// Standard-issue assault rifle.
-    pub fn rifle() -> Self {
+impl Default for Weapon {
+    fn default() -> Self {
         Self {
-            name: "Assault Rifle".into(),
+            id: String::new(),
+            name: String::new(),
             damage_min: 3,
             damage_max: 5,
             crit_chance: 10,
@@ -60,64 +71,19 @@ impl Weapon {
             optimal_range: 6.0,
             max_range: 18.0,
             clip_size: 4,
-            ammo: 4,
-        }
-    }
-
-    /// Close-range, high-damage weapon.
-    pub fn shotgun() -> Self {
-        Self {
-            name: "Shotgun".into(),
-            damage_min: 4,
-            damage_max: 7,
-            crit_chance: 20,
-            crit_bonus: 3,
-            optimal_range: 2.0,
-            max_range: 10.0,
-            clip_size: 3,
-            ammo: 3,
-        }
-    }
-
-    /// Long-range precision weapon.
-    pub fn sniper() -> Self {
-        Self {
-            name: "Sniper Rifle".into(),
-            damage_min: 4,
-            damage_max: 6,
-            crit_chance: 25,
-            crit_bonus: 3,
-            optimal_range: 14.0,
-            max_range: 25.0,
-            clip_size: 3,
-            ammo: 3,
-        }
-    }
-
-    /// Alien plasma pistol.
-    pub fn plasma_pistol() -> Self {
-        Self {
-            name: "Plasma Pistol".into(),
-            damage_min: 2,
-            damage_max: 4,
-            crit_chance: 5,
-            crit_bonus: 2,
-            optimal_range: 5.0,
-            max_range: 14.0,
-            clip_size: 3,
-            ammo: 3,
+            ammo: 0,
         }
     }
 }
 
-/// Base statistics of a unit. Modified by gear, abilities or difficulty in a
-/// full game; here they are flat values.
+/// Base statistics of a unit.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
 pub struct UnitStats {
     pub max_hp: i32,
-    /// Movement points per action point (see [`crate::pathfinding`]).
+    /// Movement points per action point (see [`crate::pathfinding`]; 2 per tile).
     pub mobility: u32,
-    /// Base accuracy (percent).
+    /// Base accuracy (percent), used by attacks without a fixed `base_accuracy`.
     pub aim: i32,
     /// Subtracted from attackers' hit chance.
     pub defense: i32,
@@ -137,14 +103,31 @@ impl Default for UnitStats {
     }
 }
 
-/// Temporary conditions on a unit. Kept as simple flags for clarity; a larger
-/// game would turn this into a list of timed effects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// A unit archetype: stats, weapon and the abilities it knows.
+#[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
+pub struct UnitClass {
+    /// Unique id (`"rifleman"`, `"sectoid"`...).
+    pub id: String,
+    /// Display name of the class.
+    pub name: String,
+    pub stats: UnitStats,
+    /// Weapon id.
+    pub weapon: String,
+    /// Abilities in hotkey order (1, 2, 3...).
+    pub abilities: Vec<AbilityId>,
+    /// Hint for the renderer (`"soldier"`, `"alien"`...); the core ignores it.
+    pub model: String,
+}
+
+/// Temporary conditions on a unit. A future "status effect" module type will
+/// generalise this into a list of timed effects (see `MODULES.md`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct UnitStatus {
-    /// Will shoot at the first enemy that moves within sight during their turn.
-    pub overwatch: bool,
-    /// Hunkered down: doubles cover bonus until the unit's next turn.
-    pub hunkered: bool,
+    /// Armed overwatch ability: fires at the first enemy that moves in sight.
+    pub overwatch: Option<AbilityId>,
+    /// Extra defence from a Defend ability (hunker) until the unit's next turn.
+    pub defense_bonus: i32,
 }
 
 /// A single combatant on the battlefield.
@@ -152,20 +135,27 @@ pub struct UnitStatus {
 pub struct Unit {
     pub id: UnitId,
     pub name: String,
+    /// Class id this unit was created from.
+    pub class: String,
     pub team: Team,
     pub pos: GridPos,
     pub hp: i32,
-    /// Action points remaining this turn (XCOM-style: usually 2).
+    /// Action points remaining this turn.
     pub action_points: u8,
     pub stats: UnitStats,
     pub weapon: Weapon,
+    /// Abilities this unit can use (copied from its class at spawn).
+    pub abilities: Vec<AbilityId>,
+    /// Remaining cooldown turns per ability (absent = ready).
+    pub cooldowns: BTreeMap<AbilityId, u32>,
+    /// Remaining uses per limited ability (absent = unlimited / untouched).
+    pub charges: BTreeMap<AbilityId, u32>,
     pub status: UnitStatus,
+    /// Renderer hint copied from the class.
+    pub model: String,
 }
 
 impl Unit {
-    /// Action points every unit receives at the start of its team's turn.
-    pub const MAX_ACTION_POINTS: u8 = 2;
-
     pub fn is_alive(&self) -> bool {
         self.hp > 0
     }
@@ -174,67 +164,14 @@ impl Unit {
     pub fn can_act(&self) -> bool {
         self.is_alive() && self.action_points > 0
     }
-}
 
-/// Builder-style helper for creating units without listing every field.
-#[derive(Debug, Clone)]
-pub struct UnitTemplate {
-    pub name: String,
-    pub stats: UnitStats,
-    pub weapon: Weapon,
-}
-
-impl UnitTemplate {
-    pub fn new(name: impl Into<String>, stats: UnitStats, weapon: Weapon) -> Self {
-        Self {
-            name: name.into(),
-            stats,
-            weapon,
-        }
+    /// Does the unit know this ability?
+    pub fn has_ability(&self, id: &AbilityId) -> bool {
+        self.abilities.contains(id)
     }
 
-    pub fn rifleman(name: impl Into<String>) -> Self {
-        Self::new(name, UnitStats::default(), Weapon::rifle())
-    }
-
-    pub fn assault(name: impl Into<String>) -> Self {
-        Self::new(
-            name,
-            UnitStats {
-                max_hp: 10,
-                mobility: 14,
-                aim: 65,
-                ..UnitStats::default()
-            },
-            Weapon::shotgun(),
-        )
-    }
-
-    pub fn sniper(name: impl Into<String>) -> Self {
-        Self::new(
-            name,
-            UnitStats {
-                max_hp: 6,
-                mobility: 10,
-                aim: 80,
-                sight: 18.0,
-                ..UnitStats::default()
-            },
-            Weapon::sniper(),
-        )
-    }
-
-    pub fn alien_grunt(name: impl Into<String>) -> Self {
-        Self::new(
-            name,
-            UnitStats {
-                max_hp: 6,
-                mobility: 12,
-                aim: 65,
-                defense: 5,
-                sight: 13.0,
-            },
-            Weapon::plasma_pistol(),
-        )
+    /// Remaining cooldown of an ability (0 = ready).
+    pub fn cooldown(&self, id: &AbilityId) -> u32 {
+        self.cooldowns.get(id).copied().unwrap_or(0)
     }
 }

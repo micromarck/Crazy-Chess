@@ -19,12 +19,15 @@ pub const HOVER: Color = Color::srgb(1.0, 1.0, 1.0);
 pub const SELECTED: Color = Color::srgb(0.4, 1.0, 0.6);
 pub const TARGET: Color = Color::srgb(1.0, 0.35, 0.3);
 pub const TRACER: Color = Color::srgb(1.0, 0.9, 0.4);
+pub const HEAL: Color = Color::srgb(0.4, 1.0, 0.5);
+pub const EXPLOSION: Color = Color::srgb(1.0, 0.55, 0.15);
 pub const COVER_HALF: Color = Color::srgb(0.5, 0.75, 1.0);
 pub const COVER_FULL: Color = Color::srgb(0.2, 0.5, 1.0);
 
 pub const UI_PANEL: Color = Color::srgba(0.05, 0.06, 0.08, 0.85);
 pub const UI_BUTTON: Color = Color::srgb(0.16, 0.19, 0.24);
 pub const UI_BUTTON_HOVER: Color = Color::srgb(0.24, 0.29, 0.36);
+pub const UI_BUTTON_DISABLED: Color = Color::srgb(0.11, 0.11, 0.12);
 pub const UI_BUTTON_PRESSED: Color = Color::srgb(0.30, 0.55, 0.40);
 pub const UI_TEXT: Color = Color::srgb(0.92, 0.93, 0.95);
 pub const UI_DIM: Color = Color::srgb(0.6, 0.63, 0.68);
