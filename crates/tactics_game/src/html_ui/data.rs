@@ -33,6 +33,7 @@ pub fn collect_ui_data(
     flags: Res<UiFlags>,
     library: Res<crate::models::ModelLibrary>,
     lab: Res<crate::lab::LabState>,
+    settings: Res<crate::settings::GameSettings>,
     mut data: ResMut<UiData>,
 ) {
     let mut v = UiValues::default();
@@ -177,6 +178,14 @@ pub fn collect_ui_data(
     for (name, on) in &flags.0 {
         v.set(&format!("ui.{name}"), bool_str(*on));
     }
+
+    // Settings panel.
+    let on = |b: bool| if b { "on" } else { "off" };
+    v.set("settings.anim_speed", format!("x{}", settings.anim_speed));
+    v.set("settings.camera_speed", format!("x{}", settings.camera_speed));
+    v.set("settings.edge_scroll", on(settings.edge_scroll));
+    v.set("settings.invert_orbit", on(settings.invert_orbit));
+    v.set("settings.action_camera", on(settings.action_camera));
 
     // Misc toggles.
     v.set("editor.open", bool_str(editor.open));

@@ -104,6 +104,7 @@ fn keyboard_shortcuts(
     director: Res<CameraDirector>,
     mut virt: ResMut<Time<Virtual>>,
     mut flags: ResMut<crate::html_ui::UiFlags>,
+    settings: Res<crate::settings::GameSettings>,
     mut commands: MessageWriter<PlayerCommand>,
 ) {
     // H / F10: controls cheat sheet.
@@ -126,7 +127,7 @@ fn keyboard_shortcuts(
     }
     // Hold Shift to fast-forward (camera scripts control speed themselves).
     if !director.is_active() {
-        let speed = if shift { 3.0 } else { 1.0 };
+        let speed = settings.anim_speed * if shift { 3.0 } else { 1.0 };
         if (virt.relative_speed() - speed).abs() > f32::EPSILON {
             virt.set_relative_speed(speed);
         }
@@ -177,6 +178,7 @@ fn board_click(
     mut playback: ResMut<Playback>,
     mut log: ResMut<LogMessages>,
     mut rig: Single<&mut CameraRig>,
+    settings: Res<crate::settings::GameSettings>,
 ) {
     // A click (press + release without dragging), a tap, or releasing an
     // order-drag that started on the selected soldier.
@@ -197,7 +199,7 @@ fn board_click(
         if selection.aim == Some(target) {
             fire(&mut state, &mut selection, &mut playback, &mut log);
         } else {
-            aim(&state, &mut selection, &mut log, &mut rig, unit, ability, target);
+            aim(&state, &mut selection, &mut log, &mut rig, unit, ability, target, settings.action_camera);
         }
         return;
     }
@@ -205,7 +207,7 @@ fn board_click(
     // 2. Select a friendly unit (not when finishing an order-drag on one).
     if let Some(unit) = battle.unit_at(tile).filter(|u| u.team == Team::Player && !drag.order_released) {
         selection.select(Some(unit.id));
-        rig.focus_at(crate::coords::tile_top(state.battle.map(), tile));
+        rig.follow(crate::coords::tile_top(state.battle.map(), tile));
         return;
     }
 
@@ -217,7 +219,7 @@ fn board_click(
             return;
         };
         let target = Target::Unit(enemy.id);
-        aim(&state, &mut selection, &mut log, &mut rig, selected, primary, target);
+        aim(&state, &mut selection, &mut log, &mut rig, selected, primary, target, settings.action_camera);
         return;
     }
 
@@ -230,6 +232,7 @@ fn board_click(
 
 /// Points `ability` at `target` (if legal) and frames the shot; the next
 /// confirmation fires it.
+#[allow(clippy::too_many_arguments)]
 fn aim(
     state: &BattleState,
     selection: &mut Selection,
@@ -238,6 +241,7 @@ fn aim(
     unit: UnitId,
     ability: AbilityId,
     target: Target,
+    action_camera: bool,
 ) {
     let battle = &state.battle;
     let name = battle.ability(&ability).map_or(String::new(), |d| d.name.clone());
@@ -252,7 +256,12 @@ fn aim(
             };
             if let (Some(from), Some(to)) = (battle.unit(unit).map(|u| u.pos), at) {
                 let map = battle.map();
-                rig.frame(crate::coords::tile_top(map, from), crate::coords::tile_top(map, to));
+                let (a, b) = (crate::coords::tile_top(map, from), crate::coords::tile_top(map, to));
+                if action_camera {
+                    rig.frame(a, b);
+                } else {
+                    rig.follow(b);
+                }
             }
         }
         Err(e) => log.push(format!("Can't {name}: {e}")),

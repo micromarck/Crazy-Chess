@@ -78,6 +78,7 @@
   .mission.current { background: #2f5e44; }
   .mission .key { max-width: 320px; }
 
+  #settings { top: 140px; left: 300px; padding: 10px; min-width: 300px; }
   #help { top: 140px; left: 300px; padding: 12px; max-width: 560px; }
   .help-grid { flex-direction: column; }
   .help-row { flex-direction: row; margin-bottom: 3px; }
@@ -178,6 +179,7 @@
   <button class="small-button" data-command="toggle:missions">Missions<span class="key">list</span></button>
   <button class="small-button" data-command="toggle:loadout">Loadout<span class="key">squad</span></button>
   <button class="small-button" data-command="toggle:help">Help<span class="key">H</span></button>
+  <button class="small-button" data-command="toggle:settings">Settings<span class="key">game</span></button>
   <button class="small-button" data-command="cinematics">Cinema<span class="key" data-if="cinematics">on</span><span class="key" data-if="!cinematics">off</span></button>
 </div>
 
@@ -213,6 +215,17 @@
   </div>
 </div>
 
+<!-- Settings: click a value to cycle / toggle it (saved on desktop) -->
+<div id="settings" class="panel" data-if="ui.settings">
+  <span class="title" style="font-size: 16px; margin-bottom: 6px">Settings</span>
+  <button class="mission" data-command="setting:anim_speed"><span>Animation speed</span><span class="key">{{ settings.anim_speed }}</span></button>
+  <button class="mission" data-command="setting:camera_speed"><span>Camera speed</span><span class="key">{{ settings.camera_speed }}</span></button>
+  <button class="mission" data-command="setting:action_camera"><span>Action camera (frame shots)</span><span class="key">{{ settings.action_camera }}</span></button>
+  <button class="mission" data-command="setting:edge_scroll"><span>Edge scrolling</span><span class="key">{{ settings.edge_scroll }}</span></button>
+  <button class="mission" data-command="setting:invert_orbit"><span>Invert tilt</span><span class="key">{{ settings.invert_orbit }}</span></button>
+  <button class="mission" data-command="cinematics"><span>Cinematic cameras</span><span class="key" data-if="cinematics">on</span><span class="key" data-if="!cinematics">off</span></button>
+</div>
+
 <!-- Controls cheat sheet (H) -->
 <div id="help" class="panel" data-if="ui.help">
   <span class="title" style="font-size: 16px; margin-bottom: 6px">Controls</span>
@@ -232,6 +245,8 @@
     <div class="help-row"><span class="help-key">Hold Shift</span><span class="help-text">fast-forward animations</span></div>
     <div class="help-row"><span class="help-key">C / Space</span><span class="help-text">toggle / skip cinematic cameras</span></div>
     <div class="help-row"><span class="help-key">F5</span><span class="help-text">restart mission</span></div>
+    <div class="help-row"><span class="help-key">M</span><span class="help-text">minimap (click it to jump there)</span></div>
+    <div class="help-row"><span class="help-key">H</span><span class="help-text">this help</span></div>
   </div>
   <span class="dim" style="font-size: 12px; margin-top: 6px">Hover a tile: gold diamonds = enemies you'd flank, red = in sight, yellow lines = overwatch on the way.</span>
 </div>

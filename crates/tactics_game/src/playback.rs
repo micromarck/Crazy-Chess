@@ -125,6 +125,7 @@ pub struct Presenter<'w, 's> {
     board: MessageWriter<'w, crate::board::BoardDirty>,
     spawn_visual: MessageWriter<'w, crate::units::SpawnUnitVisual>,
     banner: MessageWriter<'w, crate::tooltip::Banner>,
+    settings: Res<'w, crate::settings::GameSettings>,
 }
 
 /// Moves the camera unless a camera script owns it.
@@ -134,10 +135,16 @@ fn look_at(director: &CameraDirector, rig: &mut CameraRig, p: Vec3) {
     }
 }
 
-/// Keeps two points in view (shooter and target), unless a script owns the camera.
-fn frame(director: &CameraDirector, rig: &mut CameraRig, a: Vec3, b: Vec3) {
-    if !director.is_active() {
+/// Keeps two points in view (shooter and target), unless a script owns the
+/// camera. With the action camera off it only nudges towards the midpoint.
+fn frame(director: &CameraDirector, rig: &mut CameraRig, action_camera: bool, a: Vec3, b: Vec3) {
+    if director.is_active() {
+        return;
+    }
+    if action_camera {
         rig.frame(a, b);
+    } else {
+        rig.follow((a + b) / 2.0);
     }
 }
 
@@ -341,7 +348,7 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             let scripted = play_camera(battle.rules(), &mut p.director, pres.camera.as_ref(), pres.camera_chance, actor, aim.unwrap_or(actor));
             if !scripted {
                 match aim {
-                    Some(a) => frame(&p.director, &mut p.rig, actor, a),
+                    Some(a) => frame(&p.director, &mut p.rig, p.settings.action_camera, actor, a),
                     None => look_at(&p.director, &mut p.rig, actor),
                 }
             }
@@ -382,7 +389,7 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
                 if let Some(e) = entity_of(*attacker) {
                     p.commands.entity(e).insert(crate::units::FaceTarget(Some(t)));
                 }
-                frame(&p.director, &mut p.rig, s, t);
+                frame(&p.director, &mut p.rig, p.settings.action_camera, s, t);
                 vec![Anim::Shot {
                     shooter: s + Vec3::Y * CHEST,
                     target: t + Vec3::Y * CHEST,

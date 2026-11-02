@@ -156,6 +156,11 @@ impl CameraRig {
         (right, forward)
     }
 
+    /// Pans by a camera-relative offset (x = right, y = forward), in world units.
+    pub fn pan_by(&mut self, delta: Vec2) {
+        self.pan(delta);
+    }
+
     fn pan(&mut self, screen_delta: Vec2) {
         let (right, forward) = self.ground_axes();
         self.target_focus += right * screen_delta.x + forward * screen_delta.y;
@@ -237,6 +242,7 @@ fn mouse_controls(
     selection: Res<crate::state::Selection>,
     state: Res<crate::state::BattleState>,
     camera: Single<(&Camera, &GlobalTransform), With<CameraRig>>,
+    settings: Res<crate::settings::GameSettings>,
     mut drag: ResMut<MouseDrag>,
     mut rig: Single<&mut CameraRig>,
 ) {
@@ -298,8 +304,9 @@ fn mouse_controls(
                     }
                 }
                 DragMode::Orbit => {
+                    let tilt = if settings.invert_orbit { -1.0 } else { 1.0 };
                     rig.target_yaw -= motion.delta.x * 0.005;
-                    rig.target_pitch = (rig.target_pitch + motion.delta.y * 0.004).clamp(0.3, 1.45);
+                    rig.target_pitch = (rig.target_pitch + tilt * motion.delta.y * 0.004).clamp(0.3, 1.45);
                 }
                 DragMode::Order | DragMode::None => {}
             }
@@ -404,12 +411,13 @@ fn keyboard_mouse_controls(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     director: Res<CameraDirector>,
+    settings: Res<crate::settings::GameSettings>,
     mut rig: Single<&mut CameraRig>,
 ) {
     if director.is_active() {
         return; // a camera script owns the camera
     }
-    let dt = time.delta_secs();
+    let dt = time.delta_secs() * settings.camera_speed;
     let speed = rig.target_distance * 1.2 * dt;
 
     let mut pan = Vec2::ZERO;
@@ -500,9 +508,14 @@ fn touch_controls(
 
 /// Eases the rig towards its targets and writes the camera transform.
 /// Uses real time so slow motion (camera scripts) doesn't make the camera sluggish.
-fn apply_rig(time: Res<Time<Real>>, mut q: Single<(&mut CameraRig, &mut Transform)>) {
+fn apply_rig(
+    time: Res<Time<Real>>,
+    settings: Res<crate::settings::GameSettings>,
+    mut q: Single<(&mut CameraRig, &mut Transform)>,
+) {
     let (rig, transform) = &mut *q;
-    let dt = time.delta_secs();
+    // Faster camera setting = shorter glides.
+    let dt = time.delta_secs() * settings.camera_speed.max(0.1);
     let t = 1.0 - (-CameraRig::SMOOTHING * dt).exp();
     let mut velocity = rig.focus_velocity;
     rig.focus = smooth_damp(rig.focus, rig.target_focus, &mut velocity, CameraRig::FOCUS_TIME, dt);

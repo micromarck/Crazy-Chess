@@ -138,7 +138,9 @@ TBSium/
   shots then returns to your zoom; walls between the camera and your soldiers
   sink out of the way (cutaway); a cursor tooltip with odds / move cost;
   aim-then-confirm attacks; turn and alarm banners; enemy turns skip hidden and
-  idle units instantly so big maps stay brisk.
+  idle units instantly so big maps stay brisk; move look-ahead (who you could
+  shoot or flank from a tile, overwatch on the way); damage preview on HP
+  pips; glowing, labelled evac pads and objectives; a minimap.
 * Hand-made demo map + procedural skirmishes ("New Battle").
 
 ## Controls
@@ -157,6 +159,8 @@ TBSium/
 | Centre on selected unit / reset view | F / Home | — |
 | End turn | Enter (when not aiming) | End Turn button |
 | Fast-forward animations | hold Shift (x3) | — |
+| Minimap (click to jump) | M | — |
+| Controls cheat sheet | H | Help button |
 | Module editor | F1 | Edit button |
 | Skip a cinematic / toggle cinematics | Space / C | Cinema button |
 | Reload the HTML HUD | F6 | — |

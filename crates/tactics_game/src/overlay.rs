@@ -47,7 +47,7 @@ fn tile_rect(gizmos: &mut Gizmos, map: &Map, pos: GridPos, scale: f32, color: Co
     gizmos.rect(iso, Vec2::splat(TILE_SIZE * scale), color);
 }
 
-fn draw_movement(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Selection>) {
+fn draw_movement(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleState>, selection: Res<Selection>) {
     if selection.pending.is_some() {
         return; // targeting mode replaces the movement overlay
     }
@@ -65,6 +65,8 @@ fn draw_movement(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Sel
         tile_rect(&mut gizmos, state.battle.map(), pos, 0.8, color);
     }
     tile_rect(&mut gizmos, state.battle.map(), unit.pos, 0.95, theme::SELECTED);
+    let pulse = 0.5 + 0.5 * (time.elapsed_secs() * 3.0).sin();
+    ground_circle(&mut gizmos, tile_top(battle.map(), unit.pos), 0.36 + 0.05 * pulse, theme::SELECTED.with_alpha(0.5 + 0.5 * pulse));
 
     // Path preview + cover shields at the hovered destination.
     let Some(hover) = selection.hovered else { return };
@@ -192,6 +194,18 @@ fn draw_targeting(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleSt
                 .is_ok();
             let color = if ok { theme::EXPLOSION } else { theme::UI_DIM };
             ground_circle(&mut gizmos, tile_top(battle.map(), hover), profile.area_radius, color);
+            // Throw preview: the arc the grenade would fly.
+            let lobbed = battle.rules().presentation_of(&def.id).is_some_and(|p| p.projectile == tactics_core::content::ProjectileStyle::Arc);
+            if lobbed {
+                let from = tile_top(battle.map(), unit.pos) + Vec3::Y * theme::UNIT_HEIGHT * 0.8;
+                let to = tile_top(battle.map(), hover) + Vec3::Y * 0.2;
+                let height = (from.distance(to) * 0.35).max(0.8);
+                let at = |k: f32| from.lerp(to, k) + Vec3::Y * (4.0 * height * k * (1.0 - k));
+                // Dashed: every other segment.
+                for i in (0..24).step_by(2) {
+                    gizmos.line(at(i as f32 / 24.0), at((i + 1) as f32 / 24.0), color.with_alpha(0.8));
+                }
+            }
             for u in battle.units().iter().filter(|u| u.is_alive() && u.pos.distance(hover) <= profile.area_radius) {
                 tile_rect(&mut gizmos, state.battle.map(), u.pos, 0.7, color);
             }

@@ -171,6 +171,7 @@ fn rebuild_layout(
 /// | `lab_walk` | Character Lab: toggle the walk loop |
 /// | `gear:<what>:<member>[:<slot>]` | change a squad member's loadout (see [`crate::loadout`]) |
 /// | `apply_loadout` | restart the mission with the new loadouts |
+/// | `setting:<name>` | change a setting (see [`crate::settings`]) |
 /// | `log:<text>` | print a message (handy while designing layouts) |
 #[allow(clippy::too_many_arguments)]
 pub fn run_ui_commands(
@@ -184,6 +185,7 @@ pub fn run_ui_commands(
     mut flags: ResMut<UiFlags>,
     mut state: ResMut<BattleState>,
     mut log: ResMut<LogMessages>,
+    mut settings: ResMut<crate::settings::GameSettings>,
 ) {
     for UiCommand(cmd) in commands.read() {
         let (name, arg) = cmd.split_once(':').map_or((cmd.as_str(), ""), |(n, a)| (n, a));
@@ -248,6 +250,10 @@ pub fn run_ui_commands(
             "gear" => match crate::loadout::command(arg, state.battle.rules_mut()) {
                 Some(msg) => log.push(msg),
                 None => log.push(format!("UI: bad gear command '{arg}'")),
+            },
+            "setting" => match settings.command(arg) {
+                Some(msg) => log.push(msg),
+                None => log.push(format!("UI: unknown setting '{arg}'")),
             },
             "apply_loadout" => {
                 player.write(PlayerCommand::Restart);
