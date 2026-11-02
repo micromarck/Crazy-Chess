@@ -145,23 +145,45 @@ impl Anim {
         self.0.easing = Easing::Linear;
         self
     }
-    /// Arms holding the rifle across the body (held constant).
+    /// The low-ready carry, held constant (see [`CARRY_R`]).
     fn carry(self) -> Self {
-        self.rot("upper_arm_r", vec![k(0.0, 35.0, 0.0, 0.0)])
-            .rot("forearm_r", vec![k(0.0, 55.0, 0.0, 0.0)])
-            .rot("upper_arm_l", vec![k(0.0, 45.0, 0.0, 20.0)])
-            .rot("forearm_l", vec![k(0.0, 50.0, 0.0, 0.0)])
+        let mut a = self;
+        for (bone, keys) in right_arm(&[(0.0, 0.0, 0.0)]) {
+            a = a.rot(bone, keys);
+        }
+        a.rot("upper_arm_l", vec![k(0.0, 40.0, 0.0, 35.0)]).rot("forearm_l", vec![k(0.0, 70.0, 0.0, 0.0)])
     }
 }
 
-/// Builds arm keys: carry → aim at `up`, held until `hold`, back to carry at `end`.
-fn raise(up: f32, hold: f32, end: f32) -> [(&'static str, Vec<Key>); 4] {
-    [
-        ("upper_arm_r", vec![k(0.0, 35.0, 0.0, 0.0), k(up, 85.0, 0.0, 0.0), k(hold, 85.0, 0.0, 0.0), k(end, 35.0, 0.0, 0.0)]),
-        ("forearm_r", vec![k(0.0, 55.0, 0.0, 0.0), k(up, 8.0, 0.0, 0.0), k(hold, 8.0, 0.0, 0.0), k(end, 55.0, 0.0, 0.0)]),
-        ("upper_arm_l", vec![k(0.0, 45.0, 0.0, 20.0), k(up, 75.0, 0.0, 28.0), k(hold, 75.0, 0.0, 28.0), k(end, 45.0, 0.0, 20.0)]),
-        ("forearm_l", vec![k(0.0, 50.0, 0.0, 0.0), k(up, 22.0, 0.0, 0.0), k(hold, 22.0, 0.0, 0.0), k(end, 50.0, 0.0, 0.0)]),
-    ]
+/// Right arm (shoulder, elbow, wrist) for the **low-ready carry**: grip at
+/// the right of the belly, barrel angled down and across the body. Solved numerically
+/// (see `rig::pose_solver` in the game crate) for this skeleton's lengths.
+/// The left hand is placed on the foregrip by IK in the game.
+pub const CARRY_R: [[f32; 3]; 3] = [[-24.3, 24.3, -10.3], [118.6, 0.0, 0.0], [-23.9, -19.5, -0.3]];
+/// Right arm for the **shouldered aim**: grip at the chest, barrel level.
+pub const AIM_R: [[f32; 3]; 3] = [[-4.0, 18.0, -58.5], [118.0, 0.0, 0.0], [-12.0, 14.5, 6.0]];
+
+/// Right-arm keys from `(time, aim weight 0..1, recoil degrees)`.
+fn right_arm(keys: &[(f32, f32, f32)]) -> [(&'static str, Vec<Key>); 3] {
+    let at = |j: usize, w: f32, kick: f32| -> [f32; 3] {
+        let c = CARRY_R[j];
+        let a = AIM_R[j];
+        let mut v = [c[0] + (a[0] - c[0]) * w, c[1] + (a[1] - c[1]) * w, c[2] + (a[2] - c[2]) * w];
+        // Recoil: the muzzle climbs and the gun comes back into the shoulder.
+        match j {
+            0 => v[0] -= kick * 0.5,
+            2 => v[0] -= kick,
+            _ => {}
+        }
+        v
+    };
+    let track = |j: usize| keys.iter().map(|&(t, w, kick)| { let v = at(j, w, kick); k(t, v[0], v[1], v[2]) }).collect();
+    [("upper_arm_r", track(0)), ("forearm_r", track(1)), ("hand_r", track(2))]
+}
+
+/// Carry → aim at `up`, held until `hold`, back to carry at `end`.
+fn raise(up: f32, hold: f32, end: f32) -> [(&'static str, Vec<Key>); 3] {
+    right_arm(&[(0.0, 0.0, 0.0), (up, 1.0, 0.0), (hold, 1.0, 0.0), (end, 0.0, 0.0)])
 }
 
 /// The standard movement set.
@@ -223,11 +245,15 @@ pub fn animations() -> Vec<AnimationDef> {
             .rot("spine", vec![k(0.0, 4.0, 7.0, 0.0), k(0.3, 4.0, -7.0, 0.0), k(0.6, 4.0, 7.0, 0.0)])
             .rot("chest", vec![k(0.0, 8.0, 0.0, 0.0)])
             .rot("head", vec![k(0.0, -6.0, 0.0, 0.0)])
-            // Rifle carried, bobbing slightly with each step.
-            .rot("upper_arm_r", c(38.0, 33.0, 38.0, 33.0))
-            .rot("forearm_r", vec![k(0.0, 55.0, 0.0, 0.0)])
-            .rot("upper_arm_l", vec![k(0.0, 47.0, 0.0, 20.0), k(0.15, 42.0, 0.0, 20.0), k(0.3, 47.0, 0.0, 20.0), k(0.45, 42.0, 0.0, 20.0), k(0.6, 47.0, 0.0, 20.0)])
-            .rot("forearm_l", vec![k(0.0, 50.0, 0.0, 0.0)])
+            // Rifle carried at low ready, bobbing slightly with each step.
+            .rot("upper_arm_r", {
+                let [x, y, z] = CARRY_R[0];
+                vec![k(0.0, x, y, z), k(0.15, x - 4.0, y, z), k(0.3, x, y, z), k(0.45, x - 4.0, y, z), k(0.6, x, y, z)]
+            })
+            .rot("forearm_r", { let [x, y, z] = CARRY_R[1]; vec![k(0.0, x, y, z)] })
+            .rot("hand_r", { let [x, y, z] = CARRY_R[2]; vec![k(0.0, x, y, z)] })
+            .rot("upper_arm_l", vec![k(0.0, 40.0, 0.0, 35.0)])
+            .rot("forearm_l", vec![k(0.0, 70.0, 0.0, 0.0)])
             .0,
     );
 
@@ -252,20 +278,11 @@ pub fn animations() -> Vec<AnimationDef> {
     for (b, keys) in raise(0.15, 0.55, 0.75) {
         shoot = shoot.rot(b, keys);
     }
+    for (b, keys) in right_arm(&[(0.0, 0.0, 0.0), (0.15, 1.0, 0.0), (0.28, 1.0, 0.0), (0.32, 1.0, 14.0), (0.42, 1.0, 0.0), (0.55, 1.0, 0.0), (0.75, 0.0, 0.0)]) {
+        shoot = shoot.rot(b, keys);
+    }
     out.push(
         shoot
-            .rot(
-                "upper_arm_r",
-                vec![
-                    k(0.0, 35.0, 0.0, 0.0),
-                    k(0.15, 85.0, 0.0, 0.0),
-                    k(0.28, 85.0, 0.0, 0.0),
-                    k(0.32, 72.0, 0.0, 0.0),
-                    k(0.42, 85.0, 0.0, 0.0),
-                    k(0.55, 85.0, 0.0, 0.0),
-                    k(0.75, 35.0, 0.0, 0.0),
-                ],
-            )
             .rot(
                 "chest",
                 vec![
@@ -295,9 +312,9 @@ pub fn animations() -> Vec<AnimationDef> {
             .upper_body()
             .rot(
                 "upper_arm_r",
-                vec![k(0.0, 35.0, 0.0, 0.0), k(0.35, -150.0, 0.0, -10.0), k(0.47, 130.0, 0.0, 0.0), k(0.6, 90.0, 0.0, 0.0), k(0.9, 35.0, 0.0, 0.0)],
+                vec![k(0.0, -24.3, 24.3, -10.3), k(0.35, -150.0, 0.0, -10.0), k(0.47, 130.0, 0.0, 0.0), k(0.6, 90.0, 0.0, 0.0), k(0.9, -24.3, 24.3, -10.3)],
             )
-            .rot("forearm_r", vec![k(0.0, 55.0, 0.0, 0.0), k(0.35, 70.0, 0.0, 0.0), k(0.47, 5.0, 0.0, 0.0), k(0.6, 20.0, 0.0, 0.0), k(0.9, 55.0, 0.0, 0.0)])
+            .rot("forearm_r", vec![k(0.0, 118.6, 0.0, 0.0), k(0.35, 70.0, 0.0, 0.0), k(0.47, 5.0, 0.0, 0.0), k(0.6, 20.0, 0.0, 0.0), k(0.9, 118.6, 0.0, 0.0)])
             .rot("upper_arm_l", vec![k(0.0, 45.0, 0.0, 20.0), k(0.35, 90.0, 0.0, -20.0), k(0.47, 40.0, 0.0, 30.0), k(0.9, 45.0, 0.0, 20.0)])
             .rot("forearm_l", vec![k(0.0, 50.0, 0.0, 0.0)])
             .rot("chest", vec![k(0.0, 0.0, 0.0, 0.0), k(0.35, -18.0, -25.0, 0.0), k(0.47, 22.0, 25.0, 0.0), k(0.6, 15.0, 15.0, 0.0), k(0.9, 0.0, 0.0, 0.0)])
@@ -311,8 +328,8 @@ pub fn animations() -> Vec<AnimationDef> {
             .upper_body()
             .rot("upper_arm_l", vec![k(0.0, 45.0, 0.0, 20.0), k(0.3, 20.0, 0.0, 30.0), k(0.6, 60.0, 0.0, 10.0), k(1.0, 45.0, 0.0, 20.0)])
             .rot("forearm_l", vec![k(0.0, 50.0, 0.0, 0.0), k(0.3, 110.0, 0.0, 0.0), k(0.6, 60.0, 0.0, 0.0), k(1.0, 50.0, 0.0, 0.0)])
-            .rot("upper_arm_r", vec![k(0.0, 35.0, 0.0, 0.0), k(0.3, 25.0, 0.0, -10.0), k(0.8, 25.0, 0.0, -10.0), k(1.0, 35.0, 0.0, 0.0)])
-            .rot("forearm_r", vec![k(0.0, 55.0, 0.0, 0.0)])
+            .rot("upper_arm_r", vec![k(0.0, -24.3, 24.3, -10.3), k(0.3, 25.0, 0.0, -10.0), k(0.8, 25.0, 0.0, -10.0), k(1.0, -24.3, 24.3, -10.3)])
+            .rot("forearm_r", vec![k(0.0, 118.6, 0.0, 0.0)])
             .rot("head", vec![k(0.0, 0.0, 0.0, 0.0), k(0.3, 20.0, 0.0, 0.0), k(0.8, 20.0, 0.0, 0.0), k(1.0, 0.0, 0.0, 0.0)])
             .0,
     );
@@ -326,7 +343,7 @@ pub fn animations() -> Vec<AnimationDef> {
             .rot("shin_r", vec![k(0.0, 0.0, 0.0, 0.0), k(0.3, -115.0, 0.0, 0.0), k(0.75, -115.0, 0.0, 0.0), k(1.0, 0.0, 0.0, 0.0)])
             .rot("chest", vec![k(0.0, 0.0, 0.0, 0.0), k(0.3, 25.0, 0.0, 0.0), k(0.75, 25.0, 0.0, 0.0), k(1.0, 0.0, 0.0, 0.0)])
             .rot("upper_arm_l", vec![k(0.0, 45.0, 0.0, 20.0), k(0.4, 70.0, 0.0, 10.0), k(0.6, 60.0, 0.0, 15.0), k(1.0, 45.0, 0.0, 20.0)])
-            .rot("upper_arm_r", vec![k(0.0, 35.0, 0.0, 0.0), k(0.4, 70.0, 0.0, -10.0), k(0.6, 60.0, 0.0, -15.0), k(1.0, 35.0, 0.0, 0.0)])
+            .rot("upper_arm_r", vec![k(0.0, -24.3, 24.3, -10.3), k(0.4, 70.0, 0.0, -10.0), k(0.6, 60.0, 0.0, -15.0), k(1.0, -24.3, 24.3, -10.3)])
             .0,
     );
 
@@ -334,9 +351,9 @@ pub fn animations() -> Vec<AnimationDef> {
         Anim::new("cast", 0.9, false)
             .upper_body()
             .rot("upper_arm_l", vec![k(0.0, 45.0, 0.0, 20.0), k(0.35, 165.0, 0.0, -20.0), k(0.6, 165.0, 0.0, -20.0), k(0.9, 45.0, 0.0, 20.0)])
-            .rot("upper_arm_r", vec![k(0.0, 35.0, 0.0, 0.0), k(0.35, 165.0, 0.0, 20.0), k(0.6, 165.0, 0.0, 20.0), k(0.9, 35.0, 0.0, 0.0)])
+            .rot("upper_arm_r", vec![k(0.0, -24.3, 24.3, -10.3), k(0.35, 165.0, 0.0, 20.0), k(0.6, 165.0, 0.0, 20.0), k(0.9, -24.3, 24.3, -10.3)])
             .rot("forearm_l", vec![k(0.0, 50.0, 0.0, 0.0), k(0.35, 0.0, 0.0, 0.0), k(0.9, 50.0, 0.0, 0.0)])
-            .rot("forearm_r", vec![k(0.0, 55.0, 0.0, 0.0), k(0.35, 0.0, 0.0, 0.0), k(0.9, 55.0, 0.0, 0.0)])
+            .rot("forearm_r", vec![k(0.0, 118.6, 0.0, 0.0), k(0.35, 0.0, 0.0, 0.0), k(0.9, 118.6, 0.0, 0.0)])
             .rot("chest", vec![k(0.0, 0.0, 0.0, 0.0), k(0.35, -12.0, 0.0, 0.0), k(0.9, 0.0, 0.0, 0.0)])
             .0,
     );
@@ -374,9 +391,9 @@ pub fn animations() -> Vec<AnimationDef> {
             .rot("chest", vec![k(0.0, 0.0, 0.0, 0.0), k(0.35, -22.0, 0.0, 0.0), k(0.8, 30.0, 0.0, 0.0), k(1.3, 5.0, 0.0, -10.0), k(1.6, 5.0, 0.0, -10.0)])
             .rot("head", vec![k(0.0, 0.0, 0.0, 0.0), k(0.35, -25.0, 0.0, 0.0), k(0.8, 25.0, 0.0, 0.0), k(1.3, 0.0, 20.0, -15.0), k(1.6, 0.0, 20.0, -15.0)])
             .rot("upper_arm_l", vec![k(0.0, 45.0, 0.0, 20.0), k(0.35, 60.0, 0.0, -40.0), k(0.8, 20.0, 0.0, -10.0), k(1.3, 10.0, 0.0, -60.0), k(1.6, 10.0, 0.0, -60.0)])
-            .rot("upper_arm_r", vec![k(0.0, 35.0, 0.0, 0.0), k(0.35, 50.0, 0.0, 40.0), k(0.8, 15.0, 0.0, 10.0), k(1.3, -20.0, 0.0, 70.0), k(1.6, -20.0, 0.0, 70.0)])
+            .rot("upper_arm_r", vec![k(0.0, -24.3, 24.3, -10.3), k(0.35, 50.0, 0.0, 40.0), k(0.8, 15.0, 0.0, 10.0), k(1.3, -20.0, 0.0, 70.0), k(1.6, -20.0, 0.0, 70.0)])
             .rot("forearm_l", vec![k(0.0, 50.0, 0.0, 0.0), k(0.35, 20.0, 0.0, 0.0), k(1.3, 10.0, 0.0, 0.0), k(1.6, 10.0, 0.0, 0.0)])
-            .rot("forearm_r", vec![k(0.0, 55.0, 0.0, 0.0), k(0.35, 20.0, 0.0, 0.0), k(1.3, 15.0, 0.0, 0.0), k(1.6, 15.0, 0.0, 0.0)])
+            .rot("forearm_r", vec![k(0.0, 118.6, 0.0, 0.0), k(0.35, 20.0, 0.0, 0.0), k(1.3, 15.0, 0.0, 0.0), k(1.6, 15.0, 0.0, 0.0)])
             .0,
     );
 

@@ -89,7 +89,7 @@ pub struct CameraRig {
 }
 
 impl CameraRig {
-    pub const MIN_DISTANCE: f32 = 6.0;
+    pub const MIN_DISTANCE: f32 = 3.0;
     pub const MAX_DISTANCE: f32 = 40.0;
     /// Higher = snappier (yaw, pitch, zoom).
     pub const SMOOTHING: f32 = 7.0;

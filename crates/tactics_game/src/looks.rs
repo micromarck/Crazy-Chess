@@ -263,6 +263,19 @@ pub fn weapon_parts(look: WeaponLook, scoped: bool) -> Vec<Part> {
     p
 }
 
+/// Where the support hand holds a two-handed weapon: metres down the
+/// barrel from the grip. `None` = one-handed (pistols) or nothing held.
+pub fn foregrip(look: WeaponLook) -> Option<f32> {
+    match look {
+        WeaponLook::Rifle => Some(0.22),
+        WeaponLook::Shotgun => Some(0.24),
+        WeaponLook::Sniper => Some(0.24),
+        WeaponLook::Smg => Some(0.16),
+        WeaponLook::Lmg => Some(0.24),
+        WeaponLook::Pistol | WeaponLook::Plasma | WeaponLook::None => None,
+    }
+}
+
 /// Hair and headgear, relative to the centre of the head (radius ~0.12).
 pub fn head_parts(a: &Appearance) -> Vec<Part> {
     use Mat::*;

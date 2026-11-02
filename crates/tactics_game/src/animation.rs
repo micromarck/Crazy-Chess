@@ -149,12 +149,12 @@ fn drive_animators(
     mut animators: Query<(Entity, &mut UnitAnimator, &crate::units::UnitVisual, &Children)>,
     mut pivots: Query<&mut Transform, (With<UnitPivot>, Without<crate::rig::Rig>)>,
     mut players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
-    rigs: Query<(Entity, &crate::rig::Rig)>,
+    rigs: Query<(Entity, &crate::rig::Rig, Option<&crate::rig::TwoHanded>)>,
     mut bones: Query<&mut Transform, (Without<UnitPivot>, Without<crate::rig::Rig>)>,
 ) {
     let dt = time.delta_secs();
     // Rig root per unit root.
-    let rig_of: std::collections::HashMap<Entity, Entity> = rigs.iter().map(|(e, r)| (r.owner, e)).collect();
+    let rig_of: std::collections::HashMap<Entity, Entity> = rigs.iter().map(|(e, r, _)| (r.owner, e)).collect();
     for (unit_entity, mut a, visual, children) in &mut animators {
         // Advance a running one-shot.
         if let Some((_, elapsed, length)) = a.one_shot.as_mut() {
@@ -206,7 +206,7 @@ fn drive_animators(
 
         // Skeleton rig: base layer + overlay layer.
         let rig = rig_of.get(&unit_entity).and_then(|e| rigs.get(*e).ok());
-        if let Some((_, rig)) = rig {
+        if let Some((_, rig, two_handed)) = rig {
             let def = &rig.def;
             // Base: walk / hunker / idle, cross-faded when it changes.
             let base_slot = if a.walking { "walk" } else { stance.unwrap_or("idle") };
@@ -236,14 +236,20 @@ fn drive_animators(
                     .map(|(s, e, l)| (s.as_str(), *e, crate::rig::overlay_weight(*e, *l, false)))
             };
             let prev = a.base_prev.as_ref().map(|(s, t, w)| (s.as_str(), *t, *w));
-            let pose = def.pose((a.base.0.as_str(), a.base.1), prev, overlay);
+            let mut pose = def.pose((a.base.0.as_str(), a.base.1), prev, overlay);
+            // Two-handed weapons: the left hand stays on the foregrip, except
+            // while a free-hand move (throw, reload, heal...) plays.
+            if let Some(crate::rig::TwoHanded(foregrip)) = two_handed {
+                let free = overlay.filter(|(s, _, _)| crate::rig::FREE_HAND_SLOTS.contains(s)).map_or(0.0, |(_, _, w)| w);
+                def.apply_hand_ik(&mut pose, *foregrip, 1.0 - free);
+            }
             for (i, bone) in rig.bones.iter().enumerate() {
                 if let Ok(mut t) = bones.get_mut(*bone) {
                     *t = def.bone_transform(i, pose[i]);
                 }
             }
         }
-        let rig_has_slot = rig.is_some_and(|(_, r)| r.def.has(&slot));
+        let rig_has_slot = rig.is_some_and(|(_, r, _)| r.def.has(&slot));
 
         let pose = if clip.is_some() || rig_has_slot {
             Transform::IDENTITY

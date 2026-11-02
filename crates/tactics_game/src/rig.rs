@@ -117,6 +117,68 @@ impl RigDef {
         pose
     }
 
+    /// Bone `i` in rig space (the rig root at the origin) for a pose.
+    pub fn world_of(&self, pose: &[BonePose], i: usize) -> Transform {
+        let mut chain = vec![i];
+        let mut j = i;
+        while let Some(p) = self.skeleton.parents[j] {
+            chain.push(p);
+            j = p;
+        }
+        chain.iter().rev().fold(Transform::IDENTITY, |t, &b| t.mul_transform(self.bone_transform(b, pose[b])))
+    }
+
+    /// Two-handed hold: bends the left arm so the left hand reaches the
+    /// weapon's foregrip, `foregrip` metres down the barrel from the grip.
+    /// `weight` blends it in (0 = leave the animation alone). Works on any
+    /// skeleton with `upper_arm_l`, `forearm_l`, `hand_l` and a `weapon`
+    /// bone; others are left untouched.
+    pub fn apply_hand_ik(&self, pose: &mut [BonePose], foregrip: f32, weight: f32) {
+        if weight <= 0.001 {
+            return;
+        }
+        let idx = |n: &str| self.skeleton.index_of(n);
+        let (Some(upper), Some(fore), Some(hand), Some(weapon)) = (idx("upper_arm_l"), idx("forearm_l"), idx("hand_l"), idx("weapon")) else {
+            return;
+        };
+        let w = self.world_of(pose, weapon);
+        // Just under the handguard.
+        let target = w.transform_point(Vec3::new(0.0, -0.035, -foregrip));
+        let palm = Vec3::new(0.0, -0.05, 0.0);
+        let original = (pose[upper], pose[fore]);
+        let error = |pose: &[BonePose]| self.world_of(pose, hand).transform_point(palm).distance(target);
+        // Coordinate descent over shoulder (x, y, z) and elbow (x) angles.
+        let mut best = error(pose);
+        let mut step = 12.0;
+        for _ in 0..60 {
+            if best < 0.004 || step < 0.3 {
+                break;
+            }
+            let mut improved = false;
+            for (bone, axis) in [(upper, 0), (upper, 1), (upper, 2), (fore, 0)] {
+                for dir in [1.0, -1.0] {
+                    pose[bone].rotation[axis] += dir * step;
+                    let e = error(pose);
+                    if e + 1e-5 < best {
+                        best = e;
+                        improved = true;
+                    } else {
+                        pose[bone].rotation[axis] -= dir * step;
+                    }
+                }
+            }
+            if !improved {
+                step *= 0.5;
+            }
+        }
+        // Elbows don't bend backwards.
+        pose[fore].rotation[0] = pose[fore].rotation[0].max(0.0);
+        if weight < 1.0 {
+            pose[upper] = lerp(original.0, pose[upper], weight);
+            pose[fore] = lerp(original.1, pose[fore], weight);
+        }
+    }
+
     /// Local transform of bone `i` for an animated pose.
     pub fn bone_transform(&self, i: usize, pose: BonePose) -> Transform {
         let b = &self.skeleton.bones[i];
@@ -163,6 +225,14 @@ pub struct Rig {
     /// The unit root this rig animates for.
     pub owner: Entity,
 }
+
+/// On a rig root holding a two-handed weapon: foregrip distance down the
+/// barrel for the left-hand IK.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct TwoHanded(pub f32);
+
+/// Slots whose left-hand motion matters more than the grip (IK fades out).
+pub const FREE_HAND_SLOTS: [&str; 6] = ["throw", "reload", "heal", "cast", "death", "taunt"];
 
 /// Materials per colour role.
 pub struct RigMaterials {
@@ -275,5 +345,134 @@ mod tests {
         // Its custom cast moves antennae, which the humanoid doesn't have.
         let pose = def.pose(("idle", 0.0), None, Some(("cast", 0.5, 1.0)));
         assert_ne!(rot(&def, &pose, "antenna_l"), [0.0; 3]);
+    }
+}
+
+#[cfg(test)]
+mod hold_probe {
+    use super::*;
+
+    fn def() -> RigDef {
+        let mut rules = tactics_core::content::Ruleset::standard();
+        rules.add_module(&tactics_core::modules::GrenadierModule);
+        let mut meshes = Assets::<Mesh>::default();
+        RigDef::build(&rules, "humanoid", &mut meshes).unwrap()
+    }
+
+    fn report(def: &RigDef, slot: &str, pose: &mut Vec<BonePose>) -> (Vec3, Vec3, f32) {
+        let wi = def.skeleton.index_of("weapon").unwrap();
+        def.apply_hand_ik(pose, 0.22, 1.0);
+        let w = def.world_of(pose, wi);
+        let hand = def.world_of(pose, def.skeleton.index_of("hand_l").unwrap()).transform_point(Vec3::new(0.0, -0.05, 0.0));
+        let target = w.transform_point(Vec3::new(0.0, -0.035, -0.22));
+        let barrel = w.rotation * Vec3::NEG_Z;
+        eprintln!("{slot:10} grip {:.2?} barrel {:.2?} ik gap {:.3}", w.translation, barrel, hand.distance(target));
+        (w.translation, barrel, hand.distance(target))
+    }
+
+    /// The left hand reaches the foregrip in every pose that holds the gun.
+    #[test]
+    fn left_hand_holds_the_foregrip() {
+        let def = def();
+        for (slot, t) in [("idle", 0.0), ("idle", 2.0), ("walk", 0.15), ("hunker", 0.5), ("shoot", 0.3), ("overwatch", 0.4)] {
+            let mut pose = if matches!(slot, "idle" | "walk" | "hunker") {
+                def.pose((slot, t), None, None)
+            } else {
+                def.pose(("idle", 0.0), None, Some((slot, t, 1.0)))
+            };
+            let (grip, barrel, gap) = report(&def, slot, &mut pose);
+            assert!(gap < 0.03, "{slot}: left hand {gap:.3} m from the foregrip");
+            assert!(barrel.z < -0.6, "{slot}: gun points forward ({barrel:?})");
+            assert!(grip.x.abs() < 0.3 && grip.z < 0.0, "{slot}: gun held in front ({grip:?})");
+        }
+    }
+}
+
+#[cfg(test)]
+mod pose_solver {
+    use super::*;
+
+    /// Finds right-arm angles putting the weapon grip at `grip` (rig space)
+    /// with the barrel along `dir`. Prints the angles (authoring tool).
+    fn solve(def: &RigDef, base: &str, grip: Vec3, dir: Vec3) -> [f32; 7] {
+        let ids: Vec<usize> = ["upper_arm_r", "forearm_r", "hand_r"].iter().map(|n| def.skeleton.index_of(n).unwrap()).collect();
+        let wi = def.skeleton.index_of("weapon").unwrap();
+        let dir = dir.normalize();
+        // params: upper x, y, z; forearm x; hand x, y, z
+        let params = [(ids[0], 0), (ids[0], 1), (ids[0], 2), (ids[1], 0), (ids[2], 0), (ids[2], 1), (ids[2], 2)];
+        let mut overall: Option<(f32, [f32; 7])> = None;
+        for start in [[0.0, 0.0, 0.0, 90.0, 0.0, 0.0, 0.0], [30.0, 0.0, -20.0, 60.0, -30.0, 0.0, 0.0], [60.0, 0.0, -10.0, 100.0, -70.0, 0.0, 0.0], [-10.0, 20.0, -20.0, 110.0, -20.0, 10.0, 0.0], [45.0, -20.0, -30.0, 45.0, 0.0, 20.0, 10.0]] {
+            let mut pose = def.pose((base, 0.0), None, None);
+            for (k, &(b, a)) in params.iter().enumerate() {
+                pose[b].rotation[a] = start[k];
+            }
+            let cost = |pose: &[BonePose]| {
+                let w = def.world_of(pose, wi);
+                w.translation.distance(grip) + 0.3 * (w.rotation * Vec3::NEG_Z).distance(dir)
+            };
+            let mut best = cost(&pose);
+            let mut step = 16.0;
+            for _ in 0..2000 {
+                if step < 0.1 {
+                    break;
+                }
+                let mut improved = false;
+                for &(b, a) in &params {
+                    for d in [1.0, -1.0] {
+                        pose[b].rotation[a] += d * step;
+                        let c = cost(&pose);
+                        if c + 1e-6 < best {
+                            best = c;
+                            improved = true;
+                        } else {
+                            pose[b].rotation[a] -= d * step;
+                        }
+                    }
+                }
+                if !improved {
+                    step *= 0.5;
+                }
+            }
+            let out = params.map(|(b, a)| (pose[b].rotation[a] * 10.0).round() / 10.0);
+            if overall.is_none_or(|(c, _)| best < c) {
+                overall = Some((best, out));
+            }
+        }
+        let (best, out) = overall.unwrap();
+        eprintln!("{base} grip {grip:.2?} dir {dir:.2?} -> {:?} cost {best:.3}", out);
+        out
+    }
+
+    #[test]
+    #[ignore]
+    fn print_hold_poses() {
+        let mut rules = tactics_core::content::Ruleset::standard();
+        rules.add_module(&tactics_core::modules::GrenadierModule);
+        let mut meshes = Assets::<Mesh>::default();
+        let def = RigDef::build(&rules, "humanoid", &mut meshes).unwrap();
+        let sh = def.world_of(&def.pose(("idle", 0.0), None, None), def.skeleton.index_of("upper_arm_r").unwrap()).translation;
+        eprintln!("right shoulder at {sh:?}");
+        for (g, d) in [
+            (Vec3::new(0.1, sh.y - 0.22, -0.15), Vec3::new(-0.4, -0.3, -0.87)),
+            (Vec3::new(0.08, sh.y - 0.2, -0.17), Vec3::new(-0.35, -0.25, -0.9)),
+            (Vec3::new(0.05, sh.y - 0.09, -0.2), Vec3::new(0.0, 0.0, -1.0)),
+            (Vec3::new(0.06, sh.y - 0.1, -0.18), Vec3::new(-0.08, 0.0, -1.0)),
+        ] {
+            let angles = solve(&def, "idle", g, d);
+            // Left-hand reach check with these angles.
+            let mut pose = def.pose(("idle", 0.0), None, None);
+            for (j, n) in ["upper_arm_r", "forearm_r", "hand_r"].iter().enumerate() {
+                let i = def.skeleton.index_of(n).unwrap();
+                pose[i].rotation = match j {
+                    0 => [angles[0], angles[1], angles[2]],
+                    1 => [angles[3], 0.0, 0.0],
+                    _ => [angles[4], angles[5], angles[6]],
+                };
+            }
+            def.apply_hand_ik(&mut pose, 0.22, 1.0);
+            let w = def.world_of(&pose, def.skeleton.index_of("weapon").unwrap());
+            let hand = def.world_of(&pose, def.skeleton.index_of("hand_l").unwrap()).transform_point(Vec3::new(0.0, -0.05, 0.0));
+            eprintln!("   ik gap {:.3}", hand.distance(w.transform_point(Vec3::new(0.0, -0.035, -0.22))));
+        }
     }
 }
