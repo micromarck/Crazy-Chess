@@ -122,6 +122,24 @@ fn draw_targets(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Sele
     if selection.pending.is_some() {
         return;
     }
+    // Hovering a seen enemy: how far it could move on its next turn.
+    if let Some(enemy) = selection
+        .hovered
+        .and_then(|h| state.battle.unit_at(h))
+        .filter(|e| e.team == Team::Enemy && state.battle.is_revealed(e.id))
+    {
+        let battle = &state.battle;
+        let ap = battle.rules().combat.action_points as u32;
+        let climb = Climb { max_up: enemy.stats.climb };
+        let reach = tactics_core::pathfinding::reachable(battle.map(), enemy.pos, enemy.stats.mobility * ap, climb, |p| {
+            battle.unit_at(p).is_none()
+        });
+        for (pos, cost) in reach.iter() {
+            let near = cost <= enemy.stats.mobility;
+            let c = theme::ENEMY.with_alpha(if near { 0.45 } else { 0.2 });
+            tile_rect(&mut gizmos, battle.map(), pos, 0.55, c);
+        }
+    }
     let Some(id) = selection.unit else { return };
     let battle = &state.battle;
     let Some(unit) = battle.unit(id) else { return };
