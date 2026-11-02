@@ -38,7 +38,7 @@ use crate::FrameSet;
 use crate::camera_director::CameraDirector;
 use crate::editor::EditorCommand;
 use crate::hud::LogMessages;
-use crate::state::{BattleState, PlayerCommand, Selection};
+use crate::state::{BattleState, PlayerCommand};
 use build::{BuildCtx, HtmlRoot, UiCommand};
 
 pub struct HtmlUiPlugin;
@@ -157,7 +157,7 @@ fn rebuild_layout(
 ///
 /// | command | effect |
 /// |---|---|
-/// | `end_turn`, `next_unit`, `cancel`, `restart` | same as the keyboard shortcuts |
+/// | `end_turn`, `next_unit`, `prev_unit`, `cancel`, `confirm`, `restart` | same as the keyboard shortcuts |
 /// | `ability:<id>` | use / start targeting an ability of the selected unit |
 /// | `select:<unit id>` | select a squad member (see the `squad` list) |
 /// | `editor` | toggle the module editor |
@@ -171,6 +171,7 @@ fn rebuild_layout(
 /// | `lab_walk` | Character Lab: toggle the walk loop |
 /// | `gear:<what>:<member>[:<slot>]` | change a squad member's loadout (see [`crate::loadout`]) |
 /// | `apply_loadout` | restart the mission with the new loadouts |
+/// | `setting:<name>` | change a setting (see [`crate::settings`]) |
 /// | `log:<text>` | print a message (handy while designing layouts) |
 #[allow(clippy::too_many_arguments)]
 pub fn run_ui_commands(
@@ -180,10 +181,10 @@ pub fn run_ui_commands(
     mut lab: MessageWriter<crate::lab::LabCommand>,
     mut director: ResMut<CameraDirector>,
     mut layout: ResMut<HtmlLayout>,
-    mut selection: ResMut<Selection>,
     mut flags: ResMut<UiFlags>,
     mut state: ResMut<BattleState>,
     mut log: ResMut<LogMessages>,
+    mut settings: ResMut<crate::settings::GameSettings>,
 ) {
     for UiCommand(cmd) in commands.read() {
         let (name, arg) = cmd.split_once(':').map_or((cmd.as_str(), ""), |(n, a)| (n, a));
@@ -193,6 +194,12 @@ pub fn run_ui_commands(
             }
             "next_unit" => {
                 player.write(PlayerCommand::NextUnit);
+            }
+            "prev_unit" => {
+                player.write(PlayerCommand::PreviousUnit);
+            }
+            "confirm" => {
+                player.write(PlayerCommand::Confirm);
             }
             "cancel" => {
                 player.write(PlayerCommand::CancelTargeting);
@@ -208,8 +215,8 @@ pub fn run_ui_commands(
                 let ok = id.and_then(|id| state.battle.unit(id)).is_some_and(|u| {
                     u.team == tactics_core::unit::Team::Player && u.is_alive() && state.battle.active_team() == u.team
                 });
-                if ok {
-                    selection.select(id);
+                if let (true, Some(id)) = (ok, id) {
+                    player.write(PlayerCommand::Select(id));
                 }
             }
             "editor" => {
@@ -242,6 +249,10 @@ pub fn run_ui_commands(
             "gear" => match crate::loadout::command(arg, state.battle.rules_mut()) {
                 Some(msg) => log.push(msg),
                 None => log.push(format!("UI: bad gear command '{arg}'")),
+            },
+            "setting" => match settings.command(arg) {
+                Some(msg) => log.push(msg),
+                None => log.push(format!("UI: unknown setting '{arg}'")),
             },
             "apply_loadout" => {
                 player.write(PlayerCommand::Restart);

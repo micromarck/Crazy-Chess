@@ -49,6 +49,7 @@ struct BoardAssets {
     door: Handle<Mesh>,
     door_post: Handle<Mesh>,
     beacon: Handle<Mesh>,
+    zone_tile: Handle<Mesh>,
     floor_a: Handle<StandardMaterial>,
     floor_b: Handle<StandardMaterial>,
     cliff: Handle<StandardMaterial>,
@@ -61,6 +62,9 @@ struct BoardAssets {
     door_mat: Handle<StandardMaterial>,
     locked_mat: Handle<StandardMaterial>,
     beacon_mat: Handle<StandardMaterial>,
+    zone_evac: Handle<StandardMaterial>,
+    zone_objective: Handle<StandardMaterial>,
+    zone_danger: Handle<StandardMaterial>,
 }
 
 fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
@@ -81,6 +85,7 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
         door: meshes.add(Cuboid::new(t * 0.9, theme::HIGH_COVER_HEIGHT * 0.95, t * 0.9)),
         door_post: meshes.add(Cuboid::new(0.12, theme::HIGH_COVER_HEIGHT, 0.12)),
         beacon: meshes.add(Cylinder::new(0.35, 1.4)),
+        zone_tile: meshes.add(Cuboid::new(t * 0.9, 0.03, t * 0.9)),
         floor_a: mat(theme::FLOOR_A, 0.9),
         floor_b: mat(theme::FLOOR_B, 0.9),
         cliff: mat(Color::srgb(0.16, 0.17, 0.19), 0.95),
@@ -104,6 +109,9 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
             emissive: LinearRgba::rgb(0.4, 0.06, 0.03),
             ..default()
         }),
+        zone_evac: zone_material(&mut materials, theme::ZONE_EVAC),
+        zone_objective: zone_material(&mut materials, theme::ZONE_OBJECTIVE),
+        zone_danger: zone_material(&mut materials, theme::ZONE_DANGER),
         beacon_mat: materials.add(StandardMaterial {
             base_color: Color::srgb(0.3, 0.8, 0.5),
             emissive: LinearRgba::rgb(0.2, 1.2, 0.5),
@@ -111,6 +119,18 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
         }),
     };
     commands.insert_resource(assets);
+}
+
+/// Glowing, see-through floor tint for marked zones.
+fn zone_material(materials: &mut Assets<StandardMaterial>, color: Color) -> Handle<StandardMaterial> {
+    let lin = color.to_linear();
+    materials.add(StandardMaterial {
+        base_color: color.with_alpha(0.45),
+        emissive: LinearRgba::rgb(lin.red * 0.9, lin.green * 0.9, lin.blue * 0.9),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        ..default()
+    })
 }
 
 fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<BattleState>) {
@@ -146,6 +166,22 @@ fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<Batt
             spawn_ladder(&mut commands, &assets, map, pos);
         }
 
+        // Marked zones (evac pads, objectives): a glowing tint on the floor.
+        if let Some(zone) = battle.zones().iter().find(|z| z.visible && z.contains(pos)) {
+            let mat = match zone.kind.as_str() {
+                "evac" => &assets.zone_evac,
+                "danger" => &assets.zone_danger,
+                _ => &assets.zone_objective,
+            };
+            commands.spawn((
+                BoardEntity,
+                Mesh3d(assets.zone_tile.clone()),
+                MeshMaterial3d(mat.clone()),
+                Transform::from_translation(top + Vec3::Y * 0.02),
+                Pickable::IGNORE,
+            ));
+        }
+
         if let Some(prop) = prop_at(pos) {
             // Doors: a panel while closed (red when locked), two posts when open.
             if let Some(door) = prop.door {
@@ -167,6 +203,7 @@ fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<Batt
                         MeshMaterial3d(mat.clone()),
                         Transform::from_translation(top + Vec3::Y * theme::HIGH_COVER_HEIGHT * 0.475),
                         Name::new(format!("door:{}", prop.tag)),
+                        crate::cutaway::Occluder::new(top, theme::HIGH_COVER_HEIGHT * 0.95),
                     ));
                 }
                 continue;
@@ -178,13 +215,16 @@ fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<Batt
                 _ if prop.cover == CoverLevel::Full => (&assets.high, &assets.high_mat, theme::HIGH_COVER_HEIGHT),
                 _ => (&assets.crate_box, &assets.crate_mat, 0.6),
             };
-            commands.spawn((
+            let mut e = commands.spawn((
                 BoardEntity,
                 Mesh3d(mesh.clone()),
                 MeshMaterial3d(mat.clone()),
                 Transform::from_translation(top + Vec3::Y * h / 2.0),
                 Name::new(format!("prop:{}", prop.tag)),
             ));
+            if h > theme::UNIT_HEIGHT {
+                e.insert(crate::cutaway::Occluder::new(top, h));
+            }
             continue;
         }
 
@@ -194,7 +234,10 @@ fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<Batt
             _ => None,
         };
         if let Some((mesh, mat, h)) = block {
-            commands.spawn((BoardEntity, Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::from_translation(top + Vec3::Y * h / 2.0)));
+            let mut e = commands.spawn((BoardEntity, Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::from_translation(top + Vec3::Y * h / 2.0)));
+            if h > theme::UNIT_HEIGHT {
+                e.insert(crate::cutaway::Occluder::new(top, h));
+            }
         }
     }
 }

@@ -10,7 +10,19 @@
 //! | Pan    | left- or middle-drag the ground (it stays under the cursor), WASD / arrows | one-finger drag |
 //! | Rotate / tilt | right-drag (horizontal / vertical), Q / E (45° steps) | two-finger twist |
 //! | Zoom   | mouse wheel (towards the cursor), Z / X | pinch |
+//! | Reset view | Home (default tilt and zoom) | |
 //! | Move a soldier | drag from the selected soldier to a tile and release | tap |
+//! | Cancel aiming | right-click (without dragging) | |
+//!
+//! ## Smoothness
+//! * The focus point moves on a critically damped spring ([`smooth_damp`]):
+//!   long glides ease in *and* out instead of starting with a jolt.
+//! * Gameplay uses [`CameraRig::follow`], which only moves the camera when
+//!   the point of interest leaves a dead zone around the screen centre, so
+//!   the view doesn't twitch for every small step or shot.
+//! * Actions may [`CameraRig::frame`] two points (zooming out to fit both);
+//!   the player's own zoom ([`CameraRig::user_distance`]) is restored once
+//!   things calm down ([`CameraRig::restore_zoom`]).
 //!
 //! A press only counts as a **click** if the mouse didn't move more than
 //! [`CLICK_SLOP`] pixels; [`MouseDrag`] tells the input code which happened.
@@ -70,13 +82,22 @@ pub struct CameraRig {
     pub shake: f32,
     /// Allowed focus area (map bounds), so the camera can't get lost.
     pub bounds: Rect,
+    /// Velocity of the focus spring.
+    pub focus_velocity: Vec3,
+    /// Zoom the player chose (actions may zoom out temporarily).
+    pub user_distance: f32,
 }
 
 impl CameraRig {
     pub const MIN_DISTANCE: f32 = 6.0;
     pub const MAX_DISTANCE: f32 = 40.0;
-    /// Higher = snappier.
-    pub const SMOOTHING: f32 = 8.0;
+    /// Higher = snappier (yaw, pitch, zoom).
+    pub const SMOOTHING: f32 = 7.0;
+    /// Seconds the focus spring takes to (nearly) arrive.
+    pub const FOCUS_TIME: f32 = 0.22;
+    /// Fraction of the camera distance the point of interest may stray from
+    /// the focus before [`CameraRig::follow`] moves the camera.
+    pub const DEAD_ZONE: f32 = 0.2;
 
     /// Smoothly moves the camera to look at a tile (at ground level 0; use
     /// [`CameraRig::focus_at`] with `coords::tile_top` to respect height).
@@ -89,11 +110,55 @@ impl CameraRig {
         self.target_focus = point;
     }
 
+    /// Keeps `point` in view without fussing: moves only if it's outside the
+    /// dead zone around the current focus (or at a different height).
+    pub fn follow(&mut self, point: Vec3) {
+        let off = Vec2::new(point.x - self.target_focus.x, point.z - self.target_focus.z);
+        if off.length() > self.target_distance * Self::DEAD_ZONE || (point.y - self.target_focus.y).abs() > 0.6 {
+            self.target_focus = point;
+            self.clamp_focus();
+        }
+    }
+
+    /// For moving subjects (a walking soldier): drags the camera along just
+    /// enough to keep `point` inside the dead zone, so it glides with the
+    /// walker instead of jumping each time it reaches the edge.
+    pub fn track(&mut self, point: Vec3) {
+        let dz = self.target_distance * Self::DEAD_ZONE * 0.5;
+        let off = Vec2::new(point.x - self.target_focus.x, point.z - self.target_focus.z);
+        if off.length() > dz {
+            let push = off.normalize() * (off.length() - dz);
+            self.target_focus.x += push.x;
+            self.target_focus.z += push.y;
+        }
+        self.target_focus.y += (point.y - self.target_focus.y) * 0.1;
+        self.clamp_focus();
+    }
+
+    /// Shows both `a` and `b`: focus between them, zooming out (never in) so
+    /// both fit. Undo the zoom with [`CameraRig::restore_zoom`].
+    pub fn frame(&mut self, a: Vec3, b: Vec3) {
+        self.target_focus = (a + b) / 2.0;
+        self.clamp_focus();
+        let needed = a.distance(b) * 1.1 + 7.0;
+        self.target_distance = needed.min(Self::MAX_DISTANCE * 0.8).max(self.user_distance);
+    }
+
+    /// Back to the player's own zoom.
+    pub fn restore_zoom(&mut self) {
+        self.target_distance = self.user_distance;
+    }
+
     /// Camera-relative "right" and "forward" on the ground plane.
     fn ground_axes(&self) -> (Vec3, Vec3) {
         let forward = Vec3::new(-self.target_yaw.sin(), 0.0, -self.target_yaw.cos());
         let right = Vec3::new(-forward.z, 0.0, forward.x);
         (right, forward)
+    }
+
+    /// Pans by a camera-relative offset (x = right, y = forward), in world units.
+    pub fn pan_by(&mut self, delta: Vec2) {
+        self.pan(delta);
     }
 
     fn pan(&mut self, screen_delta: Vec2) {
@@ -113,6 +178,7 @@ impl CameraRig {
     fn zoom(&mut self, factor: f32) {
         self.target_distance =
             (self.target_distance * factor).clamp(Self::MIN_DISTANCE, Self::MAX_DISTANCE);
+        self.user_distance = self.target_distance;
     }
 }
 
@@ -151,6 +217,8 @@ pub struct MouseDrag {
     pub clicked: bool,
     /// Set for one frame: an order-drag was released.
     pub order_released: bool,
+    /// Set for one frame: a right click (press + release without dragging).
+    pub right_clicked: bool,
 }
 
 /// Where a camera ray through `cursor` hits the horizontal plane at `height`.
@@ -174,12 +242,14 @@ fn mouse_controls(
     selection: Res<crate::state::Selection>,
     state: Res<crate::state::BattleState>,
     camera: Single<(&Camera, &GlobalTransform), With<CameraRig>>,
+    settings: Res<crate::settings::GameSettings>,
     mut drag: ResMut<MouseDrag>,
     mut rig: Single<&mut CameraRig>,
 ) {
     let dt = time.delta_secs();
     drag.clicked = false;
     drag.order_released = false;
+    drag.right_clicked = false;
     let cursor = window.cursor_position();
     let over_ui = pointer_over_ui(&hover_map, &ui_nodes);
     let (cam, cam_tr) = *camera;
@@ -225,6 +295,7 @@ fn mouse_controls(
                         let before = rig.target_focus;
                         rig.focus += delta;
                         rig.target_focus = rig.focus;
+                        rig.focus_velocity = Vec3::ZERO;
                         rig.clamp_focus();
                         let moved = rig.target_focus - before;
                         if dt > 0.0 {
@@ -233,8 +304,9 @@ fn mouse_controls(
                     }
                 }
                 DragMode::Orbit => {
+                    let tilt = if settings.invert_orbit { -1.0 } else { 1.0 };
                     rig.target_yaw -= motion.delta.x * 0.005;
-                    rig.target_pitch = (rig.target_pitch + motion.delta.y * 0.004).clamp(0.3, 1.45);
+                    rig.target_pitch = (rig.target_pitch + tilt * motion.delta.y * 0.004).clamp(0.3, 1.45);
                 }
                 DragMode::Order | DragMode::None => {}
             }
@@ -243,6 +315,9 @@ fn mouse_controls(
         if buttons.just_released(button) {
             if !drag.dragged && button == MouseButton::Left && !over_ui {
                 drag.clicked = true;
+            }
+            if !drag.dragged && button == MouseButton::Right && !over_ui {
+                drag.right_clicked = true;
             }
             if drag.dragged && drag.mode == DragMode::Order && !over_ui {
                 drag.order_released = true;
@@ -309,6 +384,8 @@ fn spawn_camera(mut commands: Commands, state: Res<BattleState>) {
         pitch: 0.95,
         target_pitch: 0.95,
         shake: 0.0,
+        focus_velocity: Vec3::ZERO,
+        user_distance: 18.0,
         // grid y maps to -Z, so the far corner has the most negative z.
         bounds: Rect::from_corners(Vec2::new(0.0, 0.0), Vec2::new(far.x, far.z)),
     };
@@ -334,12 +411,13 @@ fn keyboard_mouse_controls(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     director: Res<CameraDirector>,
+    settings: Res<crate::settings::GameSettings>,
     mut rig: Single<&mut CameraRig>,
 ) {
     if director.is_active() {
         return; // a camera script owns the camera
     }
-    let dt = time.delta_secs();
+    let dt = time.delta_secs() * settings.camera_speed;
     let speed = rig.target_distance * 1.2 * dt;
 
     let mut pan = Vec2::ZERO;
@@ -373,6 +451,13 @@ fn keyboard_mouse_controls(
     }
     if keys.pressed(KeyCode::KeyX) {
         rig.zoom(1.0 + dt);
+    }
+    // Home: default tilt and zoom, rotation snapped to the nearest 45°.
+    if keys.just_pressed(KeyCode::Home) {
+        rig.target_pitch = 0.95;
+        rig.target_distance = 18.0;
+        rig.user_distance = 18.0;
+        rig.target_yaw = (rig.target_yaw / FRAC_PI_4).round() * FRAC_PI_4;
     }
 }
 
@@ -423,10 +508,18 @@ fn touch_controls(
 
 /// Eases the rig towards its targets and writes the camera transform.
 /// Uses real time so slow motion (camera scripts) doesn't make the camera sluggish.
-fn apply_rig(time: Res<Time<Real>>, mut q: Single<(&mut CameraRig, &mut Transform)>) {
+fn apply_rig(
+    time: Res<Time<Real>>,
+    settings: Res<crate::settings::GameSettings>,
+    mut q: Single<(&mut CameraRig, &mut Transform)>,
+) {
     let (rig, transform) = &mut *q;
-    let t = 1.0 - (-CameraRig::SMOOTHING * time.delta_secs()).exp();
-    rig.focus = rig.focus.lerp(rig.target_focus, t);
+    // Faster camera setting = shorter glides.
+    let dt = time.delta_secs() * settings.camera_speed.max(0.1);
+    let t = 1.0 - (-CameraRig::SMOOTHING * dt).exp();
+    let mut velocity = rig.focus_velocity;
+    rig.focus = smooth_damp(rig.focus, rig.target_focus, &mut velocity, CameraRig::FOCUS_TIME, dt);
+    rig.focus_velocity = velocity;
     rig.distance += (rig.target_distance - rig.distance) * t;
     rig.yaw += (rig.target_yaw - rig.yaw) * t;
     rig.pitch += (rig.target_pitch - rig.pitch) * t;
@@ -445,4 +538,71 @@ fn apply_rig(time: Res<Time<Real>>, mut q: Single<(&mut CameraRig, &mut Transfor
         rig.shake = (rig.shake - time.delta_secs() * 0.8).max(0.0);
     }
     **transform = rig_transform_at(rig, focus);
+}
+
+/// Critically damped spring towards `target` (the classic "SmoothDamp"):
+/// eases in and out, never overshoots noticeably, frame-rate independent.
+pub fn smooth_damp(current: Vec3, target: Vec3, velocity: &mut Vec3, smooth_time: f32, dt: f32) -> Vec3 {
+    if dt <= 0.0 {
+        return current;
+    }
+    let omega = 2.0 / smooth_time.max(1e-4);
+    let x = omega * dt;
+    let decay = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
+    let change = current - target;
+    let temp = (*velocity + change * omega) * dt;
+    *velocity = (*velocity - temp * omega) * decay;
+    let out = target + (change + temp) * decay;
+    if (target - current).dot(out - target) > 0.0 {
+        // Overshot: settle exactly.
+        *velocity = Vec3::ZERO;
+        return target;
+    }
+    out
+}
+
+#[cfg(test)]
+mod smoothing_tests {
+    use super::*;
+
+    #[test]
+    fn spring_eases_in_and_arrives() {
+        let (mut p, mut v) = (Vec3::ZERO, Vec3::ZERO);
+        let target = Vec3::new(10.0, 0.0, 0.0);
+        let mut steps = Vec::new();
+        for _ in 0..120 {
+            let before = p;
+            p = smooth_damp(p, target, &mut v, 0.22, 1.0 / 60.0);
+            steps.push((p - before).x);
+        }
+        assert!(steps[0] < steps[5], "eases in: starts slower than it continues");
+        assert!((p - target).length() < 0.01, "arrives: {p}");
+        assert!(steps.iter().all(|s| *s >= 0.0), "never goes backwards");
+    }
+
+    #[test]
+    fn follow_ignores_small_moves_and_frame_restores_zoom() {
+        let mut rig = CameraRig {
+            focus: Vec3::ZERO,
+            yaw: 0.0,
+            distance: 18.0,
+            target_focus: Vec3::ZERO,
+            target_yaw: 0.0,
+            target_distance: 18.0,
+            pitch: 0.95,
+            target_pitch: 0.95,
+            shake: 0.0,
+            bounds: Rect::from_corners(Vec2::new(-50.0, -50.0), Vec2::new(50.0, 50.0)),
+            focus_velocity: Vec3::ZERO,
+            user_distance: 18.0,
+        };
+        rig.follow(Vec3::new(2.0, 0.0, 1.0));
+        assert_eq!(rig.target_focus, Vec3::ZERO, "inside the dead zone");
+        rig.follow(Vec3::new(9.0, 0.0, 0.0));
+        assert_eq!(rig.target_focus, Vec3::new(9.0, 0.0, 0.0));
+        rig.frame(Vec3::ZERO, Vec3::new(30.0, 0.0, 0.0));
+        assert!(rig.target_distance > 18.0);
+        rig.restore_zoom();
+        assert_eq!(rig.target_distance, 18.0);
+    }
 }

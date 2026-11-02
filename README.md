@@ -35,7 +35,7 @@ layout with cut-outs, a height map (units climb 1 level unless a ladder or
 their class allows more; 3D line of sight, high-ground bonus), units, props
 and zones, with **scripts** attached to any of them. Modular mission
 mechanics: **dormant pods, patrols, concealment and alarms, doors, fog of
-war, AI goals and objectives**. Bundled large levels: *Proving Grounds*
+war, AI goals and objectives**. New to the controls? Play *Basic Training* from the Missions list. Bundled large levels: *Proving Grounds*
 (sandbox), *Hold the Beacon* (defend and extract), *Clear the Complex*
 (explore and clear) and *Silent Theft* (stealth heist). See
 **[MISSIONS.md](MISSIONS.md)**.
@@ -134,19 +134,33 @@ TBSium/
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).
+* Feel: spring-smoothed camera that follows lazily (dead zone) and frames
+  shots then returns to your zoom; walls between the camera and your soldiers
+  sink out of the way (cutaway); a cursor tooltip with odds / move cost;
+  aim-then-confirm attacks; turn and alarm banners; enemy turns skip hidden and
+  idle units instantly so big maps stay brisk; move look-ahead (who you could
+  shoot or flank from a tile, overwatch on the way); damage preview on HP
+  pips; glowing, labelled evac pads and objectives; a minimap.
 * Hand-made demo map + procedural skirmishes ("New Battle").
 
 ## Controls
 
 | | Desktop | Touch |
 |---|---|---|
-| Select / move / shoot | Left click | Tap |
+| Select / move | Left click | Tap |
+| Attack | Click an enemy to **aim** (camera frames the shot, odds by the cursor), click again / Space / Enter to **fire** | Tap to aim, tap again or **Fire** |
+| Cancel aim / targeting | Right-click or Esc | Cancel button |
 | Move by dragging | Drag from the selected soldier to a tile, release | — |
 | Pan | Left- or middle-drag the ground, WASD / arrows | One-finger drag |
 | Rotate / tilt | Right-drag (sideways / up-down), Q / E | Two-finger twist |
 | Zoom | Wheel (towards the cursor), Z / X | Pinch |
-| Abilities of the selected unit | 1-9 (Esc cancels targeting) | ability buttons |
-| Next unit / End turn | Tab / Enter | HUD buttons |
+| Abilities of the selected unit | 1-9 (press again to fire when aimed) | ability buttons |
+| Next / previous unit | Tab / Shift+Tab | Next button |
+| Centre on selected unit / reset view | F / Home | — |
+| End turn | Enter (when not aiming) | End Turn button |
+| Fast-forward animations | hold Shift (x3) | — |
+| Minimap (click to jump) | M | — |
+| Controls cheat sheet | H | Help button |
 | Module editor | F1 | Edit button |
 | Skip a cinematic / toggle cinematics | Space / C | Cinema button |
 | Reload the HTML HUD | F6 | — |

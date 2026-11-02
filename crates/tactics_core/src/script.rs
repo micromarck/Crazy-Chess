@@ -41,6 +41,10 @@ pub enum ScriptCommand {
     SetFlag { name: String, value: i64 },
     /// Changes a unit's fear (positive = scarier, scaled by bravery).
     AddFear { unit: u32, amount: i32 },
+    /// Shows or hides a marked zone.
+    ShowZone { tag: String, show: bool },
+    /// Changes the text over a marked zone.
+    ZoneLabel { tag: String, text: String },
     /// Sets the objective text shown in the HUD.
     Objective(String),
     /// Breaks concealment and wakes every enemy.
@@ -225,6 +229,8 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
     cmd!("set_ladder", |x: INT, y: INT, on: bool| Ok(ScriptCommand::SetLadder { pos: grid(x, y), ladder: on }));
     cmd!("give_ap", |unit: INT, amount: INT| Ok(ScriptCommand::GiveAp { unit: unit as u32, amount: amount as i32 }));
     cmd!("add_fear", |unit: INT, amount: INT| Ok(ScriptCommand::AddFear { unit: unit as u32, amount: amount as i32 }));
+    cmd!("show_zone", |tag: &str, show: bool| Ok(ScriptCommand::ShowZone { tag: tag.into(), show }));
+    cmd!("zone_label", |tag: &str, text: &str| Ok(ScriptCommand::ZoneLabel { tag: tag.into(), text: text.into() }));
     cmd!("objective", |text: &str| Ok(ScriptCommand::Objective(text.to_string())));
     cmd!("raise_alarm", | | Ok(ScriptCommand::RaiseAlarm));
     cmd!("wake", |unit: INT| Ok(ScriptCommand::Wake { unit: unit as u32 }));

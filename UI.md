@@ -59,7 +59,9 @@ Any `<button>` (or element with `data-command`) is clickable/tappable:
 
 | command | effect |
 |---|---|
-| `end_turn`, `next_unit`, `cancel`, `restart` | same as Enter / Tab / Esc / F5 |
+| `end_turn`, `next_unit`, `prev_unit`, `cancel`, `restart` | same as the End Turn button / Tab / Shift+Tab / Esc / F5 |
+| `confirm` | fire the aimed ability (Space) |
+| `gear:<what>:<member>[:<slot>]`, `apply_loadout` | edit squad loadouts (see the Loadout panel) |
 | `ability:<id>` | use the selected unit's ability (or start targeting it) |
 | `select:<unit id>` | select a squad member |
 | `editor` | toggle the module editor (F1) |
@@ -79,11 +81,12 @@ Values (strings; booleans are `true`/`false`):
 | path | meaning |
 |---|---|
 | `turn.round`, `turn.team` (`XCOM`/`ALIEN`), `turn.label`, `turn.is_player` | turn info |
-| `squad.alive`, `enemies.alive` | living units per side |
+| `squad.alive`, `enemies.alive`, `enemies.label` | living units per side (with fog: hostiles in sight) |
+| `mission.concealed`, `mission.alarm`, `mission.objective`, `mission.has_objective` | stealth state and scripted objective |
 | `battle.over`, `battle.won`, `battle.result`, `battle.seed` | outcome (set after final animations) |
 | `busy` | animations or a cinematic are playing |
-| `unit.selected`, `unit.name`, `unit.class`, `unit.hp`, `unit.max_hp`, `unit.hp_percent`, `unit.ap`, `unit.max_ap`, `unit.weapon`, `unit.ammo`, `unit.clip`, `unit.aim`, `unit.mobility`, `unit.defense`, `unit.status` | selected unit |
-| `targeting`, `targeting.name` | an ability is waiting for a target |
+| `unit.selected`, `unit.name`, `unit.class`, `unit.hp`, `unit.max_hp`, `unit.hp_percent`, `unit.ap`, `unit.max_ap`, `unit.weapon`, `unit.ammo`, `unit.clip`, `unit.aim`, `unit.mobility`, `unit.defense`, `unit.status`, `unit.gear`, `unit.morale`, `unit.morale_state` (`steady`/`shaken`/`panicked`/`fearless`) | selected unit |
+| `targeting`, `targeting.name`, `targeting.aimed` | an ability is waiting for a target / a target is aimed (show a Fire button) |
 | `hover.info` | odds breakdown / move cost under the pointer (multi-line) |
 | `log.text`, `log.last` | combat log |
 | `editor.open`, `cinematics` | toggles |
@@ -95,7 +98,8 @@ Lists (for `data-for`):
 | list | item fields |
 |---|---|
 | `abilities` | `id name description key cost charges cooldown state` (`state` = `ready` / `active` / `disabled`) |
-| `squad` | `id name hp max_hp hp_percent ap state` (`state` = `selected` / `ready` / `done`) |
+| `squad` | `id name hp max_hp hp_percent ap fear state` (`state` = `selected` / `ready` / `done`; `fear` = `SHAKEN`/`PANIC`/empty) |
+| `loadout` | `index name class preset weapon armor item0 item1 stats problems` (the player squad's gear) |
 | `log` | `text` |
 | `missions` | `id name description file state` (`state` = `current` / empty) |
 

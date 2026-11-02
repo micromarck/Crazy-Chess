@@ -132,12 +132,13 @@
   <unit team="enemy" class="drone" name="Core Drone" x="34" y="23" dormant="true" pod="core"/>
   <unit team="enemy" class="sectoid" name="Corridor Patrol" x="21" y="13" patrol="21,13 4,13 21,6 40,13"/>
 
-  <tile x="38" y="5">
+  <tile tag="core_console" x="38" y="5" marker="objective" label="CORE UNLOCK">
     <script on="enter" team="player" once="true">
       message("Security console: core door unlocked.");
       lock_door("core", false);
       open_door("core");
       objective("Clear the complex - the core is open (" + alive_count("enemy") + " hostiles left)");
+      show_zone("core_console", false);
     </script>
   </tile>
 

@@ -7,6 +7,7 @@ props and zones, and scripts attached to any of them.
 ```
 assets/missions/
 ├── index.xml               lists the missions (and which one starts first)
+├── training.mission.xml        Basic Training: guided controls tutorial
 ├── depot.mission.xml           small demo
 ├── rooftops.mission.xml        heights and ladders
 ├── proving_grounds.mission.xml 40x32 sandbox: every mechanic
@@ -126,8 +127,8 @@ read `<layout>`. (Scripts use the same convention.)
 | `<unit>` | `team` (`player`/`enemy`), `class` (from the modules), `name`, `x`, `y`, `tag` (for scripts), `dormant="true"`, `pod`, `patrol="x,y x,y ..."` (see below), `loadout` (preset id), `weapon`, `armor`, `items="frag scope"` (see MODULES.md, Loadouts) |
 | `<door>` | `tag`, `x`, `y`, `width`, `height`, `locked="true"`: door panels; may hold `opened` scripts |
 | `<prop>` | `tag`, `kind` (`crate`, `barrel`, `console`... used for visuals), `x`, `y`, `cover` (`none`/`half`/`full`; any cover blocks movement), `hp` (omit = indestructible), `model` |
-| `<zone>` | `tag`, `x`, `y`, `width`, `height`: an area for `enter` scripts |
-| `<tile>` | `x`, `y`: a 1×1 zone |
+| `<zone>` | `tag`, `x`, `y`, `width`, `height`: an area for `enter` scripts. Optional `marker` (`evac`, `objective`, `danger`, or `none`), `label`, `hidden="true"` (see below) |
+| `<tile>` | `x`, `y`: a 1×1 zone (same optional attributes) |
 | `<script>` | without `on`: shared functions for all scripts. With `on`: a hook (below). |
 
 Area attacks (grenades, `explode`) damage destructible props; a destroyed
@@ -150,6 +151,23 @@ from scripts. They live in `tactics_core/src/battle/stealth.rs` (rules) and
 | **AI goals** | while no enemy is in sight, a team's AI walks (by real path, through doors) towards its goal instead of hunting: attack a beacon, reach an evac pad. | | `ai_goal("enemy", x, y)`, `clear_ai_goal(team)` |
 | **Objective** | text in the HUD's mission panel. | | `objective(text)` |
 | **Area counts** | how many units of a team stand in a rectangle (whole squad at the evac pad? aliens on the beacon?). | | `count_in_area(x, y, w, h, team)` (`""` = any team) |
+
+### Visible zones (evac pads, objectives)
+
+Zones are invisible trigger areas unless they have a `marker`. Marked
+zones glow on the floor, get a pulsing outline and a beam of light, and a
+floating label:
+
+```xml
+<zone tag="evac" x="1" y="0" width="5" height="3" marker="evac" label="EVAC PAD (opens turn 7)">
+<tile tag="console" x="32" y="16" marker="objective" label="SECURITY CONSOLE">
+```
+
+`evac` is green, `danger` red, anything else (`objective`) yellow. Zones
+tagged `evac...`, `extract...` or `exit...` are marked `evac` automatically
+(`marker="none"` turns that off). Scripts: `show_zone(tag, true/false)`
+(e.g. hide a console once used, reveal an evac point late) and
+`zone_label(tag, text)`.
 
 Recipes from the bundled missions:
 
@@ -221,6 +239,7 @@ turns) and `once="true"` (run at most once).
 | `wake(unit)`, `wake_all()`, `unit_dormant(unit)` | dormant pods |
 | `open_door(tag)`, `close_door(tag)`, `lock_door(tag, locked)` | doors |
 | `ai_goal(team, x, y)`, `clear_ai_goal(team)` | where a team's AI heads when nobody is in sight |
+| `show_zone(tag, on)`, `zone_label(tag, text)` | show/hide or relabel a marked zone |
 
 Example: a door that opens when a switch is used.
 

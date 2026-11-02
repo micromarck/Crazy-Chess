@@ -113,8 +113,8 @@
   <unit team="enemy" class="sectoid" name="Crate Lurker 2" x="34" y="29" dormant="true" pod="crates"/>
   <unit team="enemy" class="sectoid" name="Bridge Patrol" x="22" y="16" patrol="22,16 22,4 30,7"/>
 
-  <tile x="34" y="11">
-    <script on="enter" team="player" once="true">message("Console: the east wing pods are now awake!"); wake_all();</script>
+  <tile tag="pg_console" x="34" y="11" marker="danger" label="ALARM CONSOLE">
+    <script on="enter" team="player" once="true">message("Console: the east wing pods are now awake!"); wake_all(); show_zone("pg_console", false);</script>
   </tile>
 
   <script on="start">

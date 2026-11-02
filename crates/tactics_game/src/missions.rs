@@ -239,6 +239,7 @@ pub fn start_battle(
     let begin_events = battle.begin();
 
     state.battle = battle;
+    state.stats = Default::default();
     state.seed = seed;
     state.mission = mission;
     state.revision += 1;
@@ -257,6 +258,13 @@ pub fn start_battle(
     let far = grid_to_world(GridPos::new(map.width() - 1, map.height() - 1));
     rig.bounds = Rect::from_corners(Vec2::ZERO, Vec2::new(far.x, far.z));
     if let Some(u) = state.battle.living(Team::Player).next() {
+        // Establishing shot: start high over the middle of the map and
+        // glide down to the squad.
+        let center = Vec3::new(far.x / 2.0, 0.0, far.z / 2.0);
+        rig.focus = center;
+        rig.focus_velocity = Vec3::ZERO;
+        rig.distance = (map.width().max(map.height()) as f32 * 1.1).clamp(18.0, CameraRig::MAX_DISTANCE);
+        rig.target_distance = rig.user_distance;
         rig.focus_at(tile_top(map, u.pos));
     }
     reset.write(BattleReset);

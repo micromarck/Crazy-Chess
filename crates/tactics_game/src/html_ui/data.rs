@@ -33,6 +33,7 @@ pub fn collect_ui_data(
     flags: Res<UiFlags>,
     library: Res<crate::models::ModelLibrary>,
     lab: Res<crate::lab::LabState>,
+    settings: Res<crate::settings::GameSettings>,
     mut data: ResMut<UiData>,
 ) {
     let mut v = UiValues::default();
@@ -67,6 +68,7 @@ pub fn collect_ui_data(
         },
     );
     v.set("battle.seed", format!("{:#x}", state.seed));
+    v.set("battle.summary", state.stats.summary(b.round()));
     v.set("busy", bool_str(playback.is_busy() || director.is_active()));
 
     // Selected unit.
@@ -116,6 +118,7 @@ pub fn collect_ui_data(
     let pending = selection.pending.as_ref().and_then(|a| b.ability(a));
     v.set("targeting", bool_str(pending.is_some()));
     v.set("targeting.name", pending.map_or("", |d| d.name.as_str()));
+    v.set("targeting.aimed", bool_str(selection.aim.is_some()));
     v.set("hover.info", hover_info(&state, &selection));
 
     // Log.
@@ -176,6 +179,15 @@ pub fn collect_ui_data(
     for (name, on) in &flags.0 {
         v.set(&format!("ui.{name}"), bool_str(*on));
     }
+
+    // Settings panel.
+    let on = |b: bool| if b { "on" } else { "off" };
+    v.set("settings.anim_speed", format!("x{}", settings.anim_speed));
+    v.set("settings.camera_speed", format!("x{}", settings.camera_speed));
+    v.set("settings.edge_scroll", on(settings.edge_scroll));
+    v.set("settings.invert_orbit", on(settings.invert_orbit));
+    v.set("settings.action_camera", on(settings.action_camera));
+    v.set("settings.difficulty", settings.difficulty_name());
 
     // Misc toggles.
     v.set("editor.open", bool_str(editor.open));
@@ -279,7 +291,8 @@ pub fn hover_info(state: &BattleState, selection: &Selection) -> String {
         });
         if let Some(def) = ability.as_ref().and_then(|a| b.ability(a)) {
             s = format!("[{}]\n", def.name);
-            match target_for(b, def, hover).map(|t| b.preview(sel, &def.id, t)) {
+            // The aimed target wins: that's the shot about to be fired.
+            match selection.aim.or_else(|| target_for(b, def, hover)).map(|t| b.preview(sel, &def.id, t)) {
                 Some(Ok(previews)) if !previews.is_empty() => {
                     for (victim, p) in &previews {
                         if let Some(v) = b.unit(*victim) {
@@ -304,7 +317,7 @@ pub fn hover_info(state: &BattleState, selection: &Selection) -> String {
         }
     }
     if s.is_empty() {
-        s = "Hover an enemy for odds,\na tile to move".into();
+        s = "Click an enemy to aim, a tile to move\nRight-drag: rotate   Wheel: zoom   F: focus".into();
     }
     s.trim_end().to_string()
 }
