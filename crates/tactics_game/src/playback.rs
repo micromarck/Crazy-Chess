@@ -42,8 +42,10 @@ impl Plugin for PlaybackPlugin {
     }
 }
 
-/// Seconds a unit takes to cross one tile.
-const STEP_TIME: f32 = 0.16;
+/// Movement speed in world units (metres) per second: a steady jog.
+pub const MOVE_SPEED: f32 = 3.3;
+/// Height of the little hop when stepping up or down a level.
+const HOP_HEIGHT: f32 = 0.35;
 /// Flight time of a tracer/beam.
 pub const SHOT_TIME: f32 = 0.45;
 /// Pause before a shot so the player sees who is aiming at whom.
@@ -176,16 +178,25 @@ fn run_playback(
     let Some(anim) = playback.current.as_mut() else { return };
     let finished = match anim {
         Anim::Walk { unit, entity, from, points, index, t } => {
-            *t += dt / STEP_TIME;
+            // Constant speed: progress along a segment depends on its length,
+            // so diagonals take longer than straight steps.
+            let seg = |from: Vec3, i: usize| points.get(i).map_or(1.0, |p| from.distance(*p).max(0.05));
+            *t += dt * MOVE_SPEED / seg(*from, *index);
             while *t >= 1.0 && *index < points.len() {
-                *t -= 1.0;
+                let leftover = (*t - 1.0) * seg(*from, *index);
                 *from = points[*index];
                 *index += 1;
+                *t = leftover / seg(*from, *index);
             }
             if let Ok(mut tr) = transforms.get_mut(*entity) {
                 if let Some(next) = points.get(*index) {
-                    tr.translation = from.lerp(*next, *t);
-                    face(&mut tr, *next);
+                    let mut pos = from.lerp(*next, *t);
+                    // Hop over a change of level instead of sliding up a slope.
+                    if (next.y - from.y).abs() > 0.01 {
+                        pos.y += (std::f32::consts::PI * *t).sin() * HOP_HEIGHT;
+                    }
+                    tr.translation = pos;
+                    p.commands.entity(*entity).insert(crate::units::FaceTarget(Some(*next)));
                     look_at(&p.director, &mut p.rig, tr.translation);
                 } else {
                     tr.translation = *from;
@@ -243,14 +254,6 @@ fn run_playback(
     }
 }
 
-/// Rotates a unit (around Y only) to look at a world point.
-fn face(tr: &mut Transform, point: Vec3) {
-    let flat = Vec3::new(point.x, tr.translation.y, point.z);
-    if flat.distance_squared(tr.translation) > 1e-4 {
-        tr.look_at(flat, Vec3::Y);
-    }
-}
-
 /// Default animation slot for an ability without an explicit one.
 fn default_slot(def: &AbilityDef) -> &'static str {
     match &def.effect {
@@ -305,9 +308,7 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             if let (Some(aim), Some(e)) = (aim, entity_of(*unit))
                 && aim.distance_squared(actor) > 0.01
             {
-                p.commands
-                    .entity(e)
-                    .insert(Transform::from_translation(actor).looking_at(Vec3::new(aim.x, actor.y, aim.z), Vec3::Y));
+                p.commands.entity(e).insert(crate::units::FaceTarget(Some(aim)));
             }
 
             // Animation, camera, label.
@@ -352,7 +353,7 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             }
             if from_attacker && !matches!(style, ProjectileStyle::None | ProjectileStyle::Arc) {
                 if let Some(e) = entity_of(*attacker) {
-                    p.commands.entity(e).insert(Transform::from_translation(s).looking_at(Vec3::new(t.x, s.y, t.z), Vec3::Y));
+                    p.commands.entity(e).insert(crate::units::FaceTarget(Some(t)));
                 }
                 look_at(&p.director, &mut p.rig, (s + t) / 2.0);
                 vec![Anim::Shot {
@@ -385,6 +386,9 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             p.log.push(format!("{} is down!", name(*unit)));
             let Some(entity) = entity_of(*unit) else { return vec![] };
             let victim = pos_of(*unit).unwrap_or_default();
+
+            // Stop turning so the death animation owns the rotation.
+            p.commands.entity(entity).insert(crate::units::FaceTarget(None));
 
             // Kill camera: actor = killer, target = victim.
             let settings = battle.rules().presentation.clone();

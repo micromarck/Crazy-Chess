@@ -6,4 +6,5 @@
 <missions start="depot">
   <mission file="depot.mission.xml"/>
   <mission file="rooftops.mission.xml"/>
+  <mission file="lab.mission.xml"/>
 </missions>

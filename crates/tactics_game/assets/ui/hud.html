@@ -72,6 +72,20 @@
   }
   .mission.current { background: #2f5e44; }
   .mission .key { max-width: 320px; }
+
+  #lab { top: 140px; left: 12px; padding: 6px; max-width: 420px; }
+  .lab-item {
+    height: auto;
+    min-width: 260px;
+    margin-left: 0px;
+    margin-bottom: 3px;
+    padding: 4px 8px;
+    align-items: flex-start;
+    font-size: 13px;
+  }
+  .lab-item.current { background: #2f5e44; }
+  .lab-grid { flex-direction: row; flex-wrap: wrap; max-width: 410px; }
+  .lab-slot { height: auto; min-width: 96px; margin-left: 0px; margin-right: 4px; margin-bottom: 4px; padding: 4px 6px; font-size: 13px; }
   .member {
     flex-direction: column;
     padding: 4px 6px;
@@ -154,8 +168,23 @@
   <button class="mission" data-command="skirmish"><span>Random skirmish</span><span class="key">procedural map</span></button>
 </div>
 
+<!-- Character Lab (only in the lab mission): models + their animation slots -->
+<div id="lab" class="panel" data-if="lab.active">
+  <span class="dim" style="font-size: 11px">CHARACTER LAB - model on the test subject</span>
+  <div data-for="m in models">
+    <button class="lab-item {{ m.state }}" data-command="model:{{ m.id }}">
+      <span>{{ m.id }}</span><span class="key">{{ m.source }}</span>
+    </button>
+  </div>
+  <span class="dim" style="font-size: 11px; margin-top: 8px">ANIMATIONS - click to play</span>
+  <button class="lab-item" data-command="lab_walk"><span>walk loop</span><span class="key" data-if="lab.walking">on</span><span class="key" data-if="!lab.walking">off</span></button>
+  <div class="lab-grid" data-for="a in anim_slots">
+    <button class="lab-slot" data-command="anim:{{ a.slot }}"><span>{{ a.slot }}</span><span class="key">{{ a.source }}</span></button>
+  </div>
+</div>
+
 <!-- Squad roster: click a soldier to select them -->
-<div id="roster" class="panel" data-if="!editor.open">
+<div id="roster" class="panel" data-if="!editor.open and !lab.active">
   <span class="dim" style="font-size: 11px; margin-bottom: 4px">SQUAD</span>
   <div data-for="m in squad">
     <button class="member {{ m.state }}" data-command="select:{{ m.id }}">

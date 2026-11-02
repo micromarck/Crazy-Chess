@@ -7,9 +7,13 @@
 //!
 //! | Action | Desktop | Touch |
 //! |---|---|---|
-//! | Pan    | WASD / arrows, middle-drag | one-finger drag |
-//! | Rotate | Q / E (45° steps), right-drag | two-finger twist |
-//! | Zoom   | mouse wheel, Z / X | pinch |
+//! | Pan    | left- or middle-drag the ground (it stays under the cursor), WASD / arrows | one-finger drag |
+//! | Rotate / tilt | right-drag (horizontal / vertical), Q / E (45° steps) | two-finger twist |
+//! | Zoom   | mouse wheel (towards the cursor), Z / X | pinch |
+//! | Move a soldier | drag from the selected soldier to a tile and release | tap |
+//!
+//! A press only counts as a **click** if the mouse didn't move more than
+//! [`CLICK_SLOP`] pixels; [`MouseDrag`] tells the input code which happened.
 //!
 //! Camera *scripts* (cinematics) drive the same rig through
 //! [`CameraDirector`](crate::camera_director::CameraDirector); player input
@@ -33,10 +37,11 @@ pub struct CameraPlugin;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<TouchGesture>()
+            .init_resource::<MouseDrag>()
             .add_systems(Startup, spawn_camera)
             .add_systems(
                 Update,
-                (keyboard_mouse_controls, touch_controls, apply_rig)
+                (mouse_controls, keyboard_mouse_controls, touch_controls, apply_rig)
                     .chain()
                     .in_set(FrameSet::Input)
                     .in_set(CameraSystems),
@@ -94,13 +99,187 @@ impl CameraRig {
     fn pan(&mut self, screen_delta: Vec2) {
         let (right, forward) = self.ground_axes();
         self.target_focus += right * screen_delta.x + forward * screen_delta.y;
+        self.clamp_focus();
+    }
+
+    /// Keeps the focus point over the map.
+    fn clamp_focus(&mut self) {
         self.target_focus.x = self.target_focus.x.clamp(self.bounds.min.x, self.bounds.max.x);
         self.target_focus.z = self.target_focus.z.clamp(self.bounds.min.y, self.bounds.max.y);
+        self.focus.x = self.focus.x.clamp(self.bounds.min.x, self.bounds.max.x);
+        self.focus.z = self.focus.z.clamp(self.bounds.min.y, self.bounds.max.y);
     }
 
     fn zoom(&mut self, factor: f32) {
         self.target_distance =
             (self.target_distance * factor).clamp(Self::MIN_DISTANCE, Self::MAX_DISTANCE);
+    }
+}
+
+/// Pixels the mouse may move between press and release and still be a click.
+pub const CLICK_SLOP: f32 = 6.0;
+
+/// What the current mouse drag does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DragMode {
+    #[default]
+    None,
+    /// Grab-and-drag the ground.
+    Pan,
+    /// Rotate (horizontal) and tilt (vertical).
+    Orbit,
+    /// Started on the selected soldier: release on a tile to move/attack there.
+    Order,
+}
+
+/// Mouse press/drag state, shared with the input code.
+#[derive(Resource, Debug, Default)]
+pub struct MouseDrag {
+    button: Option<MouseButton>,
+    start: Vec2,
+    /// The press moved beyond [`CLICK_SLOP`].
+    pub dragged: bool,
+    /// What this press will do once it becomes a drag.
+    candidate: DragMode,
+    /// What the drag is doing now.
+    pub mode: DragMode,
+    /// Ground point grabbed when panning.
+    grab: Option<Vec3>,
+    /// Pan momentum (world units / second), applied after release.
+    velocity: Vec3,
+    /// Set for one frame: a left click (press + release without dragging).
+    pub clicked: bool,
+    /// Set for one frame: an order-drag was released.
+    pub order_released: bool,
+}
+
+/// Where a camera ray through `cursor` hits the horizontal plane at `height`.
+fn ground_point(camera: &Camera, cam_tr: &GlobalTransform, cursor: Vec2, height: f32) -> Option<Vec3> {
+    let ray = camera.viewport_to_world(cam_tr, cursor).ok()?;
+    ray.plane_intersection_point(Vec3::Y * height, InfinitePlane3d::new(Vec3::Y))
+}
+
+/// Mouse: click vs. drag, ground-grab panning with momentum, orbit/tilt,
+/// order-drags from the selected soldier, zoom towards the cursor.
+#[allow(clippy::too_many_arguments)]
+fn mouse_controls(
+    time: Res<Time<Real>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    motion: Res<AccumulatedMouseMotion>,
+    scroll: Res<AccumulatedMouseScroll>,
+    window: Single<&Window>,
+    hover_map: Res<HoverMap>,
+    ui_nodes: Query<(), With<Node>>,
+    director: Res<CameraDirector>,
+    selection: Res<crate::state::Selection>,
+    state: Res<crate::state::BattleState>,
+    camera: Single<(&Camera, &GlobalTransform), With<CameraRig>>,
+    mut drag: ResMut<MouseDrag>,
+    mut rig: Single<&mut CameraRig>,
+) {
+    let dt = time.delta_secs();
+    drag.clicked = false;
+    drag.order_released = false;
+    let cursor = window.cursor_position();
+    let over_ui = pointer_over_ui(&hover_map, &ui_nodes);
+    let (cam, cam_tr) = *camera;
+    let plane = rig.focus.y;
+
+    if director.is_active() {
+        *drag = MouseDrag::default();
+        return;
+    }
+
+    // --- press ----------------------------------------------------------
+    for button in [MouseButton::Left, MouseButton::Middle, MouseButton::Right] {
+        if buttons.just_pressed(button) && drag.button.is_none() && !over_ui {
+            let on_selected = selection.unit.and_then(|u| state.battle.unit(u)).is_some_and(|u| {
+                Some(u.pos) == selection.hovered && u.can_act() && state.battle.active_team() == u.team
+            });
+            *drag = MouseDrag {
+                button: Some(button),
+                start: cursor.unwrap_or_default(),
+                candidate: match button {
+                    MouseButton::Right => DragMode::Orbit,
+                    MouseButton::Left if on_selected => DragMode::Order,
+                    _ => DragMode::Pan,
+                },
+                grab: cursor.and_then(|c| ground_point(cam, cam_tr, c, plane)),
+                ..default()
+            };
+        }
+    }
+
+    // --- hold / drag ----------------------------------------------------
+    if let (Some(button), Some(c)) = (drag.button, cursor) {
+        if buttons.pressed(button) {
+            if !drag.dragged && c.distance(drag.start) > CLICK_SLOP {
+                drag.dragged = true;
+                drag.mode = drag.candidate;
+            }
+            match drag.mode {
+                DragMode::Pan => {
+                    // Keep the grabbed ground point under the cursor.
+                    if let (Some(grab), Some(now)) = (drag.grab, ground_point(cam, cam_tr, c, plane)) {
+                        let delta = Vec3::new(grab.x - now.x, 0.0, grab.z - now.z);
+                        let before = rig.target_focus;
+                        rig.focus += delta;
+                        rig.target_focus = rig.focus;
+                        rig.clamp_focus();
+                        let moved = rig.target_focus - before;
+                        if dt > 0.0 {
+                            drag.velocity = drag.velocity.lerp(moved / dt, 0.5);
+                        }
+                    }
+                }
+                DragMode::Orbit => {
+                    rig.target_yaw -= motion.delta.x * 0.005;
+                    rig.target_pitch = (rig.target_pitch + motion.delta.y * 0.004).clamp(0.3, 1.45);
+                }
+                DragMode::Order | DragMode::None => {}
+            }
+        }
+        // --- release ----------------------------------------------------
+        if buttons.just_released(button) {
+            if !drag.dragged && button == MouseButton::Left && !over_ui {
+                drag.clicked = true;
+            }
+            if drag.dragged && drag.mode == DragMode::Order && !over_ui {
+                drag.order_released = true;
+            }
+            if drag.mode != DragMode::Pan {
+                drag.velocity = Vec3::ZERO;
+            }
+            drag.button = None;
+            drag.mode = DragMode::None;
+            drag.dragged = false;
+        }
+    }
+
+    // --- momentum after a pan ---------------------------------------------
+    if drag.mode != DragMode::Pan && drag.velocity.length_squared() > 0.01 {
+        let v = drag.velocity;
+        rig.target_focus += v * dt;
+        rig.clamp_focus();
+        drag.velocity *= (-5.0 * dt).exp();
+    } else if drag.mode != DragMode::Pan {
+        drag.velocity = Vec3::ZERO;
+    }
+
+    // --- wheel: zoom towards the cursor -------------------------------------
+    let lines = match scroll.unit {
+        MouseScrollUnit::Line => scroll.delta.y,
+        MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
+    };
+    if lines != 0.0 && !over_ui {
+        let old = rig.target_distance;
+        rig.zoom(1.0 - lines * 0.12);
+        let shrink = 1.0 - rig.target_distance / old; // > 0 when zooming in
+        if let Some(p) = cursor.and_then(|c| ground_point(cam, cam_tr, c, plane)) {
+            let toward = Vec3::new(p.x - rig.target_focus.x, 0.0, p.z - rig.target_focus.z);
+            rig.target_focus += toward * shrink;
+            rig.clamp_focus();
+        }
     }
 }
 
@@ -154,11 +333,6 @@ fn rig_transform_at(rig: &CameraRig, focus: Vec3) -> Transform {
 fn keyboard_mouse_controls(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    motion: Res<AccumulatedMouseMotion>,
-    scroll: Res<AccumulatedMouseScroll>,
-    hover_map: Res<HoverMap>,
-    ui_nodes: Query<(), With<Node>>,
     director: Res<CameraDirector>,
     mut rig: Single<&mut CameraRig>,
 ) {
@@ -166,7 +340,6 @@ fn keyboard_mouse_controls(
         return; // a camera script owns the camera
     }
     let dt = time.delta_secs();
-    let over_ui = pointer_over_ui(&hover_map, &ui_nodes);
     let speed = rig.target_distance * 1.2 * dt;
 
     let mut pan = Vec2::ZERO;
@@ -194,23 +367,7 @@ fn keyboard_mouse_controls(
         rig.target_yaw += FRAC_PI_4;
     }
 
-    // Free rotation / pan with mouse drags.
-    if buttons.pressed(MouseButton::Right) {
-        rig.target_yaw -= motion.delta.x * 0.006;
-    }
-    if buttons.pressed(MouseButton::Middle) {
-        let k = rig.target_distance * 0.0025;
-        rig.pan(Vec2::new(-motion.delta.x, motion.delta.y) * k);
-    }
-
-    let lines = match scroll.unit {
-        MouseScrollUnit::Line => scroll.delta.y,
-        MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
-    };
-    // The wheel scrolls UI panels (e.g. the editor) when the pointer is over them.
-    if lines != 0.0 && !over_ui {
-        rig.zoom(1.0 - lines * 0.1);
-    }
+    // Mouse drags and the wheel are handled by `mouse_controls`.
     if keys.pressed(KeyCode::KeyZ) {
         rig.zoom(1.0 - dt);
     }

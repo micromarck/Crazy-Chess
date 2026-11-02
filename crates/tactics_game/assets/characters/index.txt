@@ -1,0 +1,3 @@
+# Characters for platforms that cannot list folders (web, Android).
+# One file name per line. Desktop also scans this folder automatically.
+robot.gltf

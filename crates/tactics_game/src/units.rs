@@ -35,7 +35,12 @@ impl Plugin for UnitsPlugin {
             .add_systems(Startup, spawn_units)
             .add_systems(
                 Update,
-                (respawn_on_reset.run_if(on_message::<BattleReset>), spawn_new_units, snap_when_idle)
+                (
+                    respawn_on_reset,
+                    spawn_new_units,
+                    snap_when_idle,
+                    turn_units,
+                )
                     .chain()
                     .in_set(FrameSet::Present),
             );
@@ -47,6 +52,29 @@ impl Plugin for UnitsPlugin {
 pub struct UnitVisual {
     pub id: UnitId,
     pub team: Team,
+}
+
+/// A world point the unit should turn to face (smoothly, around Y).
+/// `None` = leave the rotation alone (e.g. while the death animation runs).
+#[derive(Component, Debug, Default, Clone, Copy)]
+pub struct FaceTarget(pub Option<Vec3>);
+
+/// Turn speed: higher is snappier.
+const TURN_RATE: f32 = 12.0;
+
+/// Smoothly turns units towards their [`FaceTarget`].
+fn turn_units(time: Res<Time>, mut q: Query<(&FaceTarget, &mut Transform), With<UnitVisual>>) {
+    let k = 1.0 - (-TURN_RATE * time.delta_secs()).exp();
+    for (face, mut tr) in &mut q {
+        let Some(target) = face.0 else { continue };
+        let d = target - tr.translation;
+        if d.x * d.x + d.z * d.z < 1e-4 {
+            continue;
+        }
+        // Rotation about Y whose forward (-Z) points along d.
+        let desired = Quat::from_rotation_y((-d.x).atan2(-d.z));
+        tr.rotation = tr.rotation.slerp(desired, k);
+    }
 }
 
 /// Create the visual for a unit that appeared mid-battle (script spawns).
@@ -63,6 +91,7 @@ fn spawn_unit(commands: &mut Commands, library: &ModelLibrary, primitives: &Prim
         .spawn((
             UnitVisual { id: unit.id, team: unit.team },
             UnitAnimator::new(unit.model.clone()),
+            FaceTarget::default(),
             Name::new(unit.name.clone()),
             Transform::from_translation(tile_top(map, unit.pos)),
             Visibility::default(),
@@ -87,7 +116,11 @@ fn spawn_units(
     }
 }
 
+/// Rebuilds every unit visual after a battle reset or a model change.
+#[allow(clippy::too_many_arguments)]
 fn respawn_on_reset(
+    mut resets: MessageReader<BattleReset>,
+    mut refresh: MessageReader<crate::characters::RefreshUnitVisuals>,
     mut commands: Commands,
     library: Res<ModelLibrary>,
     primitives: Res<PrimitiveAssets>,
@@ -95,6 +128,10 @@ fn respawn_on_reset(
     entities: ResMut<UnitEntities>,
     old: Query<Entity, With<UnitVisual>>,
 ) {
+    // Read both (so neither piles up); rebuild once if either arrived.
+    if resets.read().count() + refresh.read().count() == 0 {
+        return;
+    }
     for e in &old {
         commands.entity(e).despawn();
     }

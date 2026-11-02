@@ -17,6 +17,9 @@ crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 tactics_core.workspace = true
+# Character sidecar files (`*.character.ron`).
+serde = { version = "1", features = ["derive"] }
+ron = "0.12"
 # "3d" = renderer, PBR, picking, window/input; "ui" = bevy_ui + widgets.
 # Audio is left out to avoid the ALSA dependency on Linux; add "audio" when needed.
 bevy = { workspace = true, features = ["3d", "ui"] }

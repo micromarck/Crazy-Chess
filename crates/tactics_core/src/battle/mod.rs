@@ -166,6 +166,14 @@ impl Battle {
         self.units.get(id.0 as usize)
     }
 
+    /// Changes which model draws a unit (presentation only; no effect on the
+    /// rules). Used by the Character Lab to preview models.
+    pub fn set_unit_model(&mut self, id: UnitId, model: impl Into<String>) {
+        if let Some(u) = self.units.get_mut(id.0 as usize) {
+            u.model = model.into();
+        }
+    }
+
     /// Every unit ever spawned, dead ones included.
     pub fn units(&self) -> &[Unit] {
         &self.units

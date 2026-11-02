@@ -29,13 +29,18 @@ pub struct ModelsPlugin;
 impl Plugin for ModelsPlugin {
     fn build(&self, app: &mut App) {
         // PreStartup: the library must exist before units are spawned.
-        app.add_systems(PreStartup, (setup_primitives, build_library));
+        app.add_systems(PreStartup, (setup_primitives, build_library))
+            .add_systems(Update, auto_fit)
+            // Late in the frame, before PostUpdate's animation evaluation.
+            .add_systems(Update, restore_rest_poses.after(crate::FrameSet::Present));
     }
 }
 
 /// One animation slot of a loaded model.
 #[derive(Debug, Clone)]
 pub struct LoadedClip {
+    /// Name of the clip in its file (for the Character Lab).
+    pub name: String,
     pub node: AnimationNodeIndex,
     pub clip: Handle<AnimationClip>,
     pub looping: bool,
@@ -49,6 +54,13 @@ pub struct LoadedModel {
     pub scene: Option<Handle<WorldAsset>>,
     pub graph: Option<Handle<AnimationGraph>>,
     pub clips: HashMap<String, LoadedClip>,
+    /// Scale the glTF scene so it is this tall, with its feet on the ground
+    /// (drop-in characters without an explicit scale).
+    pub auto_fit: Option<f32>,
+    /// Cached auto-fit result: (scale, vertical offset).
+    pub fit: Option<(f32, f32)>,
+    /// Where the model came from, for the Character Lab.
+    pub source: String,
 }
 
 /// All models of the ruleset, by id.
@@ -62,6 +74,43 @@ pub struct ModelLibrary {
 impl ModelLibrary {
     pub fn get(&self, id: &str) -> Option<&LoadedModel> {
         self.models.get(id)
+    }
+
+    /// Adds or replaces a model at runtime (drop-in characters).
+    pub fn insert(&mut self, id: impl Into<String>, model: LoadedModel) {
+        self.models.insert(id.into(), model);
+    }
+
+    /// Uses `rig` (e.g. another model's) as this model's stand-in rig.
+    pub fn insert_rig(&mut self, id: impl Into<String>, rig: std::sync::Arc<crate::rig::RigDef>) {
+        self.rigs.insert(id.into(), rig);
+    }
+
+    /// All model ids, sorted.
+    pub fn ids(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self.models.keys().cloned().collect();
+        ids.sort();
+        ids
+    }
+
+    /// Every animation slot a model can show and where it comes from
+    /// (`clip 'Walk'`, `skeleton`), sorted by slot.
+    pub fn slots(&self, id: &str) -> Vec<(String, String)> {
+        let mut out: std::collections::BTreeMap<String, String> = Default::default();
+        // For glTF models the skeleton rig is only a stand-in while loading:
+        // slots without a clip use the procedural fallback.
+        let gltf = self.get(id).is_some_and(|m| m.scene.is_some());
+        if let Some(r) = self.rig(id) {
+            for slot in r.animations.keys() {
+                out.insert(slot.clone(), if gltf { "procedural".into() } else { "skeleton".into() });
+            }
+        }
+        if let Some(m) = self.get(id) {
+            for (slot, c) in &m.clips {
+                out.insert(slot.clone(), format!("clip {}", c.name));
+            }
+        }
+        out.into_iter().collect()
     }
 
     /// The rig of a model drawn on a skeleton.
@@ -115,14 +164,22 @@ fn build_library(
                 .zip(nodes)
                 .zip(handles)
                 .map(|(((slot, a), node), clip)| {
-                    ((*slot).clone(), LoadedClip { node, clip, looping: a.looping, speed: a.speed })
+                    ((*slot).clone(), LoadedClip { name: a.clip.clone(), node, clip, looping: a.looping, speed: a.speed })
                 })
                 .collect();
             (Some(graphs.add(graph)), clips)
         };
         library
             .models
-            .insert(def.id.clone(), LoadedModel { def: def.clone(), scene, graph, clips });
+            .insert(def.id.clone(), LoadedModel {
+                def: def.clone(),
+                source: if def.scene.is_some() { "glTF".into() } else if def.skeleton.is_some() { "skeleton rig".into() } else { "primitive".into() },
+                scene,
+                graph,
+                clips,
+                auto_fit: None,
+                fit: None,
+            });
     }
     commands.insert_resource(library);
 }
@@ -182,9 +239,9 @@ pub struct FallbackModel;
 
 /// On a glTF scene entity: the unit root it belongs to and its model id.
 #[derive(Component)]
-struct ModelOwner {
-    unit_root: Entity,
-    model: String,
+pub struct ModelOwner {
+    pub unit_root: Entity,
+    pub model: String,
 }
 
 /// Spawns the primitive shape as children of `parent`. The model faces -Z.
@@ -252,17 +309,103 @@ pub fn spawn_model(
     }
 
     if let Some(scene) = &model.scene {
-        let [x, y, z] = model.def.offset;
-        commands
-            .spawn((
-                WorldAssetRoot(scene.clone()),
-                Transform::from_xyz(x, y, z)
-                    .with_rotation(Quat::from_rotation_y(model.def.yaw_degrees.to_radians()))
-                    .with_scale(Vec3::splat(model.def.scale)),
-                ModelOwner { unit_root, model: model_id.to_string() },
-                ChildOf(pivot),
-            ))
-            .observe(on_scene_ready);
+        let [x, mut y, z] = model.def.offset;
+        let mut scale = model.def.scale;
+        if let Some((fit_scale, fit_y)) = model.fit {
+            scale = fit_scale;
+            y += fit_y;
+        }
+        let mut e = commands.spawn((
+            WorldAssetRoot(scene.clone()),
+            Transform::from_xyz(x, y, z)
+                .with_rotation(Quat::from_rotation_y(model.def.yaw_degrees.to_radians()))
+                .with_scale(Vec3::splat(scale)),
+            ModelOwner { unit_root, model: model_id.to_string() },
+            ChildOf(pivot),
+        ));
+        if let (Some(height), None) = (model.auto_fit, model.fit) {
+            e.insert(AutoFit { height, base_offset: Vec3::new(x, model.def.offset[1], z) });
+        }
+        e.observe(on_scene_ready);
+    }
+}
+
+/// Marks a glTF scene whose entities have spawned.
+#[derive(Component)]
+pub struct SceneReady;
+
+/// The bind/rest transforms of a glTF scene's animated joints.
+///
+/// glTF clips only drive the joints they have tracks for; any other joint
+/// keeps whatever the *previous* clip left there (e.g. a "Walk" without hip
+/// rotation would keep a "Die" clip's fallen hips). Restoring the rest pose
+/// every frame, before animations are applied, makes every clip start from
+/// the same neutral pose.
+#[derive(Component, Debug, Default)]
+pub struct RestPose(pub Vec<(Entity, Transform)>);
+
+/// Restores [`RestPose`]s; the animation system then overrides what it animates.
+pub fn restore_rest_poses(poses: Query<&RestPose>, mut transforms: Query<&mut Transform>) {
+    for pose in &poses {
+        for (e, rest) in &pose.0 {
+            if let Ok(mut t) = transforms.get_mut(*e)
+                && *t != *rest {
+                    *t = *rest;
+                }
+        }
+    }
+}
+
+/// Scale a freshly spawned glTF scene to `height` with its lowest point on
+/// the ground, once its meshes have bounding boxes. The result is cached in
+/// the [`ModelLibrary`] so later spawns of the same model use it directly.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct AutoFit {
+    pub height: f32,
+    base_offset: Vec3,
+}
+
+/// Measures and fits [`AutoFit`] scenes (see there).
+pub fn auto_fit(
+    mut commands: Commands,
+    mut scenes: Query<(Entity, &AutoFit, &ModelOwner, &GlobalTransform, &mut Transform), With<SceneReady>>,
+    children: Query<&Children>,
+    meshes: Query<(&bevy::camera::primitives::Aabb, &GlobalTransform)>,
+    mut library: ResMut<ModelLibrary>,
+) {
+    for (entity, fit, owner, scene_gt, mut tr) in &mut scenes {
+        // Bounds of every mesh, in the scene's own (unscaled) space.
+        let to_local = scene_gt.affine().inverse();
+        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+        let mut found = false;
+        for d in children.iter_descendants(entity) {
+            let Ok((aabb, gt)) = meshes.get(d) else { continue };
+            found = true;
+            let (c, h) = (Vec3::from(aabb.center), Vec3::from(aabb.half_extents));
+            for sx in [-1.0, 1.0] {
+                for sy in [-1.0, 1.0] {
+                    for sz in [-1.0, 1.0] {
+                        let world = gt.transform_point(c + h * Vec3::new(sx, sy, sz));
+                        let y = to_local.transform_point3(world).y;
+                        lo = lo.min(y);
+                        hi = hi.max(y);
+                    }
+                }
+            }
+        }
+        if !found {
+            continue; // bounds not computed yet: try next frame
+        }
+        let height = (hi - lo).max(1e-3);
+        let scale = fit.height / height;
+        let y = -lo * scale;
+        tr.scale = Vec3::splat(scale);
+        tr.translation = fit.base_offset + Vec3::Y * y;
+        commands.entity(entity).remove::<AutoFit>();
+        if let Some(model) = library.models.get_mut(&owner.model) {
+            model.fit = Some((scale, y));
+            info!("auto-fit '{}': {:.2} m tall in the file -> scale {:.3}", owner.model, height, scale);
+        }
     }
 }
 
@@ -276,10 +419,15 @@ fn on_scene_ready(
     fallbacks: Query<Entity, With<FallbackModel>>,
     mut players: Query<&mut AnimationPlayer>,
     mut animators: Query<&mut UnitAnimator>,
+    joints: Query<&Transform, With<bevy::animation::AnimationTargetId>>,
     library: Res<ModelLibrary>,
 ) {
     let scene = ready.entity;
     let Ok((owner, pivot)) = owners.get(scene) else { return };
+    // Remember the rest pose of every animated joint (see `RestPose`).
+    let rest: Vec<(Entity, Transform)> =
+        children.iter_descendants(scene).filter_map(|e| joints.get(e).ok().map(|t| (e, *t))).collect();
+    commands.entity(scene).insert((SceneReady, RestPose(rest)));
 
     // Remove the primitive stand-in (a sibling of the scene under the pivot).
     for sibling in children.iter_descendants(pivot.parent()) {

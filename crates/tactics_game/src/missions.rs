@@ -46,7 +46,7 @@ impl Plugin for MissionsPlugin {
 /// Folder (under `assets/`) holding the missions.
 pub const MISSION_DIR: &str = "missions";
 
-/// A text file loaded through the asset server.
+/// A text file loaded through the asset server (`.xml`, `.txt`, `.character.ron`).
 #[derive(Asset, TypePath, Debug)]
 pub struct XmlText(pub String);
 
@@ -65,7 +65,8 @@ impl AssetLoader for XmlTextLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["xml"]
+        // Mission XML, the characters index and character sidecars.
+        &["xml", "txt", "character.ron"]
     }
 }
 
@@ -279,8 +280,11 @@ mod tests {
             for e in &events {
                 assert!(!matches!(e, GameEvent::ScriptError { .. }), "{f}: {e:?}");
             }
-            assert!(battle.living(Team::Player).count() >= 4, "{f}: squad deployed");
-            assert!(battle.living(Team::Enemy).count() >= 3, "{f}: enemies placed");
+            // The Character Lab is a test stage: one subject, no enemies.
+            if def.id != crate::lab::LAB_MISSION {
+                assert!(battle.living(Team::Player).count() >= 4, "{f}: squad deployed");
+                assert!(battle.living(Team::Enemy).count() >= 3, "{f}: enemies placed");
+            }
             ids.push(def.id);
         }
         assert!(start.is_none_or(|s| ids.contains(&s)));
