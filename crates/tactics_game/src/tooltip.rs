@@ -172,6 +172,17 @@ pub fn tooltip_text(state: &BattleState, selection: &Selection) -> String {
         };
     }
 
+    // A friendly soldier: who they are and how they're doing.
+    if let Some(friend) = b.unit_at(hover).filter(|u| u.team == unit.team) {
+        let morale = if friend.fearless {
+            String::new()
+        } else {
+            format!("  {}", b.rules().combat.morale.level(friend.fear).name())
+        };
+        let hint = if friend.id == sel { "" } else if friend.can_act() { "\nClick to select" } else { "\nNo AP left" };
+        return format!("{}  HP {}/{}  {} AP{morale}{hint}", friend.name, friend.hp, friend.stats.max_hp, friend.action_points);
+    }
+
     // An enemy: primary attack odds.
     if let Some(enemy) = b.unit_at(hover).filter(|u| u.team != unit.team && b.is_revealed(u.id)) {
         let Some(def) = b.primary_attack(unit) else { return String::new() };
@@ -185,9 +196,21 @@ pub fn tooltip_text(state: &BattleState, selection: &Selection) -> String {
                     CoverLevel::None => "no cover",
                 };
                 let usable = b.validate(&Action::UseAbility { unit: sel, ability: def.id.clone(), target: Target::Unit(enemy.id) });
+                let mut notes = Vec::new();
+                if enemy.status.overwatch.is_some() {
+                    notes.push("on overwatch");
+                }
+                if enemy.ai.dormant {
+                    notes.push("unaware");
+                }
+                let morale = b.rules().combat.morale.level(enemy.fear);
+                if !enemy.fearless && morale != tactics_core::content::FearLevel::Steady {
+                    notes.push(morale.name());
+                }
+                let notes = if notes.is_empty() { String::new() } else { format!("\n{}", notes.join(", ")) };
                 match usable {
-                    Ok(()) => format!("{}%  {}-{} dmg  ({cover})\nClick to aim", p.hit_chance, p.damage.0, p.damage.1),
-                    Err(e) => format!("{}: {e}", enemy.name),
+                    Ok(()) => format!("{}%  {}-{} dmg  ({cover}){notes}\nClick to aim", p.hit_chance, p.damage.0, p.damage.1),
+                    Err(e) => format!("{}: {e}{notes}", enemy.name),
                 }
             }
             _ => enemy.name.clone(),

@@ -278,6 +278,16 @@ fn draw_health_bars(
             gizmos.line(a, b, c);
             gizmos.line(a + Vec3::Y * 0.03, b + Vec3::Y * 0.03, c);
         }
+        // Action points left (player's turn, own soldiers): small gold dots.
+        if unit.team == Team::Player && state.battle.active_team() == Team::Player && !state.battle.is_over() {
+            let ap = unit.action_points as i32;
+            let max_ap = state.battle.rules().combat.action_points as i32;
+            for i in 0..max_ap {
+                let at = base + Vec3::Y * 0.12 + right * ((i as f32 - (max_ap - 1) as f32 / 2.0) * 0.12);
+                let c = if i < ap { theme::TRACER } else { Color::srgba(0.3, 0.3, 0.3, 0.6) };
+                gizmos.sphere(Isometry3d::from_translation(at), 0.03, c);
+            }
+        }
         if unit.status.overwatch.is_some() {
             gizmos.circle(
                 Isometry3d::new(base + Vec3::Y * 0.2, Quat::IDENTITY),
