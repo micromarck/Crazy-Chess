@@ -5,6 +5,7 @@
 
 use crate::ai::AiConfig;
 use crate::content::*;
+use crate::unit::WeaponLook;
 use crate::scenario::DEMO_MAP;
 
 /// The core content every game starts from.
@@ -183,6 +184,7 @@ fn register_weapons(rules: &mut Ruleset) {
         damage_max: 7,
         crit_chance: 20,
         crit_bonus: 3,
+        look: WeaponLook::Shotgun,
         optimal_range: 2.0,
         max_range: 10.0,
         clip_size: 3,
@@ -197,6 +199,7 @@ fn register_weapons(rules: &mut Ruleset) {
         max_range: 25.0,
         clip_size: 3,
         classes: vec!["sniper".into()],
+        look: WeaponLook::Sniper,
         ..w("sniper_rifle", "Sniper Rifle")
     });
     rules.add_weapon(Weapon {
@@ -206,6 +209,7 @@ fn register_weapons(rules: &mut Ruleset) {
         optimal_range: 5.0,
         max_range: 14.0,
         clip_size: 3,
+        look: WeaponLook::Plasma,
         ..w("plasma_pistol", "Plasma Pistol")
     });
     rules.add_weapon(Weapon {
@@ -215,6 +219,7 @@ fn register_weapons(rules: &mut Ruleset) {
         optimal_range: 4.0,
         max_range: 14.0,
         clip_size: 5,
+        look: WeaponLook::Smg,
         ..w("smg", "SMG")
     });
 }

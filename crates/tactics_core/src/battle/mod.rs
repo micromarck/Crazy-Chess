@@ -200,6 +200,7 @@ impl Battle {
             fear: 0,
             fearless: class.fearless,
             gear: Loadout { weapon: Some(weapon_id), ..gear },
+            appearance: None,
         };
         self.units.push(unit);
         Ok(id)
@@ -255,6 +256,13 @@ impl Battle {
     /// Every unit ever spawned, dead ones included.
     pub fn units(&self) -> &[Unit] {
         &self.units
+    }
+
+    /// Sets how a unit looks (presentation only; saved soldiers carry theirs).
+    pub fn set_unit_appearance(&mut self, id: UnitId, appearance: crate::content::Appearance) {
+        if let Some(u) = self.units.get_mut(id.0 as usize) {
+            u.appearance = Some(appearance);
+        }
     }
 
     /// Living units of a team.

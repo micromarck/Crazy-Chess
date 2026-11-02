@@ -67,6 +67,7 @@
 //! | Status effects, terrain types, objectives, campaign… | — | planned, see `MODULES.md` |
 
 pub mod ability;
+pub mod appearance;
 #[cfg(feature = "data")]
 pub mod data;
 pub mod gear;
@@ -77,6 +78,7 @@ pub mod skeleton;
 use std::collections::BTreeMap;
 
 pub use ability::*;
+pub use appearance::{Appearance, Build, Hair, Headgear};
 pub use gear::*;
 pub use morale::*;
 pub use presentation::*;
@@ -164,7 +166,7 @@ pub struct MapDef {
 }
 
 /// One soldier/alien in a squad.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
 pub struct SquadMember {
     /// Unit class id.
@@ -175,11 +177,13 @@ pub struct SquadMember {
     pub loadout: Option<String>,
     /// Individual overrides on top of the preset.
     pub gear: Loadout,
+    /// Looks (`None` = a stable random look from the name).
+    pub appearance: Option<Appearance>,
 }
 
 /// An ordered list of units deployed together. The scenarios use the squads
 /// with ids `"player"` and `"enemy"`.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
 pub struct SquadDef {
     pub id: String,

@@ -76,6 +76,22 @@ pub struct BoneDef {
     pub color: BoneColor,
 }
 
+/// A named attachment point on a bone: where weapons, helmets, backpacks
+/// and other gear are mounted. `rotation` turns the attached thing (degrees,
+/// XYZ); by convention attachments point their front along -Z.
+///
+/// Standard humanoid sockets: `weapon` (main hand grip, gun pointing along
+/// the barrel), `hand_l`, `head` (top of the head), `back`, `chest`,
+/// `hip_l`, `hip_r`.
+#[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
+pub struct SocketDef {
+    pub name: String,
+    pub bone: String,
+    pub offset: [f32; 3],
+    pub rotation: [f32; 3],
+}
+
 /// A bone hierarchy, optionally extending another.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
@@ -85,6 +101,8 @@ pub struct SkeletonDef {
     pub extends: Option<String>,
     /// New bones, or overrides of inherited bones with the same name.
     pub bones: Vec<BoneDef>,
+    /// Attachment points (inherited; same name overrides).
+    pub sockets: Vec<SocketDef>,
 }
 
 /// One keyframe: `(time in seconds, value)`.
@@ -201,11 +219,17 @@ pub struct ResolvedSkeleton {
     pub parents: Vec<Option<usize>>,
     /// The chain from this skeleton up to its root ancestor (for animation lookup).
     pub lineage: Vec<String>,
+    /// Attachment points whose bone exists.
+    pub sockets: Vec<SocketDef>,
 }
 
 impl ResolvedSkeleton {
     pub fn index_of(&self, bone: &str) -> Option<usize> {
         self.bones.iter().position(|b| b.name == bone)
+    }
+
+    pub fn socket(&self, name: &str) -> Option<&SocketDef> {
+        self.sockets.iter().find(|s| s.name == name)
     }
 
     /// Indices of `roots` and all their descendants (for masks).
@@ -266,7 +290,19 @@ impl Ruleset {
             .iter()
             .map(|b| b.parent.as_ref().and_then(|p| ordered.iter().position(|o| &o.name == p)))
             .collect();
-        Ok(ResolvedSkeleton { id: id.to_string(), bones: ordered, parents, lineage })
+        let mut sockets: Vec<SocketDef> = Vec::new();
+        for sk in lineage.iter().rev() {
+            for s in &self.skeleton(sk).expect("checked").sockets {
+                match sockets.iter_mut().find(|x| x.name == s.name) {
+                    Some(existing) => *existing = s.clone(),
+                    None => sockets.push(s.clone()),
+                }
+            }
+        }
+        if let Some(bad) = sockets.iter().find(|s| !ordered.iter().any(|b| b.name == s.bone)) {
+            return Err(format!("skeleton '{id}': socket '{}' is on unknown bone '{}'", bad.name, bad.bone));
+        }
+        Ok(ResolvedSkeleton { id: id.to_string(), bones: ordered, parents, lineage, sockets })
     }
 
     /// Every animation available to a skeleton (its own, then inherited ones
@@ -299,11 +335,13 @@ mod tests {
             extends: None,
             // Deliberately out of order: resolution sorts parents first.
             bones: vec![bone("head", Some("chest"), 0.3), bone("hips", None, 0.5), bone("chest", Some("hips"), 0.4)],
+            sockets: vec![SocketDef { name: "hat".into(), bone: "head".into(), ..Default::default() }],
         });
         r.add_skeleton(SkeletonDef {
             id: "big".into(),
             extends: Some("base".into()),
             bones: vec![bone("head", Some("chest"), 0.6), bone("antenna", Some("head"), 0.2)],
+            sockets: vec![SocketDef { name: "hat".into(), bone: "antenna".into(), ..Default::default() }],
         });
         let anim = |sk: &str, slot: &str, deg: f32| AnimationDef {
             skeleton: sk.into(),
@@ -326,6 +364,7 @@ mod tests {
         let names: Vec<_> = s.bones.iter().map(|b| b.name.as_str()).collect();
         assert_eq!(names, ["hips", "chest", "head", "antenna"], "parents first");
         assert_eq!(s.bones[2].offset[1], 0.6, "child overrides the head");
+        assert_eq!(s.socket("hat").unwrap().bone, "antenna", "sockets are inherited and overridden by name");
         assert_eq!(s.parents, vec![None, Some(0), Some(1), Some(2)]);
         assert_eq!(s.subtree(&["chest".into()]), [1, 2, 3].into());
     }
@@ -354,10 +393,10 @@ mod tests {
     #[test]
     fn broken_hierarchies_are_reported() {
         let mut r = Ruleset::new();
-        r.add_skeleton(SkeletonDef { id: "a".into(), extends: Some("b".into()), bones: vec![] });
-        r.add_skeleton(SkeletonDef { id: "b".into(), extends: Some("a".into()), bones: vec![] });
+        r.add_skeleton(SkeletonDef { id: "a".into(), extends: Some("b".into()), ..Default::default() });
+        r.add_skeleton(SkeletonDef { id: "b".into(), extends: Some("a".into()), ..Default::default() });
         assert!(r.resolve_skeleton("a").unwrap_err().contains("loops"));
-        r.add_skeleton(SkeletonDef { id: "c".into(), extends: None, bones: vec![bone("arm", Some("nope"), 0.0)] });
+        r.add_skeleton(SkeletonDef { id: "c".into(), bones: vec![bone("arm", Some("nope"), 0.0)], ..Default::default() });
         assert!(r.resolve_skeleton("c").unwrap_err().contains("missing"));
     }
 }

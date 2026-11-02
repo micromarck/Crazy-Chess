@@ -121,8 +121,13 @@ impl Battle {
             for m in members {
                 match battle.free_tile_near(d.pos) {
                     Some(p) => {
-                        if let Err(e) = battle.spawn_equipped(&m.class, m.name.clone(), d.team, p, m.loadout.as_deref(), &m.gear) {
-                            warnings.push(format!("{}: {e}", m.name));
+                        match battle.spawn_equipped(&m.class, m.name.clone(), d.team, p, m.loadout.as_deref(), &m.gear) {
+                            Ok(id) => {
+                                if let Some(look) = m.appearance {
+                                    battle.set_unit_appearance(id, look);
+                                }
+                            }
+                            Err(e) => warnings.push(format!("{}: {e}", m.name)),
                         }
                     }
                     None => warnings.push(format!("deploy: no room for {}", m.name)),

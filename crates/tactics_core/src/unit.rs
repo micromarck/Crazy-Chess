@@ -34,6 +34,23 @@ impl Team {
     }
 }
 
+/// What a weapon looks like when held (the frontend builds a model for each;
+/// a weapon's `model` replaces it with a custom one).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize))]
+pub enum WeaponLook {
+    #[default]
+    Rifle,
+    Shotgun,
+    Sniper,
+    Smg,
+    Lmg,
+    Pistol,
+    Plasma,
+    /// Nothing held (built-in weapons of drones, claws...).
+    None,
+}
+
 /// A weapon profile. Abilities with `DamageSource::Weapon` / `AbilityRange::Weapon`
 /// read their numbers from here, so one "shoot" ability works with every gun.
 #[derive(Debug, Clone, PartialEq)]
@@ -59,6 +76,11 @@ pub struct Weapon {
     pub ammo: i32,
     /// Classes allowed to carry it in a loadout (empty = everyone).
     pub classes: Vec<String>,
+    /// How it's drawn in the hand.
+    pub look: WeaponLook,
+    /// Model id (a `ModelDef`, e.g. a glTF) drawn at the `weapon` socket
+    /// instead of the built-in look.
+    pub model: Option<String>,
 }
 
 impl Default for Weapon {
@@ -75,6 +97,8 @@ impl Default for Weapon {
             clip_size: 4,
             ammo: 0,
             classes: Vec::new(),
+            look: WeaponLook::Rifle,
+            model: None,
         }
     }
 }
@@ -190,6 +214,8 @@ pub struct Unit {
     pub fearless: bool,
     /// What the unit carries (resolved at spawn).
     pub gear: crate::content::Loadout,
+    /// Looks (`None` = derived from the name by the frontend).
+    pub appearance: Option<crate::content::Appearance>,
 }
 
 impl Unit {

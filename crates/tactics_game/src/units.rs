@@ -104,7 +104,15 @@ pub struct SpawnUnitVisual(pub UnitId);
 pub struct UnitEntities(pub HashMap<UnitId, Entity>);
 
 /// Spawns the entity tree for one unit.
-fn spawn_unit(commands: &mut Commands, library: &ModelLibrary, primitives: &PrimitiveAssets, map: &Map, unit: &Unit) -> Entity {
+fn spawn_unit(
+    commands: &mut Commands,
+    library: &ModelLibrary,
+    primitives: &PrimitiveAssets,
+    looks: &crate::looks::LooksAssets,
+    battle: &Battle,
+    unit: &Unit,
+) -> Entity {
+    let map = battle.map();
     let root = commands
         .spawn((
             UnitVisual { id: unit.id, team: unit.team },
@@ -116,7 +124,8 @@ fn spawn_unit(commands: &mut Commands, library: &ModelLibrary, primitives: &Prim
         ))
         .id();
     let pivot = commands.spawn((UnitPivot, Transform::default(), Visibility::default(), ChildOf(root))).id();
-    spawn_model(commands, library, primitives, &unit.model, unit.team, root, pivot);
+    let outfit = crate::looks::Outfit::of(unit, battle.rules());
+    spawn_model(commands, library, primitives, looks, &outfit, &unit.model, unit.team, root, pivot);
     root
 }
 
@@ -124,12 +133,13 @@ fn spawn_units(
     mut commands: Commands,
     library: Res<ModelLibrary>,
     primitives: Res<PrimitiveAssets>,
+    looks: Res<crate::looks::LooksAssets>,
     state: Res<BattleState>,
     mut entities: ResMut<UnitEntities>,
 ) {
     entities.0.clear();
     for unit in state.battle.units().iter().filter(|u| u.is_alive()) {
-        let e = spawn_unit(&mut commands, &library, &primitives, state.battle.map(), unit);
+        let e = spawn_unit(&mut commands, &library, &primitives, &looks, &state.battle, unit);
         entities.0.insert(unit.id, e);
     }
 }
@@ -142,6 +152,7 @@ fn respawn_on_reset(
     mut commands: Commands,
     library: Res<ModelLibrary>,
     primitives: Res<PrimitiveAssets>,
+    looks: Res<crate::looks::LooksAssets>,
     state: Res<BattleState>,
     entities: ResMut<UnitEntities>,
     old: Query<Entity, With<UnitVisual>>,
@@ -153,7 +164,7 @@ fn respawn_on_reset(
     for e in &old {
         commands.entity(e).despawn();
     }
-    spawn_units(commands, library, primitives, state, entities);
+    spawn_units(commands, library, primitives, looks, state, entities);
 }
 
 fn spawn_new_units(
@@ -161,6 +172,7 @@ fn spawn_new_units(
     mut commands: Commands,
     library: Res<ModelLibrary>,
     primitives: Res<PrimitiveAssets>,
+    looks: Res<crate::looks::LooksAssets>,
     state: Res<BattleState>,
     mut entities: ResMut<UnitEntities>,
 ) {
@@ -169,7 +181,7 @@ fn spawn_new_units(
             continue;
         }
         if let Some(unit) = state.battle.unit(*id).filter(|u| u.is_alive()) {
-            let e = spawn_unit(&mut commands, &library, &primitives, state.battle.map(), unit);
+            let e = spawn_unit(&mut commands, &library, &primitives, &looks, &state.battle, unit);
             entities.0.insert(*id, e);
         }
     }

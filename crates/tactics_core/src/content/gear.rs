@@ -58,6 +58,12 @@ pub struct ItemDef {
     pub charges: Option<u32>,
     /// Classes allowed to use it (empty = everyone).
     pub classes: Vec<String>,
+    /// Model id drawn on the wearer (e.g. a glTF helmet or pouch). Without
+    /// one, the frontend draws built-in gear for known items.
+    pub model: Option<String>,
+    /// Socket the model attaches to (default: `chest` for armour, `hip_r`
+    /// for utility items).
+    pub socket: Option<String>,
 }
 
 /// A set of equipment. Empty fields mean "keep what you'd otherwise have".

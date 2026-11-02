@@ -87,6 +87,10 @@ pub struct ModelDef {
     pub yaw_degrees: f32,
     /// Animation clips by slot name (`"idle"`, `"walk"`, `"shoot"`...).
     pub animations: BTreeMap<String, AnimationClipDef>,
+    /// Attachment points of the glTF scene: `bone` is a **node name** in the
+    /// file (e.g. `"mixamorig:RightHand"`). Rigged models without a scene
+    /// use their skeleton's sockets instead.
+    pub sockets: Vec<super::SocketDef>,
 }
 
 impl Default for ModelDef {
@@ -100,6 +104,7 @@ impl Default for ModelDef {
             offset: [0.0; 3],
             yaw_degrees: 0.0,
             animations: BTreeMap::new(),
+            sockets: Vec::new(),
         }
     }
 }

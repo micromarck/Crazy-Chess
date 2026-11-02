@@ -61,6 +61,10 @@ pub struct MissionStats {
     pub damage_dealt: i32,
     pub damage_taken: i32,
     pub soldiers_lost: u32,
+    /// Kills per soldier name (for the roster's service records).
+    pub kills_by: std::collections::BTreeMap<String, u32>,
+    /// The squad member who acted last (credited with kills that follow).
+    last_actor: Option<UnitId>,
 }
 
 impl MissionStats {
@@ -70,7 +74,9 @@ impl MissionStats {
         let team = |id: UnitId| battle.unit(id).map(|u| u.team);
         for e in events {
             match e {
+                GameEvent::AbilityUsed { unit, .. } => self.last_actor = Some(*unit),
                 GameEvent::AttackResolved { attacker, target, outcome, .. } => {
+                    self.last_actor = Some(*attacker);
                     let damage = match outcome {
                         ShotOutcome::Hit { damage, .. } => *damage,
                         ShotOutcome::Miss => 0,
@@ -93,7 +99,12 @@ impl MissionStats {
                 },
                 GameEvent::UnitKilled { unit } => match team(*unit) {
                     Some(Team::Player) => self.soldiers_lost += 1,
-                    Some(Team::Enemy) => self.kills += 1,
+                    Some(Team::Enemy) => {
+                        self.kills += 1;
+                        if let Some(killer) = self.last_actor.and_then(|a| battle.unit(a)).filter(|u| u.team == Team::Player) {
+                            *self.kills_by.entry(killer.name.clone()).or_insert(0) += 1;
+                        }
+                    }
                     None => {}
                 },
                 _ => {}

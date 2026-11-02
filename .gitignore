@@ -2,3 +2,7 @@
 /crates/tactics_game/dist
 /modules
 /ui
+
+# Player saves (desktop)
+tbsium_roster.ron
+tbsium_settings.txt

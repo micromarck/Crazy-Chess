@@ -43,6 +43,7 @@
             optimal_range: 8.0,
             max_range: 16.0,
             clip_size: 4,
+            look: None,  // built into the drone: nothing held
         ),
     ],
 

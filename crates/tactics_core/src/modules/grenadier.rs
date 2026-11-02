@@ -10,6 +10,7 @@
 //! and add your module to the list in `tactics_game/src/content.rs`.
 
 use crate::content::*;
+use crate::unit::WeaponLook;
 
 pub struct GrenadierModule;
 
@@ -65,6 +66,8 @@ impl GameModule for GrenadierModule {
             clip_size: 5,
             ammo: 0,
             classes: Vec::new(),
+            look: WeaponLook::Lmg,
+            model: None,
         });
         rules.add_class(UnitClass {
             id: "grenadier".into(),

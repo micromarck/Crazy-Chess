@@ -172,6 +172,7 @@ fn rebuild_layout(
 /// | `gear:<what>:<member>[:<slot>]` | change a squad member's loadout (see [`crate::loadout`]) |
 /// | `apply_loadout` | restart the mission with the new loadouts |
 /// | `setting:<name>` | change a setting (see [`crate::settings`]) |
+/// | `roster:<command>` | Barracks: edit saved soldiers (see [`crate::roster`]) |
 /// | `log:<text>` | print a message (handy while designing layouts) |
 #[allow(clippy::too_many_arguments)]
 pub fn run_ui_commands(
@@ -185,6 +186,7 @@ pub fn run_ui_commands(
     mut state: ResMut<BattleState>,
     mut log: ResMut<LogMessages>,
     mut settings: ResMut<crate::settings::GameSettings>,
+    mut roster: ResMut<crate::roster::Roster>,
 ) {
     for UiCommand(cmd) in commands.read() {
         let (name, arg) = cmd.split_once(':').map_or((cmd.as_str(), ""), |(n, a)| (n, a));
@@ -247,9 +249,17 @@ pub fn run_ui_commands(
                 lab.write(crate::lab::LabCommand::ToggleWalk);
             }
             "gear" => match crate::loadout::command(arg, state.battle.rules_mut()) {
-                Some(msg) => log.push(msg),
+                Some(msg) => {
+                    log.push(msg);
+                    roster.pull_gear(state.battle.rules());
+                }
                 None => log.push(format!("UI: bad gear command '{arg}'")),
             },
+            "roster" => {
+                if let Some(msg) = roster.command(arg, state.battle.rules()) {
+                    log.push(msg);
+                }
+            }
             "setting" => match settings.command(arg) {
                 Some(msg) => log.push(msg),
                 None => log.push(format!("UI: unknown setting '{arg}'")),

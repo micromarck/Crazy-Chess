@@ -20,6 +20,13 @@ and custom animations override or add slots, all in data. **Drop a rigged
 mapped by name automatically; test it in the **Character Lab (F7)**. See
 **[ANIMATION.md](ANIMATION.md)**.
 
+Soldiers are **individuals**: each has a look (build, height, skin, hair,
+headgear, armour colours, backpack) and visibly carries their weapon and
+gear on attachment points, holding rifles two-handed (IK). The **Barracks**
+saves your soldiers between sessions (`tbsium_roster.ron`): customise
+their looks, recruit, retrain, pick who deploys, and watch their service
+records (missions, kills, wounds; optional permadeath).
+
 Units carry **loadouts** (weapon, armor, two utility items: grenades,
 medkits, scopes...) defined as module data and edited in game with the
 **Loadout** panel. **Morale**: fear rises with wounds, near misses, fallen
@@ -161,6 +168,7 @@ TBSium/
 | Fast-forward animations | hold Shift (x3) | — |
 | Minimap (click to jump) | M | — |
 | Controls cheat sheet | H | Help button |
+| Barracks (saved soldiers, looks, squad) | — | Barracks button |
 | Module editor | F1 | Edit button |
 | Skip a cinematic / toggle cinematics | Space / C | Cinema button |
 | Reload the HTML HUD | F6 | — |

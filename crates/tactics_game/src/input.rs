@@ -116,7 +116,7 @@ fn keyboard_shortcuts(
     // Esc closes open panels first; only then does it cancel targeting.
     let mut esc_used = false;
     if keys.just_pressed(KeyCode::Escape) {
-        for panel in ["help", "settings", "missions", "loadout"] {
+        for panel in ["help", "settings", "missions", "loadout", "barracks"] {
             if let Some(f) = flags.0.get_mut(panel).filter(|f| **f) {
                 *f = false;
                 esc_used = true;
