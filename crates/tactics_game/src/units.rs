@@ -40,6 +40,7 @@ impl Plugin for UnitsPlugin {
                     spawn_new_units,
                     snap_when_idle,
                     turn_units,
+                    fog_of_war,
                 )
                     .chain()
                     .in_set(FrameSet::Present),
@@ -61,6 +62,23 @@ pub struct FaceTarget(pub Option<Vec3>);
 
 /// Turn speed: higher is snappier.
 const TURN_RATE: f32 = 12.0;
+
+/// Hides enemies the squad can't currently see, in missions with fog. Uses
+/// the visual's current tile, so a walking enemy fades in/out as it crosses
+/// the squad's sight lines.
+fn fog_of_war(state: Res<BattleState>, mut q: Query<(&UnitVisual, &Transform, &mut Visibility)>) {
+    let b = &state.battle;
+    for (visual, tr, mut vis) in &mut q {
+        let shown = !b.fog()
+            || visual.team == Team::Player
+            || b.unit(visual.id).is_none_or(|u| !u.is_alive())
+            || b.team_can_see(Team::Player, crate::coords::world_to_grid(tr.translation));
+        let want = if shown { Visibility::Inherited } else { Visibility::Hidden };
+        if *vis != want {
+            *vis = want;
+        }
+    }
+}
 
 /// Smoothly turns units towards their [`FaceTarget`].
 fn turn_units(time: Res<Time>, mut q: Query<(&FaceTarget, &mut Transform), With<UnitVisual>>) {

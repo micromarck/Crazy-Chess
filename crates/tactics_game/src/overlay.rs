@@ -164,14 +164,31 @@ fn draw_health_bars(
     mut gizmos: Gizmos,
     state: Res<BattleState>,
     entities: Res<UnitEntities>,
-    units: Query<(&UnitVisual, &Transform)>,
+    units: Query<(&UnitVisual, &Transform, &Visibility)>,
     camera: Single<&Transform, With<CameraRig>>,
 ) {
     let right = camera.right().as_vec3();
+    let stealth = state.battle.stealth();
     for (id, entity) in &entities.0 {
-        let (Some(unit), Ok((visual, tr))) = (state.battle.unit(*id), units.get(*entity)) else { continue };
-        if !unit.is_alive() {
+        let (Some(unit), Ok((visual, tr, vis))) = (state.battle.unit(*id), units.get(*entity)) else { continue };
+        if !unit.is_alive() || *vis == Visibility::Hidden {
             continue;
+        }
+        // While the squad is concealed, show how close each enemy notices it.
+        if stealth.concealed && unit.team == Team::Enemy {
+            let r = stealth.detection.min(unit.stats.sight) * crate::coords::TILE_SIZE;
+            gizmos.circle(
+                Isometry3d::new(tr.translation + Vec3::Y * 0.05, Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+                r,
+                Color::srgba(1.0, 0.3, 0.2, 0.55),
+            );
+        }
+        if unit.ai.dormant && unit.team == Team::Enemy {
+            gizmos.circle(
+                Isometry3d::new(tr.translation + Vec3::Y * (theme::UNIT_HEIGHT + 0.65), Quat::IDENTITY),
+                0.06,
+                theme::UI_DIM,
+            );
         }
         let base = tr.translation + Vec3::Y * (theme::UNIT_HEIGHT + 0.35);
         let max = unit.stats.max_hp.max(1);

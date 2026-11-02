@@ -36,7 +36,9 @@ use crate::rng::GameRng;
 use crate::unit::{Team, Unit, UnitId};
 use crate::visibility;
 
+mod stealth;
 mod world;
+pub use stealth::{DoorState, Stealth};
 pub use world::{MAX_SCRIPT_DEPTH, Prop, PropId};
 
 /// Authoritative state of one tactical engagement.
@@ -63,6 +65,14 @@ pub struct Battle {
     eliminate_to_win: bool,
     mission_id: Option<String>,
     script_depth: u32,
+    // --- mission mechanics (see stealth.rs) ---
+    stealth: Stealth,
+    /// Enemies are hidden from the player unless seen (presentation hint;
+    /// the rules already work from each side's own sight where it matters).
+    fog: bool,
+    /// Where each team's AI heads while no enemy is in sight (index: Team).
+    ai_goals: [Option<GridPos>; 2],
+    objective: String,
 }
 
 impl Battle {
@@ -85,6 +95,10 @@ impl Battle {
             eliminate_to_win: true,
             mission_id: None,
             script_depth: 0,
+            stealth: Stealth::default(),
+            fog: false,
+            ai_goals: [None, None],
+            objective: String::new(),
         }
     }
 
@@ -122,6 +136,7 @@ impl Battle {
             charges: Default::default(),
             status: Default::default(),
             model: class.model.clone(),
+            ai: Default::default(),
         };
         self.units.push(unit);
         Ok(id)
@@ -430,6 +445,10 @@ impl Battle {
         let def = self.rules.ability(&ability).cloned().expect("validated");
         let point = self.check_target(&self.units[unit.0 as usize], &def, target).expect("validated");
         events.push(GameEvent::AbilityUsed { unit, ability: ability.clone(), target });
+        // Attacking gives a concealed squad away.
+        if self.stealth.concealed && self.units[unit.0 as usize].team == Team::Player && matches!(def.effect, AbilityEffect::Attack(_)) {
+            self.raise_alarm(None, events);
+        }
 
         // Costs.
         let charges = self.charges_left(&self.units[unit.0 as usize], &def);
@@ -559,6 +578,7 @@ impl Battle {
         if !segment.is_empty() {
             events.push(GameEvent::UnitMoved { unit: id, from: segment_start, path: segment });
         }
+        self.after_dormant_move(id, events);
     }
 
     /// First enemy on overwatch that can see and reach `mover` at its current tile.

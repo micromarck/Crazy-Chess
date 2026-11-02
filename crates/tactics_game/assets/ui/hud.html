@@ -27,6 +27,10 @@
   }
   .dim { color: #9aa1ad; }
   .title { font-size: 20px; }
+  .badge { font-size: 14px; padding: 2px 10px; margin-bottom: 4px; border-radius: 3px; }
+  .concealed { background-color: #1d4f7a; color: #bfe3ff; }
+  .alarm { background-color: #8a1f17; color: #ffd6d0; }
+  .objective { font-size: 14px; color: #ffe27a; }
 
   button {
     background: #29303d;
@@ -54,6 +58,7 @@
 
   /* ---- panels --------------------------------------------------------- */
   #turn { top: 12px; left: 12px; }
+  #mission-status { top: 12px; left: 300px; max-width: 520px; flex-direction: column; align-items: center; }
   #tools { position: absolute; top: 84px; left: 12px; flex-direction: row; }
   #log { top: 12px; right: 12px; max-width: 440px; font-size: 13px; color: #9aa1ad; }
   #unit { bottom: 80px; left: 12px; min-width: 230px; }
@@ -141,7 +146,14 @@
 <div id="turn" class="panel">
   <span class="dim" style="font-size: 12px">{{ mission.name }}</span>
   <span class="title">Round {{ turn.round }} - {{ turn.label }}</span>
-  <span>Squad {{ squad.alive }}  vs  Hostiles {{ enemies.alive }}</span>
+  <span>Squad {{ squad.alive }}  vs  {{ enemies.label }} {{ enemies.alive }}</span>
+</div>
+
+<!-- Mission status: stealth badges and the scripted objective (top centre) -->
+<div id="mission-status" class="panel" data-if="mission.has_objective or mission.concealed or mission.alarm">
+  <span class="badge concealed" data-if="mission.concealed">CONCEALED</span>
+  <span class="badge alarm" data-if="mission.alarm">ALARM RAISED</span>
+  <span class="objective" data-if="mission.has_objective">{{ mission.objective }}</span>
 </div>
 
 <!-- Tool buttons -->

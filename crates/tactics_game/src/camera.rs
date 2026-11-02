@@ -441,6 +441,8 @@ fn apply_rig(time: Res<Time<Real>>, mut q: Single<(&mut CameraRig, &mut Transfor
     if rig.shake > 0.0 {
         let e = time.elapsed_secs();
         focus += Vec3::new((e * 53.0).sin(), (e * 37.0 + 1.0).sin() * 0.5, (e * 61.0 + 2.0).sin()) * rig.shake * 0.3;
+        // Fades out unless a camera script keeps setting it.
+        rig.shake = (rig.shake - time.delta_secs() * 0.8).max(0.0);
     }
     **transform = rig_transform_at(rig, focus);
 }

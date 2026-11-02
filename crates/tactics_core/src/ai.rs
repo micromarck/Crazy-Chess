@@ -26,7 +26,8 @@ use crate::battle::Battle;
 use crate::combat::preview_attack;
 use crate::content::{AbilityDef, AbilityEffect, Targeting};
 use crate::cover::cover_against;
-use crate::grid::{CoverLevel, GridPos};
+use crate::grid::{Climb, CoverLevel, GridPos, Terrain};
+use crate::pathfinding::ReachableSet;
 use crate::unit::{Unit, UnitId};
 use crate::visibility;
 
@@ -98,6 +99,11 @@ pub fn choose_action(battle: &Battle, id: UnitId, config: &AiConfig) -> Action {
     };
     if !unit.can_act() {
         return Action::EndTurn;
+    }
+
+    // 0. Dormant units hold position or walk their patrol.
+    if unit.ai.dormant {
+        return patrol_step(battle, unit).map_or(Action::Wait { unit: id }, |to| Action::Move { unit: id, to });
     }
 
     // 1. Reload when empty.
@@ -203,12 +209,13 @@ fn score_tile(battle: &Battle, unit: &Unit, pos: GridPos, config: &AiConfig) -> 
     let mut best_hit = 0;
     for enemy in battle.living(unit.team.opponent()) {
         let d = pos.distance(enemy.pos);
-        nearest = nearest.min(d);
         let sees = d <= enemy.stats.sight.max(enemy.weapon.max_range)
             && visibility::has_line_of_sight(map, enemy.pos, pos);
         if !sees {
             continue;
         }
+        // Only engaged enemies matter; unseen ones are handled by advancing.
+        nearest = nearest.min(d);
         let cover = cover_against(map, pos, enemy.pos);
         score += config.cover_weight
             * match cover.level {
@@ -251,9 +258,12 @@ fn best_destination(battle: &Battle, unit: &Unit, config: &AiConfig) -> Option<G
 
     match best {
         Some((pos, s)) if s > current + config.move_margin => Some(pos),
-        _ if !any_engagement || battle.visible_enemies(unit.id).is_empty() => {
-            advance_towards_enemy(battle, unit, &range)
-        }
+        _ if !any_engagement || battle.visible_enemies(unit.id).is_empty() => match battle.ai_goal(unit.team) {
+            // A mission goal (defend/attack a point) wins over hunting.
+            Some(goal) if unit.pos.chebyshev(goal) > 1 => advance_towards(battle, unit, &range, goal),
+            Some(_) => None,
+            None => advance_towards_enemy(battle, unit, &range),
+        },
         _ => None,
     }
 }
@@ -263,19 +273,68 @@ fn advance_towards_enemy(battle: &Battle, unit: &Unit, range: &crate::pathfindin
     let nearest = battle
         .living(unit.team.opponent())
         .min_by(|a, b| unit.pos.distance(a.pos).total_cmp(&unit.pos.distance(b.pos)))?;
+    advance_towards(battle, unit, range, nearest.pos)
+}
+
+/// Walking distance (movement points) from every tile to `goal`, treating
+/// closed but unlocked doors as open (stepping next to one opens it) and
+/// ignoring units. Lets the AI find its way through rooms and corridors.
+pub fn distance_field(battle: &Battle, goal: GridPos, climb: Climb) -> ReachableSet {
+    let mut map = battle.map().clone();
+    for p in battle.props() {
+        if p.alive && p.door.is_some_and(|d| !d.open && !d.locked) {
+            map.set_terrain(p.pos, Terrain::Floor);
+        }
+    }
+    // The goal itself may be blocked (a beacon prop): flood from it anyway.
+    map.set_terrain(goal, Terrain::Floor);
+    // Flood from the goal; climbing is treated as symmetric (a close
+    // approximation: units mostly climb down what they climbed up).
+    crate::pathfinding::reachable(&map, goal, u32::MAX / 4, climb, |_| true)
+}
+
+/// Moves as far as possible towards `goal` by walking distance, preferring cover.
+fn advance_towards(battle: &Battle, unit: &Unit, range: &ReachableSet, goal: GridPos) -> Option<GridPos> {
+    let field = distance_field(battle, goal, Climb { max_up: unit.stats.climb.max(1) });
     let map = battle.map();
+    let here = field.cost(unit.pos).map_or(unit.pos.distance(goal) * 2.0, |c| c as f32);
     range
         .iter()
         .map(|(pos, _)| {
             let cover_bonus = match crate::cover::best_cover_at(map, pos) {
-                CoverLevel::Full => 1.5,
-                CoverLevel::Half => 0.75,
+                CoverLevel::Full => 3.0,
+                CoverLevel::Half => 1.5,
                 CoverLevel::None => 0.0,
             };
-            (pos, pos.distance(nearest.pos) - cover_bonus)
+            let d = field.cost(pos).map_or(pos.distance(goal) * 2.0 + 1000.0, |c| c as f32);
+            (pos, d, d - cover_bonus)
         })
-        .filter(|(pos, _)| pos.distance(nearest.pos) < unit.pos.distance(nearest.pos))
-        .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
+        .filter(|(_, d, _)| *d < here)
+        .min_by(|a, b| a.2.total_cmp(&b.2).then(a.0.cmp(&b.0)))
+        .map(|(pos, _, _)| pos)
+}
+
+/// Next patrol move for a dormant unit: up to one AP towards its waypoint.
+fn patrol_step(battle: &Battle, unit: &Unit) -> Option<GridPos> {
+    let ai = &unit.ai;
+    if ai.patrol.is_empty() {
+        return None;
+    }
+    let mut index = ai.patrol_index % ai.patrol.len();
+    if unit.pos.chebyshev(ai.patrol[index]) <= 1 {
+        index = (index + 1) % ai.patrol.len();
+    }
+    let goal = ai.patrol[index];
+    let one_ap = unit.stats.mobility;
+    let range = battle.movement_range(unit.id);
+    let field = distance_field(battle, goal, Climb { max_up: unit.stats.climb.max(1) });
+    let here = field.cost(unit.pos)?;
+    range
+        .iter()
+        .filter(|(_, cost)| *cost <= one_ap)
+        .filter_map(|(pos, _)| field.cost(pos).map(|d| (pos, d)))
+        .filter(|(_, d)| *d < here)
+        .min_by_key(|(pos, d)| (*d, *pos))
         .map(|(pos, _)| pos)
 }
 

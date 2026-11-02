@@ -152,6 +152,7 @@ mod tests {
             cooldowns: Default::default(),
             charges: Default::default(),
             status: UnitStatus::default(),
+            ai: Default::default(),
             model: String::new(),
         }
     }

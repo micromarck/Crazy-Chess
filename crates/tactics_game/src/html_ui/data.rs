@@ -45,7 +45,14 @@ pub fn collect_ui_data(
     v.set("turn.label", if player_turn { "XCOM TURN" } else { "ALIEN ACTIVITY" });
     v.set("turn.is_player", bool_str(player_turn));
     v.set("squad.alive", b.living(Team::Player).count());
-    v.set("enemies.alive", b.living(Team::Enemy).count());
+    // With fog, only count hostiles the squad can see.
+    v.set("enemies.alive", b.living(Team::Enemy).filter(|e| b.is_revealed(e.id)).count());
+    v.set("enemies.label", if b.fog() { "Hostiles in sight" } else { "Hostiles" });
+    let stealth = b.stealth();
+    v.set("mission.concealed", bool_str(stealth.concealed));
+    v.set("mission.alarm", bool_str(stealth.alarm));
+    v.set("mission.objective", b.objective());
+    v.set("mission.has_objective", bool_str(!b.objective().is_empty()));
     // "Over" only once the final animations have played.
     let over = b.is_over() && !playback.is_busy();
     v.set("battle.over", bool_str(over));

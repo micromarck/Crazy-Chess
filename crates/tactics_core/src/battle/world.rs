@@ -22,6 +22,7 @@ use crate::grid::{CoverLevel, GridPos, Terrain};
 use crate::mission::{HookEvent, MissionDef, ScriptHook, ZoneDef};
 use crate::script::{self, ScriptCommand, ScriptVars, ScriptWorld, WorldProp, WorldUnit};
 use crate::unit::{Team, UnitId};
+use super::stealth::team_index;
 
 /// Maximum nesting of scripts triggering scripts.
 pub const MAX_SCRIPT_DEPTH: u32 = 16;
@@ -42,6 +43,8 @@ pub struct Prop {
     pub hp: Option<i32>,
     pub model: Option<String>,
     pub alive: bool,
+    /// Set for door panels (see `stealth.rs`).
+    pub door: Option<super::DoorState>,
 }
 
 /// Who a hook belongs to.
@@ -62,16 +65,16 @@ pub(super) struct ActiveHook {
 
 /// What happened, for matching hooks.
 #[derive(Debug, Clone, Copy)]
-struct Trigger {
-    event: HookEvent,
-    unit: Option<UnitId>,
-    prop: Option<PropId>,
-    pos: Option<GridPos>,
-    amount: i64,
+pub(super) struct Trigger {
+    pub event: HookEvent,
+    pub unit: Option<UnitId>,
+    pub prop: Option<PropId>,
+    pub pos: Option<GridPos>,
+    pub amount: i64,
 }
 
 impl Trigger {
-    fn new(event: HookEvent) -> Self {
+    pub fn new(event: HookEvent) -> Self {
         Self { event, unit: None, prop: None, pos: None, amount: 0 }
     }
 }
@@ -104,9 +107,11 @@ impl Battle {
                 hp: def.hp,
                 model: def.model.clone(),
                 alive: true,
+                door: None,
             });
             battle.add_hooks(HookOwner::Prop(id), &def.hooks);
         }
+        battle.setup_mechanics(mission);
 
         for d in &mission.deploys {
             let members = battle.rules.squad(&d.squad).map(|s| s.members.clone()).unwrap_or_default();
@@ -131,6 +136,10 @@ impl Battle {
                     if let Some(tag) = &u.tag {
                         battle.unit_tags.insert(id, tag.clone());
                     }
+                    let ai = &mut battle.units[id.0 as usize].ai;
+                    ai.dormant = u.dormant || !u.patrol.is_empty();
+                    ai.pod = u.pod.clone();
+                    ai.patrol = u.patrol.clone();
                     battle.add_hooks(HookOwner::Unit(id), &u.hooks);
                 }
                 Err(e) => warnings.push(format!("unit '{}': {e}", u.name)),
@@ -144,7 +153,7 @@ impl Battle {
         (battle, warnings)
     }
 
-    fn add_hooks(&mut self, owner: HookOwner, hooks: &[ScriptHook]) {
+    pub(super) fn add_hooks(&mut self, owner: HookOwner, hooks: &[ScriptHook]) {
         for h in hooks {
             self.hooks.push(ActiveHook { owner: owner.clone(), hook: h.clone(), fired: false });
         }
@@ -205,7 +214,7 @@ impl Battle {
     // ------------------------------------------------------------------
 
     /// Runs every hook matching `t`.
-    fn fire(&mut self, t: Trigger, events: &mut Vec<GameEvent>) {
+    pub(super) fn fire(&mut self, t: Trigger, events: &mut Vec<GameEvent>) {
         if self.hooks.is_empty() {
             return;
         }
@@ -226,7 +235,9 @@ impl Battle {
                     return false;
                 }
                 match &h.owner {
-                    HookOwner::Mission => matches!(t.event, HookEvent::Start | HookEvent::TurnStart | HookEvent::UnitKilled),
+                    HookOwner::Mission => {
+                        matches!(t.event, HookEvent::Start | HookEvent::TurnStart | HookEvent::UnitKilled | HookEvent::Alarm)
+                    }
                     HookOwner::Zone(z) => t.event == HookEvent::Enter && t.pos.is_some_and(|p| z.contains(p)),
                     HookOwner::Unit(id) => match t.event {
                         HookEvent::TurnStart => self.unit(*id).is_some_and(|u| u.is_alive() && u.team == self.active_team),
@@ -259,6 +270,22 @@ impl Battle {
         }
     }
 
+    /// Runs every hook once against the current state **without applying
+    /// anything** and returns the errors (syntax errors, unknown functions,
+    /// bad arguments). For tests and tools: scripts only fail at run time, so
+    /// this catches mistakes in hooks a test game never triggers.
+    pub fn dry_run_scripts(&self) -> Vec<String> {
+        let world = self.snapshot();
+        let unit = self.living(Team::Player).next().map(|u| u.id.0);
+        self.hooks
+            .iter()
+            .filter_map(|h| {
+                let vars = ScriptVars { unit, prop: None, pos: unit.and_then(|u| self.unit(UnitId(u))).map(|u| u.pos), amount: 1 };
+                script::run(&h.hook.code, &self.library, &vars, &world).err().map(|e| format!("{:?} hook: {e}", h.hook.on))
+            })
+            .collect()
+    }
+
     fn snapshot(&self) -> ScriptWorld {
         ScriptWorld {
             round: self.round as i64,
@@ -275,11 +302,14 @@ impl Battle {
                     hp: u.hp,
                     max_hp: u.stats.max_hp,
                     alive: u.is_alive(),
+                    dormant: u.ai.dormant,
                 })
                 .collect(),
             props: self.props.iter().map(|p| WorldProp { tag: p.tag.clone(), pos: p.pos, hp: p.hp, alive: p.alive }).collect(),
             map: Some(self.map.clone()),
             flags: self.flags.clone(),
+            alarm: self.stealth.alarm,
+            concealed: self.stealth.concealed,
         }
     }
 
@@ -354,6 +384,20 @@ impl Battle {
             ScriptCommand::SetFlag { name, value } => {
                 self.flags.insert(name, value);
             }
+            ScriptCommand::Objective(text) => self.set_objective(text, events),
+            ScriptCommand::RaiseAlarm => self.raise_alarm(None, events),
+            ScriptCommand::Wake { unit } => self.wake(UnitId(unit), events),
+            ScriptCommand::WakeAll => {
+                let ids: Vec<UnitId> = self.units.iter().filter(|u| u.ai.dormant).map(|u| u.id).collect();
+                for id in ids {
+                    self.wake(id, events);
+                }
+            }
+            ScriptCommand::OpenDoor { tag } => self.set_door_open(&tag, true, events),
+            ScriptCommand::CloseDoor { tag } => self.set_door_open(&tag, false, events),
+            ScriptCommand::LockDoor { tag, locked } => self.lock_door(&tag, locked),
+            ScriptCommand::AiGoal { team, pos } => self.ai_goals[team_index(team)] = Some(pos),
+            ScriptCommand::ClearAiGoal { team } => self.ai_goals[team_index(team)] = None,
             ScriptCommand::Win => self.decide(Team::Player, events),
             ScriptCommand::Lose => self.decide(Team::Enemy, events),
         }
@@ -391,6 +435,9 @@ impl Battle {
             events.push(GameEvent::UnitDamaged { unit: target, amount });
         }
         let pos = self.units[target.0 as usize].pos;
+        if !died {
+            self.wake(target, events);
+        }
         self.fire(Trigger { unit: Some(target), pos: Some(pos), amount: amount as i64, ..Trigger::new(HookEvent::Damaged) }, events);
         if died {
             events.push(GameEvent::UnitKilled { unit: target });
@@ -448,6 +495,7 @@ impl Battle {
     /// A unit arrived on `pos` (each step of a move).
     pub(super) fn on_enter(&mut self, unit: UnitId, pos: GridPos, events: &mut Vec<GameEvent>) {
         self.fire(Trigger { unit: Some(unit), pos: Some(pos), ..Trigger::new(HookEvent::Enter) }, events);
+        self.open_doors_near(pos, events);
         self.check_spotted(events);
     }
 
@@ -457,8 +505,10 @@ impl Battle {
         self.check_spotted(events);
     }
 
-    /// Fires `spotted` for enemies the player's squad sees for the first time.
+    /// Detection and pod activation, then `spotted` hooks for enemies the
+    /// player's squad sees for the first time.
     pub(super) fn check_spotted(&mut self, events: &mut Vec<GameEvent>) {
+        self.check_awareness(events);
         let newly: Vec<UnitId> = self
             .living(Team::Enemy)
             .filter(|e| !self.spotted.contains(&e.id) && self.team_can_see(Team::Player, e.pos))
