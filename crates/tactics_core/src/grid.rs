@@ -155,6 +155,92 @@ impl Terrain {
     }
 }
 
+/// How a tile looks (purely visual; rules only read [`Terrain`]). Floor
+/// styles colour the ground, wall styles shape cover blocks.
+///
+/// | char | surface | | char | surface |
+/// |---|---|---|---|---|
+/// | `.` | `Default` | | `B` | `Brick` (building wall) |
+/// | `c` | `Concrete` | | `C` | `Container` |
+/// | `a` | `Asphalt` (road) | | `G` | `Hedge` |
+/// | `g` | `Grass` | | `T` | `Tree` |
+/// | `d` | `Dirt` | | `R` | `Rock` |
+/// | `w` | `Interior` (wooden floor) | | `S` | `Sandbags` |
+/// | `r` | `Roof` | | `F` | `Fence` |
+/// | `m` | `Metal` (gratings, walkways) | | `W` | `Water` (for cut-outs) |
+/// | `l` | `Lines` (road markings) | | | |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize))]
+pub enum Surface {
+    #[default]
+    Default,
+    Concrete,
+    Asphalt,
+    Lines,
+    Grass,
+    Dirt,
+    Interior,
+    Roof,
+    Metal,
+    Brick,
+    Container,
+    Hedge,
+    Tree,
+    Rock,
+    Sandbags,
+    Fence,
+    Water,
+}
+
+impl Surface {
+    pub const ALL: [Surface; 17] = [
+        Surface::Default,
+        Surface::Concrete,
+        Surface::Asphalt,
+        Surface::Lines,
+        Surface::Grass,
+        Surface::Dirt,
+        Surface::Interior,
+        Surface::Roof,
+        Surface::Metal,
+        Surface::Brick,
+        Surface::Container,
+        Surface::Hedge,
+        Surface::Tree,
+        Surface::Rock,
+        Surface::Sandbags,
+        Surface::Fence,
+        Surface::Water,
+    ];
+
+    /// The character used in mission `<surfaces>` grids.
+    pub fn to_char(self) -> char {
+        match self {
+            Surface::Default => '.',
+            Surface::Concrete => 'c',
+            Surface::Asphalt => 'a',
+            Surface::Lines => 'l',
+            Surface::Grass => 'g',
+            Surface::Dirt => 'd',
+            Surface::Interior => 'w',
+            Surface::Roof => 'r',
+            Surface::Metal => 'm',
+            Surface::Brick => 'B',
+            Surface::Container => 'C',
+            Surface::Hedge => 'G',
+            Surface::Tree => 'T',
+            Surface::Rock => 'R',
+            Surface::Sandbags => 'S',
+            Surface::Fence => 'F',
+            Surface::Water => 'W',
+        }
+    }
+
+    pub fn from_char(c: char) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.to_char() == c)
+    }
+}
+
 /// A single map cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Tile {
@@ -164,6 +250,8 @@ pub struct Tile {
     pub elevation: i8,
     /// A ladder/ramp: any height difference may be climbed into or out of it.
     pub ladder: bool,
+    /// Visual style (ground material or wall type).
+    pub surface: Surface,
 }
 
 /// How a unit may change height while moving.
@@ -313,6 +401,43 @@ impl Map {
     pub fn set_ladder(&mut self, pos: GridPos, ladder: bool) {
         if let Some(i) = self.index(pos) {
             self.tiles[i].ladder = ladder;
+        }
+    }
+
+    /// Visual style at `pos`.
+    pub fn surface(&self, pos: GridPos) -> Surface {
+        self.tile(pos).map_or(Surface::Default, |t| t.surface)
+    }
+
+    pub fn set_surface(&mut self, pos: GridPos, surface: Surface) {
+        if let Some(i) = self.index(pos) {
+            self.tiles[i].surface = surface;
+        }
+    }
+
+    /// Gives an unstyled map a plausible look (missions without a
+    /// `<surfaces>` layer): concrete ground, roofs on raised tiles, brick for
+    /// runs of full cover (walls), containers for lone tall blocks, sandbags
+    /// for low cover. Tiles that already have a surface are left alone.
+    pub fn auto_surfaces(&mut self) {
+        let snapshot = self.clone();
+        for p in snapshot.positions() {
+            if snapshot.surface(p) != Surface::Default {
+                continue;
+            }
+            let terrain = snapshot.terrain(p);
+            let neighbours = |t: Terrain| {
+                [Direction::North, Direction::East, Direction::South, Direction::West].iter().filter(|d| snapshot.terrain(p.step(**d)) == t).count()
+            };
+            let s = match terrain {
+                Terrain::HighCover if neighbours(Terrain::HighCover) >= 1 => Surface::Brick,
+                Terrain::HighCover => Surface::Container,
+                Terrain::LowCover => Surface::Sandbags,
+                Terrain::Floor if snapshot.elevation(p) > 0 => Surface::Roof,
+                Terrain::Floor => Surface::Concrete,
+                Terrain::Void => continue,
+            };
+            self.set_surface(p, s);
         }
     }
 

@@ -239,6 +239,9 @@ pub fn run_ui_commands(
             "skirmish" => {
                 player.write(PlayerCommand::Skirmish);
             }
+            "generate" => {
+                player.write(PlayerCommand::Generate(arg.trim().to_string()));
+            }
             "model" => {
                 lab.write(crate::lab::LabCommand::SetModel(arg.trim().to_string()));
             }

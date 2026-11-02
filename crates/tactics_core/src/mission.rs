@@ -336,6 +336,16 @@ mod xml {
                 map.set_terrain(at(x as i32, row as i32), terrain);
             }
         }
+        if let Some(sf) = root.children().find(|c| c.has_tag_name("surfaces")) {
+            for (row, line) in rows(sf).iter().enumerate() {
+                for (x, ch) in line.chars().enumerate() {
+                    if let Some(s) = crate::grid::Surface::from_char(ch) {
+                        map.set_surface(at(x as i32, row as i32), s);
+                    }
+                }
+            }
+        }
+        let auto_style = root.attribute("style") != Some("none") && !root.children().any(|c| c.has_tag_name("surfaces"));
         if let Some(h) = root.children().find(|c| c.has_tag_name("heights")) {
             for (row, line) in rows(h).iter().enumerate() {
                 for (x, ch) in line.chars().enumerate() {
@@ -375,6 +385,9 @@ mod xml {
         }
 
         // --- contents ---------------------------------------------------
+        if auto_style {
+            map.auto_surfaces();
+        }
         let mut def = MissionDef {
             id: root.attribute("id").unwrap_or("mission").to_string(),
             name: root.attribute("name").unwrap_or("Mission").to_string(),
@@ -497,7 +510,7 @@ mod xml {
                     def.library.push_str(n.text().unwrap_or(""));
                     def.library.push('\n');
                 }
-                "layout" | "heights" | "description" | "script" | "cutout" | "raise" | "ladder" | "terrain" => {}
+                "layout" | "heights" | "surfaces" | "description" | "script" | "cutout" | "raise" | "ladder" | "terrain" => {}
                 other => return Err(err(&doc, n, format!("unknown element <{other}>"))),
             }
         }
@@ -579,6 +592,29 @@ mod tests {
         assert_eq!(m.zones[0].hooks[0].team, Some(Team::Player));
         assert!(m.library.contains("fn helper"));
         assert_eq!(m.hooks.len(), 1);
+    }
+
+    #[test]
+    fn surfaces_layer_sets_tile_looks() {
+        let m = parse_mission(
+            r#"<mission id="s">
+                 <layout>
+                   ..H
+                   ...
+                 </layout>
+                 <surfaces>
+                   agB
+                   wr.
+                 </surfaces>
+               </mission>"#,
+        )
+        .unwrap();
+        use crate::grid::Surface;
+        // Row 0 of the text is the top (grid y = 1).
+        assert_eq!(m.map.surface(GridPos::new(0, 1)), Surface::Asphalt);
+        assert_eq!(m.map.surface(GridPos::new(2, 1)), Surface::Brick);
+        assert_eq!(m.map.surface(GridPos::new(1, 0)), Surface::Roof);
+        assert_eq!(m.map.surface(GridPos::new(2, 0)), Surface::Default);
     }
 
     #[test]

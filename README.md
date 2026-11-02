@@ -42,7 +42,14 @@ layout with cut-outs, a height map (units climb 1 level unless a ladder or
 their class allows more; 3D line of sight, high-ground bonus), units, props
 and zones, with **scripts** attached to any of them. Modular mission
 mechanics: **dormant pods, patrols, concealment and alarms, doors, fog of
-war, AI goals and objectives**. New to the controls? Play *Basic Training* from the Missions list. Bundled large levels: *Proving Grounds*
+war, AI goals and objectives**. **Generated missions**: urban streets with enterable buildings and
+rooftops, industrial yards with container stacks, or wilds with hills, a
+river and woods, each with a random objective (eliminate, extract, hold a
+beacon, recover data). Maps are painted with surfaces (asphalt, grass,
+brick, containers, trees, water...), and hand-made missions get the same
+look automatically.
+
+New to the controls? Play *Basic Training* from the Missions list. Bundled large levels: *Proving Grounds*
 (sandbox), *Hold the Beacon* (defend and extract), *Clear the Complex*
 (explore and clear) and *Silent Theft* (stealth heist). See
 **[MISSIONS.md](MISSIONS.md)**.

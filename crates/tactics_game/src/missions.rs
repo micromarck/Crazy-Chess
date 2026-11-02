@@ -95,11 +95,16 @@ impl MissionCatalog {
     }
 }
 
+/// Mission id used for generated missions.
+pub const GENERATED: &str = "generated";
+
 /// What to start.
 #[derive(Message, Debug, Clone, PartialEq, Eq)]
 pub enum StartBattle {
     Mission(String),
     Skirmish,
+    /// A generated mission; `None` = random theme.
+    Generate(Option<tactics_core::levelgen::Theme>),
     /// The current mission again, or a new skirmish if none.
     Restart,
 }
@@ -128,6 +133,11 @@ fn track_loading(
             let wanted = std::env::var("TBS_MISSION").ok().or_else(|| catalog.start.clone());
             #[cfg(target_arch = "wasm32")]
             let wanted = catalog.start.clone();
+            // `gen:<theme>` (or `gen:any`) starts a generated mission.
+            if let Some(theme) = wanted.as_deref().and_then(|w| w.strip_prefix("gen:")) {
+                start.write(StartBattle::Generate(tactics_core::levelgen::Theme::parse(theme)));
+                return;
+            }
             let first = wanted.filter(|s| catalog.get(s).is_some()).or_else(|| catalog.missions.first().map(|m| m.def.id.clone()));
             if let Some(id) = first {
                 start.write(StartBattle::Mission(id));
@@ -189,7 +199,10 @@ fn route_player_commands(mut commands: MessageReader<PlayerCommand>, mut start: 
                 start.write(StartBattle::Mission(id.clone()));
             }
             PlayerCommand::Skirmish => {
-                start.write(StartBattle::Skirmish);
+                start.write(StartBattle::Generate(None));
+            }
+            PlayerCommand::Generate(theme) => {
+                start.write(StartBattle::Generate(tactics_core::levelgen::Theme::parse(theme)));
             }
             _ => {}
         }
@@ -211,8 +224,11 @@ pub fn start_battle(
     mut commands: Commands,
 ) {
     let Some(request) = requests.read().last().cloned() else { return };
+    let replay = matches!(request, StartBattle::Restart) && state.mission.as_deref() == Some(GENERATED) && state.generated.is_some();
     let request = match request {
-        StartBattle::Restart => state.mission.clone().map_or(StartBattle::Skirmish, StartBattle::Mission),
+        StartBattle::Restart if replay => StartBattle::Restart,
+        StartBattle::Restart => state.mission.clone().map_or(StartBattle::Generate(None), StartBattle::Mission),
+        StartBattle::Skirmish => StartBattle::Generate(None),
         other => other,
     };
     let seed = state.seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
@@ -234,7 +250,26 @@ pub fn start_battle(
                 return;
             }
         },
-        _ => (scenario::skirmish(&rules, seed), None, vec![format!("New skirmish (seed {seed:#x})")]),
+        StartBattle::Generate(theme) => {
+            use tactics_core::levelgen::{self, GenParams, Objective};
+            let mut params = match theme {
+                Some(t) => GenParams::new(*t, Objective::ALL[(seed % Objective::ALL.len() as u64) as usize], seed),
+                None => GenParams::random(seed),
+            };
+            params.enemy_classes = levelgen::enemy_classes(&rules);
+            let def = levelgen::generate(params);
+            let (battle, warnings) = Battle::from_mission(rules, &def, seed);
+            let mut lines = vec![format!("Generated mission: {}", def.name), def.description.clone()];
+            lines.extend(warnings);
+            state.generated = Some(def);
+            (battle, Some(GENERATED.to_string()), lines)
+        }
+        StartBattle::Restart => {
+            let def = state.generated.clone().expect("checked above");
+            let (battle, _) = Battle::from_mission(rules, &def, seed);
+            (battle, Some(GENERATED.to_string()), vec![format!("Generated mission: {} (again)", def.name), def.description.clone()])
+        }
+        StartBattle::Skirmish => (scenario::skirmish(&rules, seed), None, vec![format!("New skirmish (seed {seed:#x})")]),
     };
     let begin_events = battle.begin();
 

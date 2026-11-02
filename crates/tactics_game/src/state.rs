@@ -48,6 +48,8 @@ pub struct BattleState {
     pub mission: Option<String>,
     /// Running totals for the end-of-mission summary.
     pub stats: MissionStats,
+    /// The generated mission being played (so Restart replays the same map).
+    pub generated: Option<tactics_core::mission::MissionDef>,
 }
 
 /// What the squad did this battle (shown on the game-over screen).
@@ -124,7 +126,7 @@ impl MissionStats {
 
 impl BattleState {
     pub fn new(battle: Battle) -> Self {
-        Self { battle, revision: 0, seed: DEFAULT_SEED, mission: None, stats: MissionStats::default() }
+        Self { battle, revision: 0, seed: DEFAULT_SEED, mission: None, stats: MissionStats::default(), generated: None }
     }
 
     /// Applies an action and queues its events for animation.
@@ -213,8 +215,10 @@ pub enum PlayerCommand {
     Restart,
     /// Start a mission from `assets/missions/` by id.
     StartMission(String),
-    /// Start a procedural skirmish.
+    /// Start a procedural skirmish (a generated mission, random theme).
     Skirmish,
+    /// Generate a mission: a theme name (`urban`, `industrial`, `wilds`) or `any`.
+    Generate(String),
 }
 
 /// Sent after the battle has been replaced, so visuals can be rebuilt.

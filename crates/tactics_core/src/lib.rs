@@ -70,6 +70,7 @@ pub mod content;
 pub mod cover;
 pub mod event;
 pub mod grid;
+pub mod levelgen;
 pub mod mission;
 pub mod modules;
 pub mod pathfinding;
@@ -91,7 +92,7 @@ pub mod prelude {
     };
     pub use crate::cover::{cover_against, cover_around, CoverResult};
     pub use crate::event::{GameEvent, ShotOutcome};
-    pub use crate::grid::{Climb, CoverLevel, Direction, GridPos, Map, Terrain};
+    pub use crate::grid::{Climb, CoverLevel, Direction, GridPos, Map, Surface, Terrain};
     pub use crate::mission::MissionDef;
     pub use crate::pathfinding::ReachableSet;
     pub use crate::scenario;

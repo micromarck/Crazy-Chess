@@ -363,7 +363,7 @@ fn handle_commands(
                 continue;
             }
             // Battle (re)starts are handled by `missions` (they work even when the battle is over).
-            PlayerCommand::Restart | PlayerCommand::StartMission(_) | PlayerCommand::Skirmish => continue,
+            PlayerCommand::Restart | PlayerCommand::StartMission(_) | PlayerCommand::Skirmish | PlayerCommand::Generate(_) => continue,
             PlayerCommand::UseAbility(id) => id.clone(),
             PlayerCommand::AbilitySlot(slot) => {
                 let Some(id) = selection
