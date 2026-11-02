@@ -569,6 +569,17 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             }
             vec![]
         }
+        GameEvent::ZoneChanged { tag } => {
+            if let Some(z) = battle.zones().iter().find(|z| &z.tag == tag && z.visible) {
+                p.log.push(format!("Marked: {}", z.label));
+                let (cx, cy) = z.center();
+                let at = tile_top(battle.map(), GridPos::new(cx.round() as i32, cy.round() as i32));
+                FloatingText::spawn(&mut p.commands, at + Vec3::Y * 2.0, z.label.clone(), theme::ZONE_EVAC);
+                look_at(&p.director, &mut p.rig, at);
+            }
+            p.board.write(crate::board::BoardDirty);
+            vec![Anim::Wait { remaining: 0.3 }]
+        }
         GameEvent::ObjectiveChanged { text } => {
             p.log.push(format!("Objective: {text}"));
             vec![]

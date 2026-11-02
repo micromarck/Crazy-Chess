@@ -21,6 +21,10 @@ pub const TARGET: Color = Color::srgb(1.0, 0.35, 0.3);
 pub const TRACER: Color = Color::srgb(1.0, 0.9, 0.4);
 pub const HEAL: Color = Color::srgb(0.4, 1.0, 0.5);
 pub const BEAM: Color = Color::srgb(0.55, 0.4, 1.0);
+/// Marked zones on the board.
+pub const ZONE_EVAC: Color = Color::srgb(0.25, 0.95, 0.55);
+pub const ZONE_OBJECTIVE: Color = Color::srgb(1.0, 0.82, 0.25);
+pub const ZONE_DANGER: Color = Color::srgb(1.0, 0.3, 0.25);
 pub const EXPLOSION: Color = Color::srgb(1.0, 0.55, 0.15);
 pub const COVER_HALF: Color = Color::srgb(0.5, 0.75, 1.0);
 pub const COVER_FULL: Color = Color::srgb(0.2, 0.5, 1.0);

@@ -78,6 +78,8 @@ pub enum GameEvent {
     DoorChanged { prop: PropId, open: bool },
     /// The mission objective text changed (script `objective`).
     ObjectiveChanged { text: String },
+    /// A marked zone was shown, hidden or relabelled (scripts).
+    ZoneChanged { tag: String },
     /// A unit's fear crossed a threshold (Steady / Shaken / Panicked).
     MoraleChanged { unit: UnitId, level: crate::content::FearLevel, fear: i32 },
 }

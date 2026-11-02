@@ -85,7 +85,7 @@
   <unit team="enemy" class="sectoid" name="Scout 2" x="32" y="27"/>
   <unit team="enemy" class="drone" name="Scout Drone" x="32" y="2"/>
 
-  <zone tag="evac" x="1" y="0" width="5" height="3">
+  <zone tag="evac" x="1" y="0" width="5" height="3" marker="evac" label="EVAC PAD (opens turn 7)">
     <script on="enter" team="player">
       if flag("evac_open") == 1 {
         let inside = count_in_area(1, 0, 5, 3, "player");
@@ -138,6 +138,7 @@
     if round == 7 && flag("evac_open") == 0 {
       set_flag("evac_open", 1);
       message("The evac craft is down at the north-west pad! Get everyone aboard.");
+      zone_label("evac", "EVAC - ALL ABOARD!");
       ai_goal("player", 3, 1);
       ai_goal("enemy", 3, 1);
     }

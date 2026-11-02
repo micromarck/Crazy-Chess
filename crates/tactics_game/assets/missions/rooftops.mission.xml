@@ -65,7 +65,7 @@
   </prop>
 
   <!-- Objective 1: stand next to the uplink. -->
-  <zone tag="uplink_spot" x="16" y="12" width="1" height="1">
+  <zone tag="uplink_spot" x="16" y="12" width="1" height="1" marker="objective" label="UPLINK">
     <script on="enter" team="player" once="true">
       set_flag("uplink", 1);
       message("Data uploaded! Now extract from the enemy roof (top-left).");
@@ -73,7 +73,7 @@
   </zone>
 
   <!-- Objective 2: extraction, only after the upload. -->
-  <zone tag="extraction" x="0" y="0" width="2" height="1">
+  <zone tag="extraction" x="0" y="0" width="2" height="1" marker="evac" label="EXTRACTION">
     <script on="enter" team="player">
       if flag("uplink") == 1 { message("Extraction!"); win(); }
       else { message("Upload the data at the uplink first."); }

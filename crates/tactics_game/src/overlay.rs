@@ -28,6 +28,7 @@ impl Plugin for OverlayPlugin {
                 (draw_movement, draw_targets, draw_targeting).run_if(player_can_act),
                 draw_hover,
                 draw_health_bars,
+                draw_zones,
                 draw_tracer,
             )
                 .in_set(FrameSet::Present),
@@ -304,5 +305,52 @@ fn draw_tracer(mut gizmos: Gizmos, playback: Res<Playback>) {
             }
         }
         _ => {}
+    }
+}
+
+/// Marked zones: a pulsing outline, corner posts and a light beam, so evac
+/// pads and objectives read from any zoom level.
+fn draw_zones(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleState>) {
+    let battle = &state.battle;
+    let map = battle.map();
+    let pulse = 0.5 + 0.5 * (time.elapsed_secs() * 2.5).sin();
+    for z in battle.zones().iter().filter(|z| z.visible) {
+        let color = match z.kind.as_str() {
+            "evac" => theme::ZONE_EVAC,
+            "danger" => theme::ZONE_DANGER,
+            _ => theme::ZONE_OBJECTIVE,
+        };
+        // Outline around the whole rectangle (world corners of the tiles).
+        let h = TILE_SIZE / 2.0;
+        let y = (z.min.y..=z.max.y)
+            .flat_map(|gy| (z.min.x..=z.max.x).map(move |gx| GridPos::new(gx, gy)))
+            .map(|p| tile_top(map, p).y)
+            .fold(f32::MIN, f32::max)
+            + 0.06;
+        let lo = crate::coords::grid_to_world(z.min);
+        let hi = crate::coords::grid_to_world(z.max);
+        let (x0, x1) = (lo.x.min(hi.x) - h, lo.x.max(hi.x) + h);
+        let (z0, z1) = (lo.z.min(hi.z) - h, lo.z.max(hi.z) + h);
+        let corners = [Vec3::new(x0, y, z0), Vec3::new(x1, y, z0), Vec3::new(x1, y, z1), Vec3::new(x0, y, z1)];
+        let c = color.with_alpha(0.55 + 0.45 * pulse);
+        gizmos.linestrip(corners.iter().copied().chain(std::iter::once(corners[0])), c);
+        let inset = 0.12 + 0.06 * pulse;
+        let inner = [
+            Vec3::new(x0 + inset, y, z0 + inset),
+            Vec3::new(x1 - inset, y, z0 + inset),
+            Vec3::new(x1 - inset, y, z1 - inset),
+            Vec3::new(x0 + inset, y, z1 - inset),
+        ];
+        gizmos.linestrip(inner.iter().copied().chain(std::iter::once(inner[0])), color.with_alpha(0.35));
+        for corner in corners {
+            gizmos.line(corner, corner + Vec3::Y * 0.8, c);
+        }
+        // A beam of light from the centre, visible from far away.
+        let center = Vec3::new((x0 + x1) / 2.0, y, (z0 + z1) / 2.0);
+        let top = center + Vec3::Y * (4.0 + pulse);
+        for off in [Vec3::ZERO, Vec3::X * 0.06, Vec3::Z * 0.06] {
+            gizmos.line(center + off, top + off, color.with_alpha(0.7));
+        }
+        gizmos.circle(Isometry3d::new(top, Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)), 0.25 + 0.1 * pulse, color);
     }
 }

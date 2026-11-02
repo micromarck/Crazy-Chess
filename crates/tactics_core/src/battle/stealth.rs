@@ -38,6 +38,29 @@ impl Default for Stealth {
     }
 }
 
+/// A zone drawn on the board (evac pad, objective, danger area).
+#[derive(Debug, Clone, PartialEq)]
+pub struct MarkedZone {
+    pub tag: String,
+    /// Inclusive corners (grid coordinates).
+    pub min: GridPos,
+    pub max: GridPos,
+    /// `evac`, `objective`, `danger`, or a custom word.
+    pub kind: String,
+    pub label: String,
+    pub visible: bool,
+}
+
+impl MarkedZone {
+    pub fn contains(&self, p: GridPos) -> bool {
+        p.x >= self.min.x && p.x <= self.max.x && p.y >= self.min.y && p.y <= self.max.y
+    }
+
+    pub fn center(&self) -> (f32, f32) {
+        ((self.min.x + self.max.x) as f32 / 2.0, (self.min.y + self.max.y) as f32 / 2.0)
+    }
+}
+
 /// State of a door panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DoorState {
@@ -57,6 +80,20 @@ impl Battle {
     /// by `from_mission` before units are placed.
     pub(super) fn setup_mechanics(&mut self, mission: &MissionDef) {
         self.fog = mission.fog;
+        self.zones = mission
+            .zones
+            .iter()
+            .filter_map(|z| {
+                let kind = z.marker.clone()?;
+                let label = z.label.clone().unwrap_or_else(|| match kind.as_str() {
+                    "evac" => "EVAC".into(),
+                    "danger" => "DANGER".into(),
+                    "objective" => "OBJECTIVE".into(),
+                    other => other.to_uppercase(),
+                });
+                Some(MarkedZone { tag: z.tag.clone(), min: z.min, max: z.max, kind, label, visible: !z.hidden })
+            })
+            .collect();
         self.stealth = Stealth { concealed: mission.concealment, alarm: false, detection: mission.detection };
         for door in &mission.doors {
             let first = PropId(self.props.len() as u32);
@@ -87,6 +124,26 @@ impl Battle {
 
     pub fn stealth(&self) -> Stealth {
         self.stealth
+    }
+
+    /// Zones drawn on the board (evac pads, objectives...).
+    pub fn zones(&self) -> &[MarkedZone] {
+        &self.zones
+    }
+
+    /// Shows/hides or relabels the marked zone `tag` (scripts).
+    pub(super) fn set_zone(&mut self, tag: &str, show: Option<bool>, label: Option<String>, events: &mut Vec<GameEvent>) {
+        let Some(z) = self.zones.iter_mut().find(|z| z.tag == tag) else {
+            events.push(GameEvent::ScriptError { message: format!("no marked zone '{tag}' (add marker=\"...\" to it)") });
+            return;
+        };
+        if let Some(show) = show {
+            z.visible = show;
+        }
+        if let Some(label) = label {
+            z.label = label;
+        }
+        events.push(GameEvent::ZoneChanged { tag: tag.to_string() });
     }
 
     /// Does the mission hide enemies the squad can't see?

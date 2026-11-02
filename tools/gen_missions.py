@@ -79,11 +79,11 @@ class Level:
     def unit(self, team, cls, name, x, y, **kw):
         self.units.append(dict(team=team, cls=cls, name=name, x=x, y=y, **kw))
 
-    def zone(self, tag, x, y, w, h, scripts):
-        self.zones.append(dict(tag=tag, x=x, y=y, w=w, h=h, scripts=scripts))
+    def zone(self, tag, x, y, w, h, scripts, marker=None, label=None):
+        self.zones.append(dict(tag=tag, x=x, y=y, w=w, h=h, scripts=scripts, marker=marker, label=label))
 
-    def tile_script(self, x, y, scripts):
-        self.tile_scripts.append(dict(x=x, y=y, scripts=scripts))
+    def tile_script(self, x, y, scripts, marker=None, label=None, tag=None):
+        self.tile_scripts.append(dict(x=x, y=y, scripts=scripts, marker=marker, label=label, tag=tag))
 
     def script(self, on, code, **attrs):
         self.scripts.append((on, code, attrs))
@@ -175,12 +175,20 @@ class Level:
             tag = f'  <unit team="{u["team"]}" class="{u["cls"]}" name="{u["name"]}" x="{u["x"]}" y="{u["y"]}"{extra}'
             o.append(tag + (">\n    " + body + "\n  </unit>" if body else "/>"))
         o.append("")
+        def mark(d):
+            out = ""
+            if d.get("marker"):
+                out += f' marker="{d["marker"]}"'
+            if d.get("label"):
+                out += f' label="{d["label"]}"'
+            return out
         for z in self.zones:
-            o.append(f'  <zone tag="{z["tag"]}" x="{z["x"]}" y="{z["y"]}" width="{z["w"]}" height="{z["h"]}">')
+            o.append(f'  <zone tag="{z["tag"]}" x="{z["x"]}" y="{z["y"]}" width="{z["w"]}" height="{z["h"]}"{mark(z)}>')
             o.append("    " + z["scripts"].strip())
             o.append("  </zone>")
         for t in self.tile_scripts:
-            o.append(f'  <tile x="{t["x"]}" y="{t["y"]}">')
+            tag = f' tag="{t["tag"]}"' if t.get("tag") else ""
+            o.append(f'  <tile{tag} x="{t["x"]}" y="{t["y"]}"{mark(t)}>')
             o.append("    " + t["scripts"].strip())
             o.append("  </tile>")
         o.append("")
@@ -233,7 +241,8 @@ def proving_grounds():
     L.prop("compound_barrel", "barrel", 31, 14, "half", 2,
            '<script on="destroyed">message("The fuel barrel explodes!"); explode(x, y, 1.8, 4);</script>')
     L.prop("compound_console", "console", 35, 10, "half")
-    L.tile_script(34, 11, '<script on="enter" team="player" once="true">message("Console: the east wing pods are now awake!"); wake_all();</script>')
+    L.tile_script(34, 11, '<script on="enter" team="player" once="true">message("Console: the east wing pods are now awake!"); wake_all(); show_zone("pg_console", false);</script>',
+                  marker="danger", label="ALARM CONSOLE", tag="pg_console")
     # North-east: raised platform (level 1) with half walls.
     L.raise_area(24, 1, 37, 5, 1)
     for x in range(25, 37, 3):
@@ -310,7 +319,7 @@ def holdout():
         if inside == squad { message("Everyone aboard. Dust off!"); win(); }
         else { message(unit_name(unit) + " is aboard: " + inside + " of " + squad + " soldiers at the pad."); }
       }
-    </script>""")
+    </script>""", marker="evac", label="EVAC PAD (opens turn 7)")
     L.deploys.append(dict(team="player", squad="player", x=18, y=17))
     # Beacon defenders join the squad.
     L.unit("player", "grenadier", "Beacon Guard Reyes", 17, 13)
@@ -358,6 +367,7 @@ def holdout():
     if round == 7 && flag("evac_open") == 0 {
       set_flag("evac_open", 1);
       message("The evac craft is down at the north-west pad! Get everyone aboard.");
+      zone_label("evac", "EVAC - ALL ABOARD!");
       ai_goal("player", 3, 1);
       ai_goal("enemy", 3, 1);
     }
@@ -435,7 +445,8 @@ def complex_():
       lock_door("core", false);
       open_door("core");
       objective("Clear the complex - the core is open (" + alive_count("enemy") + " hostiles left)");
-    </script>""")
+      show_zone("core_console", false);
+    </script>""", marker="objective", label="CORE UNLOCK", tag="core_console")
     # Yard cover.
     for (x, y) in [(8, 29), (9, 29), (15, 28), (27, 28), (33, 30), (34, 30), (20, 32), (21, 32), (12, 32), (30, 33)]:
         L.set(x, y, "h")
@@ -509,7 +520,8 @@ def infiltration():
       lock_door("vault", false);
       open_door("vault");
       if flag("data") == 0 { objective("Steal the data from the vault (north-east)"); }
-    </script>""")
+      show_zone("sec_console", false);
+    </script>""", marker="objective", label="SECURITY CONSOLE", tag="sec_console")
     L.tile_script(39, 6, """<script on="enter" team="player">
       if flag("data") == 0 {
         set_flag("data", 1);
@@ -517,8 +529,9 @@ def infiltration():
         message(unit_name(unit) + " has the data. Get to the extraction zone (south-west)!");
         objective(unit_name(unit) + ": carry the data to extraction (south-west)");
         ai_goal("player", 2, 31);
+        zone_label("data_terminal", "DATA (taken)");
       }
-    </script>""")
+    </script>""", marker="objective", label="DATA TERMINAL", tag="data_terminal")
     # Extraction zone: the squad's starting corner.
     L.zone("extraction", 0, 28, 6, 6, """<script on="enter" team="player">
       if flag("data") == 1 && unit == flag("carrier") {
@@ -527,7 +540,7 @@ def infiltration():
       } else if flag("data") == 0 {
         message("We don't have the data yet.");
       }
-    </script>""")
+    </script>""", marker="evac", label="EXTRACTION")
     L.deploys.append(dict(team="player", squad="player", x=3, y=31))
     # Guards: patrols walk the yard, sentries hold posts. All unalerted.
     L.unit("enemy", "sectoid", "Gate Patrol", 14, 13, patrol=[(14, 13), (14, 22), (25, 22), (25, 13)])
@@ -561,6 +574,7 @@ def infiltration():
       message("The data carrier is down and the drive is destroyed! A backup is still on the vault terminal.");
       objective("Recover the backup data from the vault terminal");
       clear_ai_goal("player");
+      zone_label("data_terminal", "DATA TERMINAL (backup)");
     }""")
     L.check("infiltration")
     write("infiltration", L.xml(

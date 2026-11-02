@@ -163,6 +163,14 @@ pub struct ZoneDef {
     pub min: GridPos,
     pub max: GridPos,
     pub hooks: Vec<ScriptHook>,
+    /// Shown on the board: `evac`, `objective`, `danger` (or any word, drawn
+    /// like `objective`). `None` = invisible trigger area. Zones tagged
+    /// `evac*`, `extract*` or `exit*` are marked `evac` automatically.
+    pub marker: Option<String>,
+    /// Text floating over a marked zone (default: from the marker).
+    pub label: Option<String>,
+    /// Marked but not shown until a script calls `show_zone(tag, true)`.
+    pub hidden: bool,
 }
 
 impl ZoneDef {
@@ -466,11 +474,23 @@ mod xml {
                     let (min, max) = tiles.iter().fold((tiles[0], tiles[0]), |(lo, hi), p| {
                         (GridPos::new(lo.x.min(p.x), lo.y.min(p.y)), GridPos::new(hi.x.max(p.x), hi.y.max(p.y)))
                     });
+                    let tag = n.attribute("tag").unwrap_or("zone").to_string();
+                    let lower = tag.to_lowercase();
+                    let auto_evac = ["evac", "extract", "exit"].iter().any(|w| lower.starts_with(w));
+                    let marker = match n.attribute("marker") {
+                        Some("none") => None,
+                        Some(m) => Some(m.to_string()),
+                        None if auto_evac => Some("evac".to_string()),
+                        None => None,
+                    };
                     def.zones.push(ZoneDef {
-                        tag: n.attribute("tag").unwrap_or("zone").to_string(),
+                        tag,
                         min,
                         max,
                         hooks: scripts(&doc, n)?,
+                        marker,
+                        label: n.attribute("label").map(String::from),
+                        hidden: n.attribute("hidden") == Some("true"),
                     });
                 }
                 "script" if n.attribute("on").is_none() => {

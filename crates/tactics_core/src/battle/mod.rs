@@ -39,7 +39,7 @@ use crate::visibility;
 mod morale;
 mod stealth;
 mod world;
-pub use stealth::{DoorState, Stealth};
+pub use stealth::{DoorState, MarkedZone, Stealth};
 pub use world::{MAX_SCRIPT_DEPTH, Prop, PropId};
 
 /// Authoritative state of one tactical engagement.
@@ -74,6 +74,8 @@ pub struct Battle {
     /// Where each team's AI heads while no enemy is in sight (index: Team).
     ai_goals: [Option<GridPos>; 2],
     objective: String,
+    /// Zones drawn on the board.
+    zones: Vec<stealth::MarkedZone>,
 }
 
 impl Battle {
@@ -100,6 +102,7 @@ impl Battle {
             fog: false,
             ai_goals: [None, None],
             objective: String::new(),
+            zones: Vec::new(),
         }
     }
 

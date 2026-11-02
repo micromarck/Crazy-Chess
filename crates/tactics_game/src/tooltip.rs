@@ -6,6 +6,8 @@
 //! * a **banner** across the middle of the screen when a turn starts or the
 //!   alarm sounds ([`Banner`] messages, sent by playback).
 //!
+//! * **zone labels** ("EVAC", "OBJECTIVE"...) floating over marked zones.
+//!
 //! The full odds breakdown stays in the HUD's hover panel.
 
 use bevy::picking::hover::HoverMap;
@@ -24,7 +26,7 @@ impl Plugin for TooltipPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<Banner>()
             .add_systems(Startup, spawn_widgets)
-            .add_systems(Update, (update_tooltip, show_banner).in_set(FrameSet::Present));
+            .add_systems(Update, (update_tooltip, show_banner, zone_labels).in_set(FrameSet::Present));
     }
 }
 
@@ -237,4 +239,63 @@ fn show_banner(
     let k = banner.age / BANNER_TIME;
     let alpha = if k < 0.12 { k / 0.12 } else if k > 0.7 { (1.0 - k) / 0.3 } else { 1.0 };
     color.0.set_alpha(alpha.clamp(0.0, 1.0));
+}
+
+/// A floating label over a marked zone.
+#[derive(Component)]
+struct ZoneLabelText(String);
+
+fn zone_labels(
+    mut commands: Commands,
+    state: Res<BattleState>,
+    camera: Single<(&Camera, &GlobalTransform), With<crate::camera::CameraRig>>,
+    mut labels: Query<(Entity, &ZoneLabelText, &mut Text, &mut Node, &mut Visibility, &mut TextColor)>,
+) {
+    let (cam, cam_tr) = *camera;
+    let battle = &state.battle;
+    let zones: Vec<_> = battle.zones().iter().filter(|z| z.visible).collect();
+    let mut seen = Vec::new();
+    for (e, tag, mut text, mut node, mut vis, mut color) in &mut labels {
+        let Some(z) = zones.iter().find(|z| z.tag == tag.0) else {
+            commands.entity(e).despawn();
+            continue;
+        };
+        seen.push(z.tag.clone());
+        let (cx, cy) = z.center();
+        let ground = crate::coords::tile_top(battle.map(), GridPos::new(cx.round() as i32, cy.round() as i32));
+        let world = Vec3::new(
+            (z.min.x + z.max.x) as f32 / 2.0 * crate::coords::TILE_SIZE,
+            ground.y + 2.4,
+            -((z.min.y + z.max.y) as f32 / 2.0) * crate::coords::TILE_SIZE,
+        );
+        match cam.world_to_viewport(cam_tr, world) {
+            Ok(screen) => {
+                node.left = px(screen.x - 40.0);
+                node.top = px(screen.y - 12.0);
+                *vis = Visibility::Inherited;
+            }
+            Err(_) => *vis = Visibility::Hidden,
+        }
+        if text.0 != z.label {
+            text.0 = z.label.clone();
+        }
+        color.0 = match z.kind.as_str() {
+            "evac" => theme::ZONE_EVAC,
+            "danger" => theme::ZONE_DANGER,
+            _ => theme::ZONE_OBJECTIVE,
+        };
+    }
+    for z in zones.iter().filter(|z| !seen.contains(&z.tag)) {
+        commands.spawn((
+            ZoneLabelText(z.tag.clone()),
+            Text::new(z.label.clone()),
+            TextFont { font_size: FontSize::Px(16.0), ..default() },
+            TextColor(theme::ZONE_EVAC),
+            TextShadow::default(),
+            Node { position_type: PositionType::Absolute, ..default() },
+            Visibility::Hidden,
+            GlobalZIndex(5),
+            Pickable::IGNORE,
+        ));
+    }
 }

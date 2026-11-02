@@ -71,11 +71,12 @@
   <prop tag="terminal" kind="console" x="5" y="2" cover="half"/>
 
   <!-- A tile script: whoever of the squad reaches the terminal gets intel. -->
-  <tile x="5" y="3">
+  <tile tag="intel" x="5" y="3" marker="objective" label="INTEL">
     <script on="enter" team="player" once="true">
       message("Intel downloaded: alien reinforcements inbound on round 3.");
       set_flag("intel", 1);
       give_ap(unit, 1);
+      show_zone("intel", false);
     </script>
   </tile>
 

@@ -109,7 +109,7 @@
   <unit team="enemy" class="sectoid" name="Sleeping Guard 2" x="22" y="9" dormant="true" pod="barracks"/>
   <unit team="enemy" class="sectoid" name="Sleeping Guard 3" x="17" y="9" dormant="true" pod="barracks"/>
 
-  <zone tag="extraction" x="0" y="28" width="6" height="6">
+  <zone tag="extraction" x="0" y="28" width="6" height="6" marker="evac" label="EXTRACTION">
     <script on="enter" team="player">
       if flag("data") == 1 && unit == flag("carrier") {
         message("Data extracted. Mission complete!");
@@ -119,15 +119,16 @@
       }
     </script>
   </zone>
-  <tile x="32" y="16">
+  <tile tag="sec_console" x="32" y="16" marker="objective" label="SECURITY CONSOLE">
     <script on="enter" team="player" once="true">
       message("Security bypassed: the vault door is unlocked.");
       lock_door("vault", false);
       open_door("vault");
       if flag("data") == 0 { objective("Steal the data from the vault (north-east)"); }
+      show_zone("sec_console", false);
     </script>
   </tile>
-  <tile x="39" y="6">
+  <tile tag="data_terminal" x="39" y="6" marker="objective" label="DATA TERMINAL">
     <script on="enter" team="player">
       if flag("data") == 0 {
         set_flag("data", 1);
@@ -135,6 +136,7 @@
         message(unit_name(unit) + " has the data. Get to the extraction zone (south-west)!");
         objective(unit_name(unit) + ": carry the data to extraction (south-west)");
         ai_goal("player", 2, 31);
+        zone_label("data_terminal", "DATA (taken)");
       }
     </script>
   </tile>
@@ -163,6 +165,7 @@
       message("The data carrier is down and the drive is destroyed! A backup is still on the vault terminal.");
       objective("Recover the backup data from the vault terminal");
       clear_ai_goal("player");
+      zone_label("data_terminal", "DATA TERMINAL (backup)");
     }
   </script>
 </mission>

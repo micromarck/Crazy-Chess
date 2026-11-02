@@ -385,6 +385,8 @@ impl Battle {
             ScriptCommand::SetFlag { name, value } => {
                 self.flags.insert(name, value);
             }
+            ScriptCommand::ShowZone { tag, show } => self.set_zone(&tag, Some(show), None, events),
+            ScriptCommand::ZoneLabel { tag, text } => self.set_zone(&tag, None, Some(text), events),
             ScriptCommand::AddFear { unit, amount } => self.add_fear(UnitId(unit), amount, events),
             ScriptCommand::Objective(text) => self.set_objective(text, events),
             ScriptCommand::RaiseAlarm => self.raise_alarm(None, events),
