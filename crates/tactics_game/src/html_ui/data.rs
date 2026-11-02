@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
+use tactics_core::content::FearLevel;
 use tactics_core::prelude::*;
 
 use super::{UiData, UiFlags};
@@ -85,6 +86,22 @@ pub fn collect_ui_data(
         v.set("unit.aim", u.stats.aim);
         v.set("unit.mobility", u.stats.mobility / 2);
         v.set("unit.defense", u.stats.defense);
+        let morale = &b.rules().combat.morale;
+        let level = morale.level(u.fear);
+        v.set("unit.morale", if u.fearless { "Fearless".to_string() } else { format!("{} ({})", level.name(), u.fear) });
+        v.set("unit.morale_state", if u.fearless { "fearless" } else { match level {
+            FearLevel::Steady => "steady",
+            FearLevel::Shaken => "shaken",
+            FearLevel::Panicked => "panicked",
+        } });
+        let items: Vec<String> = u
+            .gear
+            .armor
+            .iter()
+            .chain(u.gear.items.iter())
+            .map(|id| b.rules().item(id).map_or(id.clone(), |i| i.name.clone()))
+            .collect();
+        v.set("unit.gear", if items.is_empty() { "no gear".to_string() } else { items.join(", ") });
         let mut status = Vec::new();
         if u.status.overwatch.is_some() {
             status.push("Overwatch".to_string());
@@ -164,6 +181,9 @@ pub fn collect_ui_data(
     v.set("editor.open", bool_str(editor.open));
     v.set("cinematics", bool_str(director.enabled));
 
+    // Loadouts of the player's squad (edited between missions).
+    v.lists.insert("loadout".into(), crate::loadout::rows(b.rules()));
+
     // Lists.
     v.lists.insert("abilities".into(), unit.map(|u| abilities(b, u, &selection)).unwrap_or_default());
     v.lists.insert(
@@ -177,6 +197,13 @@ pub fn collect_ui_data(
                     ("max_hp", u.stats.max_hp.to_string()),
                     ("hp_percent", (100 * u.hp / u.stats.max_hp.max(1)).clamp(0, 100).to_string()),
                     ("ap", u.action_points.to_string()),
+                    ("fear", if u.fearless { String::new() } else {
+                        match b.rules().combat.morale.level(u.fear) {
+                            FearLevel::Steady => String::new(),
+                            FearLevel::Shaken => "SHAKEN".into(),
+                            FearLevel::Panicked => "PANIC".into(),
+                        }
+                    }),
                     ("state", if Some(u.id) == selection.unit { "selected" } else if u.can_act() { "ready" } else { "done" }.into()),
                 ])
             })

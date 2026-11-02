@@ -113,6 +113,10 @@ pub struct UnitPlacement {
     pub pod: Option<String>,
     /// Patrol waypoints walked while dormant.
     pub patrol: Vec<GridPos>,
+    /// Loadout preset id.
+    pub loadout: Option<String>,
+    /// Individual gear (`weapon`, `armor`, `items` attributes).
+    pub gear: crate::content::Loadout,
 }
 
 /// "Deploy the ruleset's squad `squad` for `team` around `pos`."
@@ -404,6 +408,15 @@ mod xml {
                     tag: n.attribute("tag").map(String::from),
                     hooks: scripts(&doc, n)?,
                     dormant: n.attribute("dormant") == Some("true"),
+                    loadout: n.attribute("loadout").map(String::from),
+                    gear: crate::content::Loadout {
+                        weapon: n.attribute("weapon").map(String::from),
+                        armor: n.attribute("armor").map(String::from),
+                        items: n
+                            .attribute("items")
+                            .map(|t| t.split([',', ' ']).filter(|s| !s.is_empty()).map(String::from).collect())
+                            .unwrap_or_default(),
+                    },
                     pod: n.attribute("pod").map(String::from),
                     patrol: match n.attribute("patrol") {
                         None => Vec::new(),

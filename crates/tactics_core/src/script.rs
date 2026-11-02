@@ -39,6 +39,8 @@ pub enum ScriptCommand {
     SetLadder { pos: GridPos, ladder: bool },
     GiveAp { unit: u32, amount: i32 },
     SetFlag { name: String, value: i64 },
+    /// Changes a unit's fear (positive = scarier, scaled by bravery).
+    AddFear { unit: u32, amount: i32 },
     /// Sets the objective text shown in the HUD.
     Objective(String),
     /// Breaks concealment and wakes every enemy.
@@ -83,6 +85,7 @@ pub struct WorldUnit {
     pub max_hp: i32,
     pub alive: bool,
     pub dormant: bool,
+    pub fear: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -221,6 +224,7 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
     cmd!("set_height", |x: INT, y: INT, level: INT| Ok(ScriptCommand::SetHeight { pos: grid(x, y), level: level.clamp(0, 9) as i8 }));
     cmd!("set_ladder", |x: INT, y: INT, on: bool| Ok(ScriptCommand::SetLadder { pos: grid(x, y), ladder: on }));
     cmd!("give_ap", |unit: INT, amount: INT| Ok(ScriptCommand::GiveAp { unit: unit as u32, amount: amount as i32 }));
+    cmd!("add_fear", |unit: INT, amount: INT| Ok(ScriptCommand::AddFear { unit: unit as u32, amount: amount as i32 }));
     cmd!("objective", |text: &str| Ok(ScriptCommand::Objective(text.to_string())));
     cmd!("raise_alarm", | | Ok(ScriptCommand::RaiseAlarm));
     cmd!("wake", |unit: INT| Ok(ScriptCommand::Wake { unit: unit as u32 }));
@@ -302,6 +306,8 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
             .count() as INT
     });
     let w = world.clone();
+    engine.register_fn("fear", move |id: INT| -> INT { w.units.iter().find(|u| u.id as INT == id).map_or(0, |u| u.fear as INT) });
+    let w = world.clone();
     engine.register_fn("unit_dormant", move |id: INT| w.units.iter().any(|u| u.id as INT == id && u.dormant));
     let (alarm, concealed) = (world.alarm, world.concealed);
     engine.register_fn("alarm", move || alarm);
@@ -341,6 +347,7 @@ mod tests {
                 max_hp: 6,
                 alive: true,
                 dormant: false,
+                fear: 0,
             }],
             props: vec![],
             map: Some(Map::new(5, 5)),

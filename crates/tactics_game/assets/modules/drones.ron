@@ -65,6 +65,7 @@
             weapon: "drone_laser",
             abilities: ["laser", "overwatch", "reload"],
             model: "drone",
+            fearless: true,  // machines never feel fear (no morale effects)
         ),
     ],
 

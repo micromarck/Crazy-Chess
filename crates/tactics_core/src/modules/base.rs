@@ -196,6 +196,7 @@ fn register_weapons(rules: &mut Ruleset) {
         optimal_range: 14.0,
         max_range: 25.0,
         clip_size: 3,
+        classes: vec!["sniper".into()],
         ..w("sniper_rifle", "Sniper Rifle")
     });
     rules.add_weapon(Weapon {
@@ -207,9 +208,55 @@ fn register_weapons(rules: &mut Ruleset) {
         clip_size: 3,
         ..w("plasma_pistol", "Plasma Pistol")
     });
+    rules.add_weapon(Weapon {
+        damage_min: 2,
+        damage_max: 4,
+        crit_chance: 15,
+        optimal_range: 4.0,
+        max_range: 14.0,
+        clip_size: 5,
+        ..w("smg", "SMG")
+    });
+}
+
+/// Armor and stat items. Grenades and medkits come with the Grenadier Pack.
+fn register_items(rules: &mut Ruleset) {
+    let armor = |id: &str, name: &str, desc: &str, stats: StatModifiers| ItemDef {
+        id: id.into(),
+        name: name.into(),
+        description: desc.into(),
+        slot: ItemSlot::Armor,
+        stats,
+        ..Default::default()
+    };
+    rules.add_item(armor("kevlar", "Kevlar Vest", "+2 HP.", StatModifiers { max_hp: 2, ..Default::default() }));
+    rules.add_item(armor(
+        "plated_armor",
+        "Plated Armor",
+        "+4 HP, +5 defense, -2 mobility, +10 bravery.",
+        StatModifiers { max_hp: 4, defense: 5, mobility: -2, bravery: 10, ..Default::default() },
+    ));
+    rules.add_item(armor(
+        "ghost_suit",
+        "Ghost Suit",
+        "+1 HP, +2 mobility, +10 defense.",
+        StatModifiers { max_hp: 1, mobility: 2, defense: 10, ..Default::default() },
+    ));
+    let util = |id: &str, name: &str, desc: &str, stats: StatModifiers| ItemDef {
+        id: id.into(),
+        name: name.into(),
+        description: desc.into(),
+        slot: ItemSlot::Utility,
+        stats,
+        ..Default::default()
+    };
+    rules.add_item(util("scope", "Scope", "+10 aim.", StatModifiers { aim: 10, ..Default::default() }));
+    rules.add_item(util("stims", "Combat Stims", "+2 mobility.", StatModifiers { mobility: 2, ..Default::default() }));
+    rules.add_item(util("dog_tags", "Lucky Dog Tags", "+25 bravery: shrugs off fear.", StatModifiers { bravery: 25, ..Default::default() }));
 }
 
 fn register_classes(rules: &mut Ruleset) {
+    register_items(rules);
     let basic = || {
         [ids::SHOOT, ids::OVERWATCH, ids::HUNKER, ids::RELOAD]
             .map(AbilityId::new)
@@ -222,30 +269,34 @@ fn register_classes(rules: &mut Ruleset) {
         weapon: "rifle".into(),
         abilities: basic(),
         model: "soldier".into(),
+        ..Default::default()
     });
     rules.add_class(UnitClass {
         id: "assault".into(),
         name: "Assault".into(),
-        stats: UnitStats { max_hp: 10, mobility: 14, aim: 65, ..Default::default() },
+        stats: UnitStats { max_hp: 10, mobility: 14, aim: 65, bravery: 60, ..Default::default() },
         weapon: "shotgun".into(),
         abilities: basic(),
         model: "soldier".into(),
+        ..Default::default()
     });
     rules.add_class(UnitClass {
         id: "sniper".into(),
         name: "Sniper".into(),
-        stats: UnitStats { max_hp: 6, mobility: 10, aim: 80, sight: 18.0, ..Default::default() },
+        stats: UnitStats { max_hp: 6, mobility: 10, aim: 80, sight: 18.0, bravery: 55, ..Default::default() },
         weapon: "sniper_rifle".into(),
         abilities: basic(),
         model: "soldier".into(),
+        ..Default::default()
     });
     rules.add_class(UnitClass {
         id: "sectoid".into(),
         name: "Sectoid".into(),
-        stats: UnitStats { max_hp: 6, mobility: 12, aim: 65, defense: 5, sight: 13.0, ..Default::default() },
+        stats: UnitStats { max_hp: 6, mobility: 12, aim: 65, defense: 5, sight: 13.0, bravery: 40, ..Default::default() },
         weapon: "plasma_pistol".into(),
         abilities: basic(),
         model: "alien".into(),
+        ..Default::default()
     });
 }
 

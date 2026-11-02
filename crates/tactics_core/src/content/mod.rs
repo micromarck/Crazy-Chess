@@ -61,17 +61,24 @@
 //! | HTML/CSS UI layouts | [`UiLayoutDef`] | ✅ |
 //! | Skeletons (bone rigs, can extend each other) | [`SkeletonDef`] | ✅ |
 //! | Keyframe animations per skeleton + slot | [`AnimationDef`] | ✅ |
-//! | Status effects, terrain types, items, objectives, campaign… | — | planned, see `MODULES.md` |
+//! | Items (armor, utility) | [`ItemDef`] | ✅ |
+//! | Loadout presets | [`LoadoutDef`] | ✅ |
+//! | Morale / fear rules | [`MoraleRules`] (in [`CombatRules`]) | ✅ |
+//! | Status effects, terrain types, objectives, campaign… | — | planned, see `MODULES.md` |
 
 pub mod ability;
 #[cfg(feature = "data")]
 pub mod data;
+pub mod gear;
+pub mod morale;
 pub mod presentation;
 pub mod skeleton;
 
 use std::collections::BTreeMap;
 
 pub use ability::*;
+pub use gear::*;
+pub use morale::*;
 pub use presentation::*;
 pub use skeleton::*;
 
@@ -127,6 +134,8 @@ pub struct CombatRules {
     pub action_points: u8,
     /// Aim bonus when the attack comes from higher ground than the target.
     pub height_advantage_bonus: i32,
+    /// Fear and its effects.
+    pub morale: MoraleRules,
 }
 
 impl Default for CombatRules {
@@ -139,6 +148,7 @@ impl Default for CombatRules {
             max_close_bonus: 15,
             action_points: 2,
             height_advantage_bonus: 15,
+            morale: MoraleRules::default(),
         }
     }
 }
@@ -161,6 +171,10 @@ pub struct SquadMember {
     pub class: String,
     /// Display name of this individual.
     pub name: String,
+    /// Loadout preset id (see [`LoadoutDef`]).
+    pub loadout: Option<String>,
+    /// Individual overrides on top of the preset.
+    pub gear: Loadout,
 }
 
 /// An ordered list of units deployed together. The scenarios use the squads
@@ -179,7 +193,7 @@ impl SquadDef {
             id: id.into(),
             members: members
                 .iter()
-                .map(|(class, name)| SquadMember { class: class.to_string(), name: name.to_string() })
+                .map(|(class, name)| SquadMember { class: class.to_string(), name: name.to_string(), ..Default::default() })
                 .collect(),
         }
     }
@@ -206,6 +220,8 @@ pub struct Ruleset {
     squads: BTreeMap<String, SquadDef>,
     maps: BTreeMap<String, MapDef>,
     ai_profiles: BTreeMap<String, AiProfile>,
+    items: BTreeMap<String, ItemDef>,
+    loadouts: BTreeMap<String, LoadoutDef>,
     // Presentation (read only by frontends).
     pub presentation: PresentationSettings,
     models: BTreeMap<String, ModelDef>,
@@ -219,7 +235,6 @@ pub struct Ruleset {
     // FUTURE module types slot in here as additional maps, e.g.
     //   status_effects: BTreeMap<String, StatusEffectDef>,
     //   terrain: BTreeMap<String, TerrainDef>,
-    //   items: BTreeMap<String, ItemDef>,
     //   objectives: BTreeMap<String, ObjectiveDef>,
     // See MODULES.md for the planned shapes.
 }
@@ -272,6 +287,14 @@ impl Ruleset {
 
     pub fn add_ai_profile(&mut self, profile: AiProfile) {
         self.ai_profiles.insert(profile.id.clone(), profile);
+    }
+
+    pub fn add_item(&mut self, item: ItemDef) {
+        self.items.insert(item.id.clone(), item);
+    }
+
+    pub fn add_loadout(&mut self, loadout: LoadoutDef) {
+        self.loadouts.insert(loadout.id.clone(), loadout);
     }
 
     pub fn add_model(&mut self, model: ModelDef) {
@@ -407,6 +430,77 @@ impl Ruleset {
     }
 
     /// An HTML UI layout by id (`"hud"`...).
+    pub fn item(&self, id: &str) -> Option<&ItemDef> {
+        self.items.get(id)
+    }
+
+    pub fn items(&self) -> impl Iterator<Item = &ItemDef> {
+        self.items.values()
+    }
+
+    pub fn loadout(&self, id: &str) -> Option<&LoadoutDef> {
+        self.loadouts.get(id)
+    }
+
+    pub fn loadouts(&self) -> impl Iterator<Item = &LoadoutDef> {
+        self.loadouts.values()
+    }
+
+    /// Mutable squad access (frontends edit the player's loadouts).
+    pub fn squad_mut(&mut self, id: &str) -> Option<&mut SquadDef> {
+        self.squads.get_mut(id)
+    }
+
+    /// The gear a unit of `class` ends up with: the class's preset, then
+    /// `preset`, then `overrides` (see [`gear`]). Unknown ids are kept here
+    /// and reported by [`Ruleset::check_gear`] / at spawn.
+    pub fn gear_for(&self, class: &str, preset: Option<&str>, overrides: &Loadout) -> Loadout {
+        let class = self.classes.get(class);
+        let mut gear = Loadout { weapon: class.map(|c| c.weapon.clone()), ..Default::default() };
+        if let Some(p) = class.and_then(|c| c.loadout.as_deref()).and_then(|id| self.loadouts.get(id)) {
+            gear = gear.overridden_by(&p.gear);
+        }
+        if let Some(p) = preset.and_then(|id| self.loadouts.get(id)) {
+            gear = gear.overridden_by(&p.gear);
+        }
+        let mut gear = gear.overridden_by(overrides);
+        // "" means "explicitly nothing": armor "" = no armor, items [""] = no items.
+        if gear.armor.as_deref() == Some("") {
+            gear.armor = None;
+        }
+        gear.items.retain(|i| !i.is_empty());
+        gear
+    }
+
+    /// Is this gear legal for `class`? Returns the problems.
+    pub fn check_gear(&self, class: &str, gear: &Loadout) -> Vec<String> {
+        let mut problems = Vec::new();
+        let allowed = |list: &[String]| list.is_empty() || list.iter().any(|c| c == class);
+        if let Some(w) = &gear.weapon {
+            match self.weapons.get(w) {
+                None => problems.push(format!("unknown weapon '{w}'")),
+                Some(w) if !allowed(&w.classes) => problems.push(format!("{} can't use the {}", class, w.name)),
+                _ => {}
+            }
+        }
+        let mut check_item = |id: &str, slot: ItemSlot| match self.items.get(id) {
+            None => problems.push(format!("unknown item '{id}'")),
+            Some(i) if i.slot != slot => problems.push(format!("'{id}' doesn't go in the {slot:?} slot")),
+            Some(i) if !allowed(&i.classes) => problems.push(format!("{class} can't use {}", i.name)),
+            _ => {}
+        };
+        if let Some(a) = &gear.armor {
+            check_item(a, ItemSlot::Armor);
+        }
+        for i in &gear.items {
+            check_item(i, ItemSlot::Utility);
+        }
+        if gear.items.len() > UTILITY_SLOTS {
+            problems.push(format!("{} utility items (max {UTILITY_SLOTS})", gear.items.len()));
+        }
+        problems
+    }
+
     pub fn ui_layout(&self, id: &str) -> Option<&UiLayoutDef> {
         self.ui_layouts.get(id)
     }
@@ -474,6 +568,37 @@ impl Ruleset {
                 if !self.classes.contains_key(&m.class) {
                     problems.push(format!("squad '{}' uses unknown class '{}'", squad.id, m.class));
                 }
+                if let Some(p) = &m.loadout
+                    && !self.loadouts.contains_key(p)
+                {
+                    problems.push(format!("squad '{}': {} uses unknown loadout '{p}'", squad.id, m.name));
+                }
+                let gear = self.gear_for(&m.class, m.loadout.as_deref(), &m.gear);
+                for p in self.check_gear(&m.class, &gear) {
+                    problems.push(format!("squad '{}': {}: {p}", squad.id, m.name));
+                }
+            }
+        }
+        for item in self.items.values() {
+            for a in &item.abilities {
+                if !self.abilities.contains_key(a) {
+                    problems.push(format!("item '{}' grants unknown ability '{a}'", item.id));
+                }
+            }
+        }
+        for l in self.loadouts.values() {
+            let class = l.classes.first().map_or("", String::as_str);
+            for p in self.check_gear(class, &l.gear) {
+                if !p.contains("can't use") {
+                    problems.push(format!("loadout '{}': {p}", l.id));
+                }
+            }
+        }
+        for class in self.classes.values() {
+            if let Some(p) = &class.loadout
+                && !self.loadouts.contains_key(p)
+            {
+                problems.push(format!("class '{}' uses unknown loadout '{p}'", class.id));
             }
         }
         for ability in self.abilities.values() {

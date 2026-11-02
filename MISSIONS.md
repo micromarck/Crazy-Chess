@@ -123,7 +123,7 @@ read `<layout>`. (Scripts use the same convention.)
 | element | attributes |
 |---|---|
 | `<deploy>` | `team`, `squad` (a squad id from the modules, e.g. `player`), `x`, `y`: places the squad around that tile |
-| `<unit>` | `team` (`player`/`enemy`), `class` (from the modules), `name`, `x`, `y`, `tag` (for scripts), `dormant="true"`, `pod`, `patrol="x,y x,y ..."` (see below) |
+| `<unit>` | `team` (`player`/`enemy`), `class` (from the modules), `name`, `x`, `y`, `tag` (for scripts), `dormant="true"`, `pod`, `patrol="x,y x,y ..."` (see below), `loadout` (preset id), `weapon`, `armor`, `items="frag scope"` (see MODULES.md, Loadouts) |
 | `<door>` | `tag`, `x`, `y`, `width`, `height`, `locked="true"`: door panels; may hold `opened` scripts |
 | `<prop>` | `tag`, `kind` (`crate`, `barrel`, `console`... used for visuals), `x`, `y`, `cover` (`none`/`half`/`full`; any cover blocks movement), `hp` (omit = indestructible), `model` |
 | `<zone>` | `tag`, `x`, `y`, `width`, `height`: an area for `enter` scripts |
@@ -216,6 +216,7 @@ turns) and `once="true"` (run at most once).
 | `alive_count("player"/"enemy")`, `prop_alive(tag)`, `height(x, y)`, `terrain(x, y)` | |
 | `count_in_area(x, y, w, h, team)` | units of `team` (`""` = all) in a rectangle (top-left corner x, y) |
 | `objective(text)` | set the HUD objective |
+| `fear(unit)`, `add_fear(unit, n)` | read / change a unit's fear (0-100; gains scaled by bravery, fearless units ignore it) |
 | `raise_alarm()`, `alarm()`, `concealed()` | concealment / alarm |
 | `wake(unit)`, `wake_all()`, `unit_dormant(unit)` | dormant pods |
 | `open_door(tag)`, `close_door(tag)`, `lock_door(tag, locked)` | doors |

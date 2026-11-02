@@ -38,6 +38,7 @@ pub mod html_ui;
 pub mod hud;
 pub mod input;
 pub mod lab;
+pub mod loadout;
 pub mod missions;
 pub mod models;
 pub mod overlay;
