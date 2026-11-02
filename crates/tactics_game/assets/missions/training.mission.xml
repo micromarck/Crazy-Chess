@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Basic Training: a short guided mission that teaches the controls.
+  Targets are training dummies: they can't move or shoot.
+
+  Coordinates: x = column from the left, y = ROW FROM THE TOP of <layout>.
+  Layout: . floor   # cut out   h half cover   H full cover
+-->
+<mission id="training" name="Basic Training" seed="1601" win="script">
+  <description>Learn the controls: move into cover, aim and fire, throw a grenade, set overwatch, extract. The targets don't shoot back.</description>
+
+  <layout>
+    ....................
+    ....................
+    ......hhh....H......
+    .............H......
+    ......H......H...h..
+    ..........h.........
+    ....................
+    ....hh..............
+    ....................
+    ....................
+    ....................
+    ....................
+  </layout>
+
+  <deploy team="player" squad="player" x="3" y="10"/>
+
+  <!-- Dummies: one in the open, a pair behind the low wall (grenade practice). -->
+  <unit team="enemy" class="training_dummy" name="Dummy" x="10" y="8" tag="dummy1">
+    <script on="death">
+      message("Target down. Next: the pair behind the low wall to the north - perfect for a grenade.");
+      objective("Grenade the pair behind the wall: press the Frag Grenade button (or its number), click a tile near them to aim, click again to throw");
+      show_zone("grenade_spot", true);
+    </script>
+  </unit>
+  <unit team="enemy" class="training_dummy" name="Dummy Pair A" x="7" y="1" tag="pair_a"/>
+  <unit team="enemy" class="training_dummy" name="Dummy Pair B" x="8" y="1" tag="pair_b"/>
+
+  <!-- Step 1: move into cover. -->
+  <tile tag="cover_spot" x="5" y="6" marker="objective" label="MOVE HERE">
+    <script on="enter" team="player" once="true">
+      show_zone("cover_spot", false);
+      message("Good: the shield icons show cover. Half cover (low walls) blocks some shots, full cover (tall walls) more.");
+      objective("Shoot the dummy: click it to AIM (odds appear by the cursor), then click again or press Space to FIRE");
+    </script>
+  </tile>
+
+  <!-- Step 3 helper: where to throw from. -->
+  <tile tag="grenade_spot" x="7" y="4" marker="objective" label="GOOD THROWING SPOT" hidden="true">
+    <script on="enter" team="player" once="true">show_zone("grenade_spot", false);</script>
+  </tile>
+
+  <!-- Step 5: extract. -->
+  <zone tag="evac" x="16" y="9" width="3" height="3" marker="evac" label="EVAC" hidden="true">
+    <script on="enter" team="player">
+      if flag("trained") == 1 { message("Training complete. Welcome to the squad!"); win(); }
+    </script>
+  </zone>
+
+  <script on="unit_killed">
+    if unit_team(unit) == "enemy" && alive_count("enemy") == 0 && flag("trained") == 0 {
+      set_flag("trained", 1);
+      message("Range clear! Tip: Overwatch (2) makes a soldier shoot the first enemy that moves in sight; Hunker Down (3) adds defence and calms fear.");
+      objective("Walk any soldier onto the green EVAC pad (south-east)");
+      show_zone("evac", true);
+    }
+  </script>
+
+  <script on="start">
+    message("Welcome to Basic Training. Right-drag rotates, the wheel zooms, H shows every control.");
+    objective("Click the yellow MOVE HERE tile to move a soldier into cover");
+  </script>
+
+  <!-- Nothing hunts you here, but don't dawdle forever. -->
+  <script on="turn_start" team="player">
+    if round == 6 && flag("trained") == 0 { message("Take your time - the dummies aren't going anywhere."); }
+  </script>
+</mission>

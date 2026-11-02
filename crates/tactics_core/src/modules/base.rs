@@ -298,6 +298,18 @@ fn register_classes(rules: &mut Ruleset) {
         model: "alien".into(),
         ..Default::default()
     });
+    // A stationary, harmless target for training missions: no abilities,
+    // can't move, never afraid.
+    rules.add_class(UnitClass {
+        id: "training_dummy".into(),
+        name: "Training Dummy".into(),
+        stats: UnitStats { max_hp: 4, mobility: 0, aim: 0, defense: 0, sight: 1.0, ..Default::default() },
+        weapon: "plasma_pistol".into(),
+        abilities: Vec::new(),
+        model: "alien".into(),
+        fearless: true,
+        ..Default::default()
+    });
 }
 
 fn register_squads_maps_ai(rules: &mut Ruleset) {
