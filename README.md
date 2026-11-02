@@ -1,4 +1,4 @@
-# Tactics — a turn-based squad tactics framework in Rust
+# TBSium — a turn-based squad tactics framework in Rust
 
 A well-commented base for an XCOM-style game: 3D rendering via
 [Bevy 0.20](https://bevyengine.org), with all game rules in a separate,
@@ -30,7 +30,7 @@ rebuild it without touching Rust, and hot-reload it with **F6**. See
 **[UI.md](UI.md)**.
 
 ```
-tactics/
+TBSium/
 ├── Cargo.toml                 workspace + build profiles
 ├── .cargo/config.toml         per-target flags (wasm)
 └── crates/
