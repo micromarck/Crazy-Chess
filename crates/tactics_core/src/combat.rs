@@ -24,11 +24,39 @@ use crate::cover::{CoverResult, cover_against};
 use crate::grid::{CoverLevel, GridPos, Map};
 use crate::unit::Unit;
 
+/// Effective radius of a unit as a target, in tiles (for bullet geometry).
+pub const TARGET_RADIUS: f32 = 0.3;
+
+/// Probability that a projectile with angular error `sigma` (radians, per
+/// axis) lands within a target of angular radius `theta` (Rayleigh).
+pub fn geometric_hit(theta: f32, sigma: f32) -> f32 {
+    if sigma <= 1e-6 {
+        return 1.0;
+    }
+    1.0 - (-(theta * theta) / (2.0 * sigma * sigma)).exp()
+}
+
+/// Angular error that gives hit probability `p` against a target of
+/// angular radius `theta` (inverse of [`geometric_hit`]).
+pub fn sigma_for(theta: f32, p: f32) -> f32 {
+    let p = p.clamp(0.02, 0.995);
+    theta / (-2.0 * (1.0 - p).ln()).sqrt()
+}
+
 /// Full description of a potential attack, before any dice are rolled.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShotPreview {
-    /// Final hit chance in percent (100 for attacks that cannot miss).
+    /// Chance that **each projectile** hits the target, in percent (100 for
+    /// attacks that cannot miss). Includes cover and spread.
     pub hit_chance: i32,
+    /// Projectiles fired (rounds × pellets). 1 for non-ballistic attacks.
+    pub rounds: u32,
+    /// Aim before cover (what sets the aim error of a ballistic shot).
+    pub aim_chance: i32,
+    /// Chance cover stops a projectile that would hit, percent.
+    pub cover_block: i32,
+    /// Angular error per projectile, radians (aim + weapon spread).
+    pub sigma: f32,
     /// Final critical chance in percent (applies only on a hit).
     pub crit_chance: i32,
     /// Cover of the target as seen from the attack origin.
@@ -44,12 +72,17 @@ pub struct ShotPreview {
 }
 
 impl ShotPreview {
-    /// Expected damage, used by the AI to rank options.
+    /// Expected damage of the whole attack (all projectiles), used by the AI.
     pub fn expected_damage(&self) -> f32 {
         let avg = (self.damage.0 + self.damage.1) as f32 / 2.0;
         let p_hit = self.hit_chance as f32 / 100.0;
         let p_crit = self.crit_chance as f32 / 100.0;
-        p_hit * (avg + p_crit * self.crit_damage as f32)
+        self.rounds.max(1) as f32 * p_hit * (avg + p_crit * self.crit_damage as f32)
+    }
+
+    /// Most damage the attack could do (every projectile hits and crits).
+    pub fn max_damage(&self) -> i32 {
+        self.rounds.max(1) as i32 * (self.damage.1 + self.crit_damage)
     }
 }
 
@@ -91,10 +124,8 @@ pub fn preview_attack(
     }
     push("Defense", -target.stats.defense);
     push("Defending", -target.status.defense_bonus);
-    match cover.level {
-        CoverLevel::Half => push("Half cover", -profile.half_cover_penalty),
-        CoverLevel::Full => push("Full cover", -profile.full_cover_penalty),
-        CoverLevel::None => {}
+    if attacker.status.suppressed_by.is_some() {
+        push("Suppressed", -rules.suppression_aim);
     }
     if profile.range_falloff {
         let range_mod = if distance > weapon.optimal_range {
@@ -106,10 +137,37 @@ pub fn preview_attack(
         push("Range", range_mod);
     }
 
-    let hit_chance = if profile.can_miss {
-        breakdown.iter().map(|(_, v)| *v).sum::<i32>().clamp(rules.min_hit, rules.max_hit)
+    // Aim before cover; cover is applied below (as a penalty for rolled
+    // attacks, as a per-projectile block chance for ballistic ones).
+    let aim_chance = breakdown.iter().map(|(_, v)| *v).sum::<i32>().clamp(rules.min_hit, rules.max_hit);
+    let cover_penalty = match cover.level {
+        CoverLevel::Half => profile.half_cover_penalty,
+        CoverLevel::Full => profile.full_cover_penalty,
+        CoverLevel::None => 0,
+    };
+    match cover.level {
+        CoverLevel::Half => breakdown.push(("Half cover".into(), -cover_penalty)),
+        CoverLevel::Full => breakdown.push(("Full cover".into(), -cover_penalty)),
+        CoverLevel::None => {}
+    }
+    let weapon_shot = matches!(profile.damage, DamageSource::Weapon);
+    let (hit_chance, rounds, cover_block, sigma) = if !profile.can_miss {
+        (100, 1, 0, 0.0)
+    } else if !profile.is_ballistic() {
+        ((aim_chance - cover_penalty).clamp(rules.min_hit, rules.max_hit), 1, 0, 0.0)
     } else {
-        100
+        // Ballistic: aim sets the angular error so that, ignoring spread and
+        // cover, a projectile hits with `aim_chance`; spread widens it; cover
+        // stops a share of the ones that would hit.
+        let theta = (TARGET_RADIUS / distance.max(0.5)).atan();
+        let aim_sigma = sigma_for(theta, aim_chance as f32 / 100.0);
+        let spread = if weapon_shot { weapon.spread } else { 0.3 }.max(0.0).to_radians();
+        let sigma = (aim_sigma * aim_sigma + spread * spread).sqrt();
+        let block = if cover_penalty > 0 { (cover_penalty as f32 / aim_chance.max(1) as f32).clamp(0.0, 0.95) } else { 0.0 };
+        let p = geometric_hit(theta, sigma) * (1.0 - block);
+        let per_round = if weapon_shot { weapon.pellets.max(1) } else { 1 };
+        let rounds = profile.rounds.unwrap_or(if weapon_shot { weapon.burst.max(1) } else { 1 }) * per_round;
+        ((p * 100.0).round() as i32, rounds, (block * 100.0).round() as i32, sigma)
     };
 
     let (damage, crit_damage, weapon_crit) = match profile.damage {
@@ -124,6 +182,10 @@ pub fn preview_attack(
 
     ShotPreview {
         hit_chance,
+        rounds,
+        aim_chance,
+        cover_block,
+        sigma,
         crit_chance: crit_chance.clamp(0, 100),
         cover,
         distance,
@@ -184,8 +246,12 @@ mod tests {
         let covered_precise = preview_attack(&rules, &map, shooter.pos, &shooter, &target, &precise);
 
         assert!(open.cover.flanked);
-        assert_eq!(covered.hit_chance, open.hit_chance - 20);
-        assert_eq!(covered_precise.hit_chance, open.hit_chance - 5);
+        // Ballistic: cover doesn't change the aim, it blocks a share of the
+        // projectiles that would hit (penalty / aim).
+        assert_eq!(covered.aim_chance, open.aim_chance);
+        assert_eq!(covered.cover_block, (20.0 / open.aim_chance as f32 * 100.0).round() as i32);
+        assert_eq!(covered_precise.cover_block, (5.0 / open.aim_chance as f32 * 100.0).round() as i32);
+        assert!(covered.hit_chance < covered_precise.hit_chance && covered_precise.hit_chance < open.hit_chance);
     }
 
     #[test]
@@ -194,9 +260,9 @@ mod tests {
         let mut map = Map::new(10, 10);
         let a = make(Team::Player, GridPos::new(0, 0));
         let b = make(Team::Enemy, GridPos::new(0, 5));
-        let flat = preview_attack(&rules, &map, a.pos, &a, &b, &AttackProfile::default()).hit_chance;
+        let flat = preview_attack(&rules, &map, a.pos, &a, &b, &AttackProfile::default()).aim_chance;
         map.set_elevation(a.pos, 2);
-        let high = preview_attack(&rules, &map, a.pos, &a, &b, &AttackProfile::default()).hit_chance;
+        let high = preview_attack(&rules, &map, a.pos, &a, &b, &AttackProfile::default()).aim_chance;
         assert_eq!(high, flat + rules.height_advantage_bonus);
     }
 
@@ -207,7 +273,11 @@ mod tests {
         let a = make(Team::Player, GridPos::new(0, 0));
         let b = make(Team::Enemy, GridPos::new(0, 6));
         let fixed = AttackProfile { base_accuracy: Some(50), range_falloff: false, ..Default::default() };
-        assert_eq!(preview_attack(&rules, &map, a.pos, &a, &b, &fixed).hit_chance, 50);
+        let p = preview_attack(&rules, &map, a.pos, &a, &b, &fixed);
+        assert_eq!(p.aim_chance, 50);
+        // Without spread the per-projectile chance is the aim; the weapon's
+        // spread lowers it a little.
+        assert!(p.hit_chance <= 50 && p.hit_chance >= 40, "{}", p.hit_chance);
         let sure = AttackProfile { can_miss: false, ..Default::default() };
         assert_eq!(preview_attack(&rules, &map, a.pos, &a, &b, &sure).hit_chance, 100);
     }

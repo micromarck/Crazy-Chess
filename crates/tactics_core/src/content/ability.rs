@@ -155,6 +155,18 @@ pub struct AttackProfile {
     /// the target point (friendly fire included). Cover is then evaluated from
     /// the blast centre.
     pub area_radius: f32,
+    /// Rounds fired per use (overrides the weapon's `burst`; each round of a
+    /// shotgun is still `pellets` pellets). Single-target attacks that can
+    /// miss are **ballistic**: every round is traced as a ray (see
+    /// [`crate::battle`] `ballistics`).
+    pub rounds: Option<u32>,
+}
+
+impl AttackProfile {
+    /// Traced as bullets (single target, can miss) rather than rolled.
+    pub fn is_ballistic(&self) -> bool {
+        self.area_radius <= 0.0 && self.can_miss
+    }
 }
 
 impl Default for AttackProfile {
@@ -173,6 +185,7 @@ impl Default for AttackProfile {
             damage: DamageSource::Weapon,
             damage_bonus: 0,
             area_radius: 0.0,
+            rounds: None,
         }
     }
 }
@@ -192,6 +205,11 @@ pub enum AbilityEffect {
     Reload,
     /// Restore hit points to the target (never above max).
     Heal { amount: i32 },
+    /// Suppressive fire: a long, inaccurate volley at the target (bullets can
+    /// still hit anything in the way). The target is **suppressed** until the
+    /// user's next turn: worse aim, more fear, and if it moves the user fires
+    /// at it again.
+    Suppress(AttackProfile),
 }
 
 impl Default for AbilityEffect {
@@ -204,14 +222,14 @@ impl AbilityEffect {
     /// The attack profile, for effects that roll attacks.
     pub fn attack_profile(&self) -> Option<&AttackProfile> {
         match self {
-            AbilityEffect::Attack(p) | AbilityEffect::Overwatch(p) => Some(p),
+            AbilityEffect::Attack(p) | AbilityEffect::Overwatch(p) | AbilityEffect::Suppress(p) => Some(p),
             _ => None,
         }
     }
 
     pub fn attack_profile_mut(&mut self) -> Option<&mut AttackProfile> {
         match self {
-            AbilityEffect::Attack(p) | AbilityEffect::Overwatch(p) => Some(p),
+            AbilityEffect::Attack(p) | AbilityEffect::Overwatch(p) | AbilityEffect::Suppress(p) => Some(p),
             _ => None,
         }
     }
@@ -225,6 +243,7 @@ impl AbilityEffect {
             AbilityEffect::Defend { .. } => "Defend",
             AbilityEffect::Reload => "Reload",
             AbilityEffect::Heal { .. } => "Heal",
+            AbilityEffect::Suppress(_) => "Suppress",
         }
     }
 }

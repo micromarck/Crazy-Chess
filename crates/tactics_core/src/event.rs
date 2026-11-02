@@ -23,6 +23,23 @@ pub enum ShotOutcome {
     Hit { damage: i32, critical: bool },
 }
 
+/// One traced projectile of a [`GameEvent::Volley`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Bullet {
+    /// Where it stopped: grid x, grid y (tiles, fractional) and height above
+    /// level 0 in **metres** (a level is 0.5 m).
+    pub end: [f32; 3],
+    /// The unit it hit, if any (friend or foe).
+    pub hit: Option<UnitId>,
+    /// A destructible prop it hit, if any.
+    pub prop: Option<PropId>,
+    /// Damage dealt (0 = no unit hit).
+    pub damage: i32,
+    pub critical: bool,
+    /// Stopped by the intended target's cover.
+    pub blocked: bool,
+}
+
 /// Something observable that happened in the battle.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GameEvent {
@@ -46,6 +63,23 @@ pub enum GameEvent {
         outcome: ShotOutcome,
         /// `true` for overwatch reaction fire.
         reaction: bool,
+    },
+    /// A ballistic attack: every projectile traced as a ray (see
+    /// `battle::ballistics`). Damage is applied right after this event.
+    Volley {
+        attacker: UnitId,
+        ability: AbilityId,
+        /// The unit aimed at.
+        target: UnitId,
+        /// Muzzle position: grid x, y and height in metres.
+        origin: [f32; 3],
+        /// Per-projectile hit chance against the target (for logs).
+        hit_chance: i32,
+        /// Overwatch / suppression reaction fire.
+        reaction: bool,
+        /// Suppressive fire (pins the target).
+        suppress: bool,
+        bullets: Vec<Bullet>,
     },
     /// A unit regained hit points.
     UnitHealed { unit: UnitId, amount: i32 },

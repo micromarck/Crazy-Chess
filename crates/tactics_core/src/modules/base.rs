@@ -176,18 +176,35 @@ fn register_abilities(rules: &mut Ruleset) {
     );
 }
 
+/// Weapons. Damage is **per round**: actions fire bursts (`burst` rounds,
+/// shotguns `pellets` per round), each traced as a bullet (see
+/// `battle::ballistics`). `spread` (degrees) is the gun's own scatter.
 fn register_weapons(rules: &mut Ruleset) {
     let w = |id: &str, name: &str| Weapon { id: id.into(), name: name.into(), ..Default::default() };
-    rules.add_weapon(Weapon { damage_min: 3, damage_max: 5, crit_chance: 10, clip_size: 4, ..w("rifle", "Assault Rifle") });
     rules.add_weapon(Weapon {
-        damage_min: 4,
-        damage_max: 7,
-        crit_chance: 20,
-        crit_bonus: 3,
+        damage_min: 1,
+        damage_max: 2,
+        crit_chance: 10,
+        crit_bonus: 1,
+        burst: 4,
+        clip_size: 24,
+        magazines: 3,
+        spread: 0.8,
+        ..w("rifle", "Assault Rifle")
+    });
+    rules.add_weapon(Weapon {
+        damage_min: 1,
+        damage_max: 1,
+        crit_chance: 15,
+        crit_bonus: 1,
         look: WeaponLook::Shotgun,
         optimal_range: 2.0,
         max_range: 10.0,
-        clip_size: 3,
+        burst: 1,
+        pellets: 8,
+        spread: 6.0,
+        clip_size: 6,
+        magazines: 3,
         ..w("shotgun", "Shotgun")
     });
     rules.add_weapon(Weapon {
@@ -197,28 +214,38 @@ fn register_weapons(rules: &mut Ruleset) {
         crit_bonus: 3,
         optimal_range: 14.0,
         max_range: 25.0,
-        clip_size: 3,
+        burst: 1,
+        spread: 0.1,
+        clip_size: 5,
+        magazines: 3,
         classes: vec!["sniper".into()],
         look: WeaponLook::Sniper,
         ..w("sniper_rifle", "Sniper Rifle")
     });
     rules.add_weapon(Weapon {
-        damage_min: 2,
-        damage_max: 4,
+        damage_min: 1,
+        damage_max: 2,
         crit_chance: 5,
         optimal_range: 5.0,
         max_range: 14.0,
-        clip_size: 3,
+        burst: 2,
+        spread: 1.0,
+        clip_size: 12,
+        magazines: 3,
         look: WeaponLook::Plasma,
         ..w("plasma_pistol", "Plasma Pistol")
     });
     rules.add_weapon(Weapon {
-        damage_min: 2,
-        damage_max: 4,
+        damage_min: 1,
+        damage_max: 1,
         crit_chance: 15,
+        crit_bonus: 1,
         optimal_range: 4.0,
         max_range: 14.0,
-        clip_size: 5,
+        burst: 5,
+        spread: 1.5,
+        clip_size: 30,
+        magazines: 3,
         look: WeaponLook::Smg,
         ..w("smg", "SMG")
     });
@@ -257,6 +284,7 @@ fn register_items(rules: &mut Ruleset) {
     };
     rules.add_item(util("scope", "Scope", "+10 aim.", StatModifiers { aim: 10, ..Default::default() }));
     rules.add_item(util("stims", "Combat Stims", "+2 mobility.", StatModifiers { mobility: 2, ..Default::default() }));
+    rules.add_item(util("ammo_pouch", "Ammo Pouch", "+2 spare magazines.", StatModifiers { magazines: 2, ..Default::default() }));
     rules.add_item(util("dog_tags", "Lucky Dog Tags", "+25 bravery: shrugs off fear.", StatModifiers { bravery: 25, ..Default::default() }));
 }
 

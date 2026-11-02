@@ -283,6 +283,13 @@ pub fn choose_action(battle: &Battle, id: UnitId, config: &AiConfig) -> Action {
         return action;
     }
     let sees_enemy = !battle.visible_enemies(id).is_empty();
+    // Machine gunners pin down the most dangerous enemy they can see when
+    // there's no good shot (and no friend in the way).
+    if sees_enemy
+        && let Some(a) = suppress_action(battle, unit, config)
+    {
+        return a;
+    }
     if sees_enemy {
         if let Some(a) = stance(|e| matches!(e, AbilityEffect::Overwatch(_))) {
             return a;
@@ -300,6 +307,24 @@ pub fn choose_action(battle: &Battle, id: UnitId, config: &AiConfig) -> Action {
     stance(|e| matches!(e, AbilityEffect::Overwatch(_)))
         .or_else(|| stance(|e| matches!(e, AbilityEffect::Defend { .. })))
         .unwrap_or(Action::Wait { unit: id })
+}
+
+/// Suppressive fire on the most dangerous visible, unsuppressed enemy.
+fn suppress_action(battle: &Battle, unit: &Unit, config: &AiConfig) -> Option<Action> {
+    let _ = config;
+    let def = abilities(battle, unit).find(|d| matches!(d.effect, AbilityEffect::Suppress(_)))?;
+    let mut targets: Vec<&Unit> = battle
+        .visible_enemies(unit.id)
+        .into_iter()
+        .filter_map(|e| battle.unit(e))
+        .filter(|e| e.status.suppressed_by.is_none())
+        .filter(|e| battle.units_in_line_of_fire(unit.pos, e.pos, unit.team).is_empty())
+        .collect();
+    targets.sort_by(|a, b| threat_of(battle, b).total_cmp(&threat_of(battle, a)).then(a.id.cmp(&b.id)));
+    targets
+        .into_iter()
+        .map(|t| Action::UseAbility { unit: unit.id, ability: def.id.clone(), target: Target::Unit(t.id) })
+        .find(|a| battle.validate(a).is_ok())
 }
 
 fn best_heal(battle: &Battle, unit: &Unit, config: &AiConfig) -> Option<Action> {
@@ -329,9 +354,8 @@ fn threat_of(battle: &Battle, unit: &Unit) -> f32 {
 fn target_value(battle: &Battle, v: &Unit, p: &crate::combat::ShotPreview, config: &AiConfig) -> f32 {
     let p_hit = p.hit_chance as f32 / 100.0;
     let mut value = p.expected_damage();
-    if p.damage.0 >= v.hp {
-        value += 10.0 * p_hit;
-    }
+    // Likely kills are worth a lot (the whole volley's expected damage).
+    value += 10.0 * (value / v.hp.max(1) as f32).min(1.0) * if value >= v.hp as f32 { 1.0 } else { 0.5 };
     let missing = 1.0 - v.hp as f32 / v.stats.max_hp.max(1) as f32;
     value + p_hit * (config.focus_fire_weight * missing + config.threat_weight * threat_of(battle, v))
 }
@@ -432,6 +456,14 @@ fn best_attack(battle: &Battle, unit: &Unit, config: &AiConfig) -> Option<(Actio
             }
             let Ok(previews) = battle.preview(unit.id, &def.id, target) else { continue };
             let mut score = 0.0;
+            // Bullets fly on: don't shoot through your own people.
+            if profile.is_ballistic()
+                && let Target::Unit(t) = target
+                && let Some(tp) = battle.unit(t).map(|t| t.pos)
+            {
+                let allies = battle.units_in_line_of_fire(unit.pos, tp, unit.team).len() as f32;
+                score -= allies * config.friendly_fire_weight * 3.0;
+            }
             let mut main_hit = 0;
             for (victim, p) in &previews {
                 let Some(v) = battle.unit(*victim) else { continue };

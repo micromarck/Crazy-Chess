@@ -76,6 +76,17 @@ pub struct Weapon {
     pub ammo: i32,
     /// Classes allowed to carry it in a loadout (empty = everyone).
     pub classes: Vec<String>,
+    /// Rounds fired per shot action (attacks may override with `rounds`).
+    pub burst: u32,
+    /// Projectiles per round (shotgun pellets).
+    pub pellets: u32,
+    /// Mechanical spread of each projectile, degrees (adds to aim error).
+    pub spread: f32,
+    /// Spare magazines carried into battle (each Reload uses one).
+    pub magazines: u32,
+    /// Spare magazines left (instance state: set from `magazines` on spawn).
+    #[cfg_attr(feature = "data", serde(skip))]
+    pub spare: u32,
     /// How it's drawn in the hand.
     pub look: WeaponLook,
     /// Model id (a `ModelDef`, e.g. a glTF) drawn at the `weapon` socket
@@ -97,6 +108,11 @@ impl Default for Weapon {
             clip_size: 4,
             ammo: 0,
             classes: Vec::new(),
+            burst: 1,
+            pellets: 1,
+            spread: 0.6,
+            magazines: 3,
+            spare: 0,
             look: WeaponLook::Rifle,
             model: None,
         }
@@ -167,6 +183,9 @@ pub struct UnitStatus {
     pub overwatch: Option<AbilityId>,
     /// Extra defence from a Defend ability (hunker) until the unit's next turn.
     pub defense_bonus: i32,
+    /// Pinned by suppressive fire: (suppressor, its ability). Aim penalty;
+    /// moving draws fire. Lasts until the suppressor's next turn.
+    pub suppressed_by: Option<(UnitId, AbilityId)>,
 }
 
 /// Behaviour state of an AI-controlled unit (mission mechanics).

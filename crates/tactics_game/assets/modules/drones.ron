@@ -37,12 +37,15 @@
         (
             id: "drone_laser",
             name: "Drone Laser",
-            damage_min: 2,
-            damage_max: 4,
+            damage_min: 1,
+            damage_max: 2,
             crit_chance: 10,
             optimal_range: 8.0,
             max_range: 16.0,
-            clip_size: 4,
+            burst: 3,         // rounds per shot (damage is per round)
+            spread: 0.4,      // degrees of scatter per round
+            clip_size: 18,
+            magazines: 4,     // spare power cells (Reload uses one)
             look: None,  // built into the drone: nothing held
         ),
     ],

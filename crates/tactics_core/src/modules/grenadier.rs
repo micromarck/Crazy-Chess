@@ -57,24 +57,34 @@ impl GameModule for GrenadierModule {
         rules.add_weapon(Weapon {
             id: "lmg".into(),
             name: "Light Machine Gun".into(),
-            damage_min: 3,
-            damage_max: 6,
+            damage_min: 1,
+            damage_max: 2,
             crit_chance: 5,
-            crit_bonus: 2,
+            crit_bonus: 1,
             optimal_range: 7.0,
             max_range: 16.0,
-            clip_size: 5,
-            ammo: 0,
-            classes: Vec::new(),
+            burst: 6,
+            spread: 1.6,
+            clip_size: 50,
+            magazines: 2,
             look: WeaponLook::Lmg,
-            model: None,
+            ..Default::default()
         });
+        // Suppressive fire: a long, loose burst that pins the target.
+        rules.add_ability(
+            AbilityDef::new("suppress", "Suppress")
+                .with_description("Hose the target with a 12-round burst (-20 aim; bullets hit anything in the way). It is pinned: -25 aim, frightened, and if it moves you fire again. Ends the turn.")
+                .with_cost(ApCost::EndsTurn)
+                .with_ammo_cost(1)
+                .with_targeting(Targeting::Enemy, AbilityRange::Weapon)
+                .with_effect(AbilityEffect::Suppress(AttackProfile { accuracy_bonus: -20, rounds: Some(12), ..Default::default() })),
+        );
         rules.add_class(UnitClass {
             id: "grenadier".into(),
             name: "Grenadier".into(),
             stats: UnitStats { max_hp: 9, mobility: 11, aim: 65, ..Default::default() },
             weapon: "lmg".into(),
-            abilities: ["shoot", "frag_grenade", "overwatch", "hunker", "reload"]
+            abilities: ["shoot", "suppress", "frag_grenade", "overwatch", "hunker", "reload"]
                 .map(AbilityId::new)
                 .to_vec(),
             model: "soldier".into(),
@@ -128,6 +138,13 @@ impl GameModule for GrenadierModule {
             camera: Some("explosion_cam".into()),
             projectile: ProjectileStyle::Arc,
             windup: 0.45,
+            ..Default::default()
+        });
+        rules.add_presentation(AbilityPresentation {
+            ability: "suppress".into(),
+            animation: Some("overwatch".into()),
+            projectile: ProjectileStyle::Tracer,
+            windup: 0.2,
             ..Default::default()
         });
         rules.add_presentation(AbilityPresentation {
