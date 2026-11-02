@@ -1,0 +1,9 @@
+<!--
+  Mission index: lists the mission files in this folder (the web build can't
+  list folders, so they're named here). `start` is the mission that begins
+  when the game launches. See MISSIONS.md for the mission file format.
+-->
+<missions start="depot">
+  <mission file="depot.mission.xml"/>
+  <mission file="rooftops.mission.xml"/>
+</missions>

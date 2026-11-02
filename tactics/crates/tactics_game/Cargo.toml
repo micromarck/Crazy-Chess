@@ -1,0 +1,53 @@
+[package]
+name = "tactics_game"
+description = "Bevy 3D frontend for tactics_core: rendering, camera, input, animation and HUD."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+# The binary target (desktop + web via trunk) is src/main.rs.
+default-run = "tactics_game"
+
+[lib]
+# Distinct from the binary name so the wasm/cdylib outputs don't collide.
+# Android loads it as libtactics.so.
+name = "tactics"
+# `cdylib` is what Android loads (libtactics_game.so); `rlib` is used by main.rs.
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+tactics_core.workspace = true
+# "3d" = renderer, PBR, picking, window/input; "ui" = bevy_ui + widgets.
+# Audio is left out to avoid the ALSA dependency on Linux; add "audio" when needed.
+bevy = { workspace = true, features = ["3d", "ui"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Browser integration (timers, canvas, wasm-friendly platform shims).
+bevy = { workspace = true, features = ["3d", "ui", "web"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+# NativeActivity needs no Java/Kotlin glue, so `cargo apk` can package it directly.
+# Switch to "android-game-activity" if you move to a Gradle project.
+bevy = { workspace = true, features = ["3d", "ui", "android-native-activity"] }
+
+# ---------------------------------------------------------------------------
+# Android packaging metadata (read by `cargo apk`; see README.md).
+# ---------------------------------------------------------------------------
+[package.metadata.android]
+package = "com.example.tactics"
+apk_name = "Tactics"
+build_targets = ["aarch64-linux-android"]
+resources = "android/res"
+assets = "assets"
+
+[package.metadata.android.sdk]
+min_sdk_version = 26
+target_sdk_version = 34
+
+[package.metadata.android.application]
+label = "Tactics"
+icon = "@mipmap/ic_launcher"
+
+[package.metadata.android.application.activity]
+orientation = "landscape"
+config_changes = "orientation|screenSize|keyboardHidden"

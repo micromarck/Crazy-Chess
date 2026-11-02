@@ -1,0 +1,6 @@
+# Extra flags per target.
+
+[target.wasm32-unknown-unknown]
+# `getrandom` (pulled in by some Bevy dependencies) needs to be told to use the
+# browser's crypto API on wasm32-unknown-unknown.
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

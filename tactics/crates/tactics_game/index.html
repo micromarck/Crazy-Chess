@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>Tactics</title>
+    <!-- Trunk: build the `tactics_game` binary for wasm32 (wasm-opt shrinks the release output). -->
+    <link data-trunk rel="rust" data-bin="tactics_game" data-wasm-opt="z" />
+    <!-- Ship the assets folder alongside the wasm. -->
+    <link data-trunk rel="copy-dir" href="assets" />
+    <style>
+      html, body { margin: 0; height: 100%; background: #0f1217; overflow: hidden; }
+      /* Bevy attaches its <canvas> to <body>; fit_canvas_to_parent makes it fill it. */
+      canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
+    </style>
+  </head>
+  <body></body>
+</html>

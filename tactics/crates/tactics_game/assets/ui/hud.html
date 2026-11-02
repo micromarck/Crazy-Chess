@@ -1,0 +1,210 @@
+<!--
+  Battle HUD layout.
+
+  This file is rendered natively by the game (no browser), using a subset of
+  HTML + CSS. See UI.md for every supported tag, property, binding and command.
+
+  Customise it:
+    * desktop: copy it to `ui/hud.html` next to where you run the game, edit,
+      and press F6 in game to reload instantly;
+    * any platform: ship it in a module (`ui_layouts: [(id: "hud", html: ...)]`).
+
+  Bindings:  {{ path }}            live text, e.g. {{ unit.hp }}
+             data-if="expr"        show while true (!x, x == v, x != v)
+             data-for="a in list"  repeat the CHILDREN for every list item
+             data-command="..."    what a click does (end_turn, ability:<id>, ...)
+-->
+<style>
+  /* ---- shared ------------------------------------------------------- */
+  .panel {
+    position: absolute;
+    background: #0d0f14d9;
+    border: 1px solid #ffffff14;
+    border-radius: 6px;
+    padding: 10px;
+    color: #ebedf2;
+    font-size: 14px;
+  }
+  .dim { color: #9aa1ad; }
+  .title { font-size: 20px; }
+
+  button {
+    background: #29303d;
+    border-radius: 6px;
+    margin-left: 6px;
+    padding: 6px 10px;
+    min-width: 88px;
+    height: 56px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #ebedf2;
+    font-size: 15px;
+  }
+  button:hover { background: #3d4a5c; }
+  button:active { background: #4d8c66; }
+  button .key { font-size: 11px; color: #9aa1ad; }
+
+  .small-button { min-width: 64px; height: 42px; padding: 2px 8px; font-size: 13px; margin-left: 0px; margin-right: 6px; }
+
+  /* Ability states come from the data: ready | active | disabled */
+  button.active { background: #4d8c66; }
+  button.disabled { background: #1c1c1f; color: #6b6f78; }
+  button.disabled:hover { background: #24242a; }
+
+  /* ---- panels --------------------------------------------------------- */
+  #turn { top: 12px; left: 12px; }
+  #tools { position: absolute; top: 84px; left: 12px; flex-direction: row; }
+  #log { top: 12px; right: 12px; max-width: 440px; font-size: 13px; color: #9aa1ad; }
+  #unit { bottom: 80px; left: 12px; min-width: 230px; }
+  #hover { bottom: 80px; right: 12px; max-width: 380px; }
+
+  #roster { top: 140px; left: 12px; padding: 6px; }
+  #missions { top: 140px; left: 190px; padding: 6px; max-width: 360px; }
+  .mission {
+    height: auto;
+    min-width: 320px;
+    max-width: 340px;
+    margin-left: 0px;
+    margin-bottom: 4px;
+    align-items: flex-start;
+    font-size: 14px;
+  }
+  .mission.current { background: #2f5e44; }
+  .mission .key { max-width: 320px; }
+  .member {
+    flex-direction: column;
+    padding: 4px 6px;
+    margin-bottom: 4px;
+    border-radius: 4px;
+    min-width: 150px;
+    height: auto;
+    align-items: flex-start;
+    margin-left: 0px;
+    font-size: 13px;
+  }
+  .member.selected { background: #2f5e44; }
+  .member.done { color: #7a808c; }
+  .hp-track { width: 140px; height: 5px; background: #00000080; margin-top: 3px; }
+  .hp-fill { height: 5px; background: #3f8cf2; }
+
+  #targeting {
+    position: absolute;
+    top: 12px;
+    left: 35%;
+    right: 35%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    background: #4d8c66e6;
+    border-radius: 6px;
+    padding: 6px 10px;
+  }
+
+  #actions {
+    position: absolute;
+    bottom: 12px;
+    left: 6px;
+    right: 12px;
+    flex-direction: row;
+    flex-wrap: wrap-reverse;
+    justify-content: flex-end;
+  }
+  #abilities { flex-direction: row; }
+
+  #game-over {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    align-items: center;
+  }
+  #game-over .panel { position: relative; align-items: center; padding: 24px; }
+  #game-over h1 { font-size: 32px; margin-bottom: 16px; }
+</style>
+
+<!-- Turn / round -->
+<div id="turn" class="panel">
+  <span class="dim" style="font-size: 12px">{{ mission.name }}</span>
+  <span class="title">Round {{ turn.round }} - {{ turn.label }}</span>
+  <span>Squad {{ squad.alive }}  vs  Hostiles {{ enemies.alive }}</span>
+</div>
+
+<!-- Tool buttons -->
+<div id="tools">
+  <button class="small-button" data-command="editor">Edit<span class="key">F1</span></button>
+  <button class="small-button" data-command="toggle:missions">Missions<span class="key">list</span></button>
+  <button class="small-button" data-command="cinematics">Cinema<span class="key" data-if="cinematics">on</span><span class="key" data-if="!cinematics">off</span></button>
+</div>
+
+<!-- Combat log: one line per entry -->
+<div id="log" class="panel" data-for="line in log">
+  <span>{{ line.text }}</span>
+</div>
+
+<!-- Mission list (from assets/missions/index.xml); toggled by the Missions button -->
+<div id="missions" class="panel" data-if="ui.missions">
+  <span class="dim" style="font-size: 11px; margin-bottom: 4px">MISSIONS</span>
+  <div data-for="m in missions">
+    <button class="mission {{ m.state }}" data-command="mission:{{ m.id }}">
+      <span>{{ m.name }}</span>
+      <span class="key">{{ m.description }}</span>
+    </button>
+  </div>
+  <button class="mission" data-command="skirmish"><span>Random skirmish</span><span class="key">procedural map</span></button>
+</div>
+
+<!-- Squad roster: click a soldier to select them -->
+<div id="roster" class="panel" data-if="!editor.open">
+  <span class="dim" style="font-size: 11px; margin-bottom: 4px">SQUAD</span>
+  <div data-for="m in squad">
+    <button class="member {{ m.state }}" data-command="select:{{ m.id }}">
+      <span>{{ m.name }}  {{ m.hp }}/{{ m.max_hp }}</span>
+      <div class="hp-track"><div class="hp-fill" style="width: {{ m.hp_percent }}%"></div></div>
+    </button>
+  </div>
+</div>
+
+<!-- Selected unit -->
+<div id="unit" class="panel" data-if="!editor.open">
+  <div data-if="unit.selected">
+    <span class="title" style="font-size: 16px">{{ unit.name }}</span>
+    <span class="dim">{{ unit.class }}</span>
+    <span>HP {{ unit.hp }}/{{ unit.max_hp }}    AP {{ unit.ap }}/{{ unit.max_ap }}</span>
+    <span>{{ unit.weapon }}  ammo {{ unit.ammo }}/{{ unit.clip }}</span>
+    <span class="dim">Aim {{ unit.aim }}  Mobility {{ unit.mobility }}</span>
+    <span style="color: #f2d24a">{{ unit.status }}</span>
+  </div>
+  <span data-if="!unit.selected">No unit selected - tap a soldier</span>
+</div>
+
+<!-- Odds / move info for whatever is under the pointer -->
+<div id="hover" class="panel">
+  <span>{{ hover.info }}</span>
+</div>
+
+<!-- Targeting banner -->
+<div id="targeting" data-if="targeting">
+  <span style="margin-right: 10px">{{ targeting.name }}: pick a target</span>
+  <button class="small-button" data-command="cancel">Cancel<span class="key">Esc</span></button>
+</div>
+
+<!-- Ability bar (built from the selected unit's abilities) + turn buttons -->
+<div id="actions">
+  <div id="abilities" data-for="a in abilities">
+    <button class="ability {{ a.state }}" data-command="ability:{{ a.id }}">
+      {{ a.name }}
+      <span class="key">{{ a.key }} | {{ a.cost }} {{ a.charges }} {{ a.cooldown }}</span>
+    </button>
+  </div>
+  <button data-command="next_unit">Next<span class="key">Tab</span></button>
+  <button data-command="end_turn">End Turn<span class="key">Enter</span></button>
+</div>
+
+<!-- Victory / defeat -->
+<div id="game-over" data-if="battle.over">
+  <div class="panel">
+    <h1>{{ battle.result }}</h1>
+    <button data-command="restart">New Battle<span class="key">F5</span></button>
+  </div>
+</div>
