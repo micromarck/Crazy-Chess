@@ -80,6 +80,7 @@ TBSium/
     │       │                  + props, script hooks, flags (world.rs)
     │       │                  + pods, stealth, doors, fog, goals (stealth.rs)
     │       │                  + fear triggers (morale.rs)
+    │       │                  + traced bullets, suppression (ballistics.rs)
     │       ├── mission.rs     XML mission format
     │       ├── script.rs      Rhai scripting sandbox
     │       ├── ai.rs          utility AI: threat, flanks, plans, fear moods
@@ -145,6 +146,13 @@ TBSium/
 * 2 action points per unit; move (1 AP) or dash (2 AP), blue/yellow range overlay.
 * Directional half/full cover, flanking (+crit), cover shields on hover.
 * Hit chance = aim − defence − cover − hunker ± range falloff, shown with a full breakdown.
+* Shots are bullets: every round of a burst (and every shotgun pellet) is a ray
+  fired with an aim error from the hit chance; rays stop on walls and props
+  and hit **whoever is in the line of fire**, friend or foe. Cover soaks a
+  share of the rounds. Machine guns can **suppress** (pin a target: −aim,
+  +fear, reaction burst if it moves).
+* Magazines: bursts use 4–6 rounds of a larger clip, reloads use up spare
+  magazines (an ammo pouch adds one).
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).

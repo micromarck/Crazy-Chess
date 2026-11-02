@@ -86,6 +86,7 @@ pub fn collect_ui_data(
         v.set("unit.weapon", &u.weapon.name);
         v.set("unit.ammo", u.weapon.ammo);
         v.set("unit.clip", u.weapon.clip_size);
+        v.set("unit.mags", u.weapon.spare);
         v.set("unit.aim", u.stats.aim);
         v.set("unit.mobility", u.stats.mobility / 2);
         v.set("unit.defense", u.stats.defense);

@@ -66,6 +66,7 @@ enum Stop {
 impl Battle {
     /// Fires a ballistic volley from `attacker` at `target` and applies the
     /// results. `rounds_cap` limits rounds (ammo left); returns rounds fired.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn fire_volley(
         &mut self,
         attacker: UnitId,

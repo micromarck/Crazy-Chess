@@ -582,7 +582,8 @@ fn dress_gltf(
         if nodes.iter().all(|(e, _)| globals.get(*e).is_ok_and(|g| *g == GlobalTransform::IDENTITY)) {
             continue;
         }
-        commands.entity(scene).insert(Dressed);
+        // `try_`: the scene may be despawned this frame (battle reset).
+        commands.entity(scene).try_insert(Dressed);
         let outfit = Outfit::of(unit, state.battle.rules());
         let mut sockets = Vec::new();
         for (def, node) in bind_sockets(&model.def.sockets, &nodes) {
@@ -610,9 +611,14 @@ fn dress_gltf(
 /// Every frame: undo the node's scale and turn the attachment to face the
 /// unit's forward (plus the socket's own rotation), so a gun in a glTF hand
 /// is the right size and points where the soldier looks.
-fn fix_gltf_sockets(mut fixes: Query<(&SocketFix, &mut Transform)>, globals: Query<&GlobalTransform>) {
-    for (fix, mut tr) in &mut fixes {
-        let (Ok(node), Ok(unit)) = (globals.get(fix.node), globals.get(fix.unit_root)) else { continue };
+fn fix_gltf_sockets(mut commands: Commands, mut fixes: Query<(Entity, &SocketFix, &mut Transform)>, globals: Query<&GlobalTransform>) {
+    for (holder, fix, mut tr) in &mut fixes {
+        let (Ok(node), Ok(unit)) = (globals.get(fix.node), globals.get(fix.unit_root)) else {
+            // Its model went away while it was being dressed: don't leave
+            // the gear floating at the origin.
+            commands.entity(holder).try_despawn();
+            continue;
+        };
         let (node_scale, node_rot, _) = node.to_scale_rotation_translation();
         let (_, unit_rot, _) = unit.to_scale_rotation_translation();
         let inv = node_rot.inverse();

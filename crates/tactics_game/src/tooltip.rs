@@ -151,7 +151,7 @@ pub fn tooltip_text(state: &BattleState, selection: &Selection) -> String {
                     if def.effect.attack_profile().is_some_and(|a| a.area_radius > 0.0) {
                         format!("{} {}-{}", u.name, p.damage.0, p.damage.1)
                     } else {
-                        format!("{}%  {}-{} dmg  crit {}%", p.hit_chance, p.damage.0, p.damage.1, p.crit_chance)
+                        format!("{}  {}-{} dmg  crit {}%{}", odds_text(p), p.damage.0, p.damage.1, p.crit_chance, block_text(p))
                     }
                 })
                 .collect();
@@ -200,6 +200,9 @@ pub fn tooltip_text(state: &BattleState, selection: &Selection) -> String {
                 if enemy.status.overwatch.is_some() {
                     notes.push("on overwatch");
                 }
+                if enemy.status.suppressed_by.is_some() {
+                    notes.push("suppressed");
+                }
                 if enemy.ai.dormant {
                     notes.push("unaware");
                 }
@@ -209,7 +212,13 @@ pub fn tooltip_text(state: &BattleState, selection: &Selection) -> String {
                 }
                 let notes = if notes.is_empty() { String::new() } else { format!("\n{}", notes.join(", ")) };
                 match usable {
-                    Ok(()) => format!("{}%  {}-{} dmg  ({cover}){notes}\nClick to aim", p.hit_chance, p.damage.0, p.damage.1),
+                    Ok(()) => format!(
+                        "{}  {}-{} dmg  ({cover}{}){notes}\nClick to aim",
+                        odds_text(p),
+                        p.damage.0,
+                        p.damage.1,
+                        block_text(p)
+                    ),
                     Err(e) => format!("{}: {e}{notes}", enemy.name),
                 }
             }
@@ -416,4 +425,14 @@ fn zone_labels(
             Pickable::IGNORE,
         ));
     }
+}
+
+/// "4 rounds x 38%" for bursts and pellets, "38%" for single shots.
+fn odds_text(p: &tactics_core::combat::ShotPreview) -> String {
+    if p.rounds > 1 { format!("{} rounds x {}%", p.rounds, p.hit_chance) } else { format!("{}%", p.hit_chance) }
+}
+
+/// ", cover stops 30%" when cover can soak rounds that would hit.
+fn block_text(p: &tactics_core::combat::ShotPreview) -> String {
+    if p.cover_block > 0 { format!(", stops {}%", p.cover_block) } else { String::new() }
 }

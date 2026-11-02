@@ -357,6 +357,51 @@ fn draw_tracer(mut gizmos: Gizmos, playback: Res<Playback>) {
             gizmos.linestrip((0..=12).map(|i| at(k * i as f32 / 12.0)), theme::EXPLOSION.with_alpha(0.6));
             gizmos.sphere(Isometry3d::from_translation(at(k)), 0.09, theme::TRACER);
         }
+        Some(Anim::Volley { muzzle, bullets, style, interval, per_round, t }) => {
+            if *t < AIM_TIME {
+                // Aim line to where the first round is going.
+                if let Some(b) = bullets.first() {
+                    gizmos.line(*muzzle, b.end, theme::TARGET.with_alpha(0.25));
+                }
+                return;
+            }
+            for (i, b) in bullets.iter().enumerate() {
+                let (fire, land) = b.timing(i, *per_round, *interval, *muzzle);
+                if *t < fire {
+                    continue;
+                }
+                let fly = (land - fire).max(1e-3);
+                let k = ((*t - fire) / fly).min(1.0);
+                match style {
+                    ProjectileStyle::Beam => {
+                        // A beam snaps out and lingers briefly.
+                        let fade = 1.0 - ((*t - land) / 0.25).clamp(0.0, 1.0);
+                        if fade <= 0.0 {
+                            continue;
+                        }
+                        let head = muzzle.lerp(b.end, k);
+                        for (j, off) in [Vec3::ZERO, Vec3::Y * 0.025, -Vec3::Y * 0.025, Vec3::X * 0.025].iter().enumerate() {
+                            let c = if j == 0 { Color::WHITE } else { theme::BEAM };
+                            gizmos.line(*muzzle + *off, head + *off, c.with_alpha(fade));
+                        }
+                    }
+                    _ => {
+                        if k >= 1.0 {
+                            // Impact spark for a moment after landing.
+                            let age = *t - land;
+                            if age < 0.12 {
+                                let c = if b.hit.is_some() { theme::TARGET } else { theme::TRACER };
+                                gizmos.sphere(Isometry3d::from_translation(b.end), 0.05 + age, c.with_alpha(1.0 - age / 0.12));
+                            }
+                            continue;
+                        }
+                        let head = muzzle.lerp(b.end, k);
+                        let tail = muzzle.lerp(b.end, (k - 0.3).max(0.0));
+                        gizmos.line(tail, head, theme::TRACER);
+                    }
+                }
+            }
+        }
         Some(Anim::Shot { shooter, target, outcome, style, t, .. }) => {
             let mut end = *target;
             if matches!(outcome, ShotOutcome::Miss) {

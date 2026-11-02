@@ -277,7 +277,8 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `Attack(profile)` | `AttackProfile` | Single target, or area if `area_radius > 0`. |
 | `Overwatch(profile)` | `AttackProfile` | Arms a reaction shot using this profile. |
 | `Defend(defense_bonus: n)` | int | Hunker: +defence until your next turn. |
-| `Reload` | — | Refills the magazine. |
+| `Suppress(profile)` | `AttackProfile` | Fires a long burst (`rounds`) at the target and pins it: −`combat.suppression_aim` aim and +`combat.suppression_fear` fear, and the gunner fires again if it moves. Lasts until the gunner's next turn. |
+| `Reload` | — | Refills the magazine from a spare one (fails with no spares left). |
 | `Heal(amount: n)` | int | Restores HP, never above max. |
 
 ### Attack stats (`AttackProfile`)
@@ -295,6 +296,7 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `damage` | `Weapon` | Or `Fixed(min: 2, max: 4)`. |
 | `damage_bonus` | `0` | Flat damage added on hit. |
 | `area_radius` | `0.0` | > 0 = hits every unit within that many tiles (friendly fire!). Cover is checked from the blast centre. |
+| `rounds` | weapon `burst` | Rounds fired per use (e.g. `Some(12)` for suppression). |
 
 Hit chance:
 
@@ -307,11 +309,22 @@ hit  = (base_accuracy or unit aim) + accuracy_bonus
 crit = weapon crit (weapon damage only) + crit_bonus + flank_crit_bonus (if flanked)
 ```
 
+**Shots are bullets.** Single-target attacks that can miss are *ballistic*:
+the hit chance above (before cover) sets how wide the shooter's aim error
+is, and every round (`burst`) and pellet (`pellets`) is a ray fired with
+that error plus the weapon's `spread` (degrees). Rays are traced through the
+map: walls, props and **any unit in the way — friend or foe —** stop them;
+the target's cover stops a share of the rounds that would hit
+(`stops n%` in the tooltip). Damage is per round, so a 4-round burst of
+1–2 damage does 0–8. The tooltip shows "4 rounds x 38%" (chance per round).
+The result is the `Volley` event, one `Bullet` per round. Area attacks and
+`can_miss: false` attacks still resolve as before (`AttackResolved`).
+
 ### Other content
 
 | Section | Type | Key fields |
 |---|---|---|
-| `weapons` | `Weapon` | `id, name, damage_min, damage_max, crit_chance, crit_bonus, optimal_range, max_range, clip_size, classes` (who may carry it; empty = anyone), `look` (`Rifle`, `Shotgun`, `Sniper`, `Smg`, `Lmg`, `Pistol`, `Plasma`, `None`), `model` (custom held model id) |
+| `weapons` | `Weapon` | `id, name, damage_min, damage_max, crit_chance, crit_bonus, optimal_range, max_range, clip_size, burst` (rounds per shot, 1), `pellets` (rays per round, 1; shotguns 8), `spread` (extra degrees of scatter, 0.6), `magazines` (spare magazines, 3), `classes` (who may carry it; empty = anyone), `look` (`Rifle`, `Shotgun`, `Sniper`, `Smg`, `Lmg`, `Pistol`, `Plasma`, `None`), `model` (custom held model id) |
 | `classes` | `UnitClass` | `id, name, stats: (max_hp, mobility, aim, defense, sight, climb, bravery), weapon, abilities: [...], model, fearless, loadout` |
 | `squads` | `SquadDef` | `id` (`"player"` / `"enemy"` are deployed), `members: [(class, name, loadout, gear, appearance)]` (the Barracks roster replaces `"player"` in game) |
 | `items` | `ItemDef` | `id, name, description, slot (Armor / Utility), stats: (max_hp, mobility, aim, defense, sight, bravery), abilities, charges, classes, model, socket` |
