@@ -71,10 +71,16 @@ fn draw_movement(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleSta
     // Path preview + cover shields at the hovered destination.
     let Some(hover) = selection.hovered else { return };
     if let Some(path) = range.path_to(hover) {
-        let points = std::iter::once(unit.pos)
-            .chain(path)
-            .map(|p| tile_top(battle.map(), p) + Vec3::Y * 0.08);
-        gizmos.linestrip(points, theme::HOVER);
+        // Blue while the soldier could still act afterwards, yellow for the dash.
+        let mut prev = unit.pos;
+        for &step in &path {
+            let ap = battle.move_cost_ap(id, range.cost(step).unwrap_or(0));
+            let color = if ap < unit.action_points { theme::MOVE_NEAR } else { theme::MOVE_FAR };
+            let lift = Vec3::Y * 0.08;
+            gizmos.line(tile_top(battle.map(), prev) + lift, tile_top(battle.map(), step) + lift, color);
+            prev = step;
+        }
+        ground_circle(&mut gizmos, tile_top(battle.map(), hover), 0.3, theme::HOVER);
         draw_cover_shields(&mut gizmos, battle.map(), hover);
         // Look-ahead: who you could shoot from there (gold = you'd flank
         // them) and overwatchers that would fire during the walk.

@@ -187,6 +187,7 @@ pub fn collect_ui_data(
     v.set("settings.edge_scroll", on(settings.edge_scroll));
     v.set("settings.invert_orbit", on(settings.invert_orbit));
     v.set("settings.action_camera", on(settings.action_camera));
+    v.set("settings.difficulty", settings.difficulty_name());
 
     // Misc toggles.
     v.set("editor.open", bool_str(editor.open));

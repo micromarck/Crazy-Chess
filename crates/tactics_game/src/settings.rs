@@ -11,6 +11,7 @@
 //! | `edge_scroll` | on/off | pan when the mouse touches the window edge |
 //! | `invert_orbit` | on/off | flip right-drag tilt direction |
 //! | `action_camera` | on/off | frame shooter and target on attacks |
+//! | `difficulty` | easy, normal, hard | enemy AI: easy = no threat reading, flanking or focus fire; hard = braver and bolder |
 
 use bevy::prelude::*;
 
@@ -34,11 +35,13 @@ pub struct GameSettings {
     pub edge_scroll: bool,
     pub invert_orbit: bool,
     pub action_camera: bool,
+    /// 0 = easy, 1 = normal, 2 = hard.
+    pub difficulty: u8,
 }
 
 impl Default for GameSettings {
     fn default() -> Self {
-        Self { anim_speed: 1.0, camera_speed: 1.0, edge_scroll: false, invert_orbit: false, action_camera: true }
+        Self { anim_speed: 1.0, camera_speed: 1.0, edge_scroll: false, invert_orbit: false, action_camera: true, difficulty: 1 }
     }
 }
 
@@ -75,6 +78,10 @@ impl GameSettings {
                 self.action_camera = !self.action_camera;
                 format!("Action camera {}", on_off(self.action_camera))
             }
+            "difficulty" => {
+                self.difficulty = (self.difficulty + 1) % 3;
+                format!("AI difficulty: {}", self.difficulty_name())
+            }
             _ => return None,
         };
         self.save();
@@ -83,9 +90,36 @@ impl GameSettings {
 
     pub fn to_text(&self) -> String {
         format!(
-            "anim_speed = {}\ncamera_speed = {}\nedge_scroll = {}\ninvert_orbit = {}\naction_camera = {}\n",
-            self.anim_speed, self.camera_speed, self.edge_scroll, self.invert_orbit, self.action_camera
+            "anim_speed = {}\ncamera_speed = {}\nedge_scroll = {}\ninvert_orbit = {}\naction_camera = {}\ndifficulty = {}\n",
+            self.anim_speed, self.camera_speed, self.edge_scroll, self.invert_orbit, self.action_camera, self.difficulty
         )
+    }
+
+    pub fn difficulty_name(&self) -> &'static str {
+        ["Easy", "Normal", "Hard"][self.difficulty.min(2) as usize]
+    }
+
+    /// The enemy AI tuning for the chosen difficulty, starting from `base`.
+    pub fn ai_config(&self, base: tactics_core::ai::AiConfig) -> tactics_core::ai::AiConfig {
+        match self.difficulty {
+            0 => tactics_core::ai::AiConfig {
+                danger_weight: 0.0,
+                flank_bonus: 0.0,
+                focus_fire_weight: 0.0,
+                threat_weight: 0.0,
+                cluster_penalty: 0.0,
+                shoot_threshold: base.shoot_threshold + 5,
+                ..base
+            },
+            2 => tactics_core::ai::AiConfig {
+                fear_response: base.fear_response * 0.5,
+                confident_below: base.confident_below + 25,
+                shoot_threshold: base.shoot_threshold - 5,
+                flank_bonus: base.flank_bonus * 1.5,
+                ..base
+            },
+            _ => base,
+        }
     }
 
     /// Parses `key = value` lines; unknown or bad lines are ignored.
@@ -102,6 +136,7 @@ impl GameSettings {
                 "edge_scroll" => s.edge_scroll = b.unwrap_or(s.edge_scroll),
                 "invert_orbit" => s.invert_orbit = b.unwrap_or(s.invert_orbit),
                 "action_camera" => s.action_camera = b.unwrap_or(s.action_camera),
+                "difficulty" => s.difficulty = v.parse::<u8>().ok().filter(|d| *d <= 2).unwrap_or(s.difficulty),
                 _ => {}
             }
         }

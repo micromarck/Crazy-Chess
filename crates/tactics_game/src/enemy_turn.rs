@@ -43,6 +43,7 @@ fn enemy_think(
     mut state: ResMut<BattleState>,
     mut playback: ResMut<Playback>,
     director: Res<CameraDirector>,
+    settings: Res<crate::settings::GameSettings>,
     mut rig: Single<&mut CameraRig>,
 ) {
     if playback.is_busy() || director.is_active() || state.battle.is_over() || state.battle.active_team() != Team::Enemy {
@@ -51,6 +52,7 @@ fn enemy_think(
     }
     // Modules can retune the AI by registering an AI profile called "default".
     let config = state.battle.rules().ai_profile("default").map_or(brain.config, |p| p.config);
+    let config = settings.ai_config(config);
     let action = ai::next_team_action(&state.battle, &config);
     let actor = action.actor().and_then(|id| state.battle.unit(id));
     let seen = actor.is_some_and(|u| state.battle.is_revealed(u.id));
