@@ -87,6 +87,42 @@ fn spawn_widgets(mut commands: Commands) {
         ));
 }
 
+/// What a soldier would face after moving to `to`.
+#[derive(Debug, Default, Clone)]
+pub struct MoveIntel {
+    /// Revealed enemies it could shoot from there.
+    pub targets: Vec<UnitId>,
+    /// Of those, the ones it would flank (they have cover, but not facing it).
+    pub flanked: Vec<UnitId>,
+    /// Enemies on overwatch that would get a shot during the walk.
+    pub overwatchers: Vec<UnitId>,
+}
+
+/// Looks ahead at a move: targets and flanks from the destination, and
+/// overwatch reaction fire along the way.
+pub fn move_intel(battle: &Battle, unit: &Unit, to: GridPos, path: &[GridPos]) -> MoveIntel {
+    use tactics_core::visibility::has_line_of_sight;
+    let map = battle.map();
+    let mut intel = MoveIntel::default();
+    let reach = unit.weapon.max_range.min(unit.stats.sight);
+    for e in battle.living(unit.team.opponent()).filter(|e| battle.is_revealed(e.id)) {
+        if to.distance(e.pos) <= reach && has_line_of_sight(map, to, e.pos) {
+            intel.targets.push(e.id);
+            let c = tactics_core::cover::cover_against(map, e.pos, to);
+            if c.flanked && best_cover_at(map, e.pos) != CoverLevel::None {
+                intel.flanked.push(e.id);
+            }
+        }
+        if let Some(ow) = e.status.overwatch.as_ref().and_then(|a| battle.ability(a)) {
+            let r = battle.ability_range(e, ow).min(e.stats.sight);
+            if e.weapon.ammo > 0 && path.iter().any(|p| e.pos.distance(*p) <= r && has_line_of_sight(map, e.pos, *p)) {
+                intel.overwatchers.push(e.id);
+            }
+        }
+    }
+    intel
+}
+
 /// The tooltip text for the current pointer position (empty = hide).
 pub fn tooltip_text(state: &BattleState, selection: &Selection) -> String {
     let b = &state.battle;
@@ -169,7 +205,18 @@ pub fn tooltip_text(state: &BattleState, selection: &Selection) -> String {
         };
         let height = b.map().elevation(hover);
         let high = if height > b.map().elevation(unit.pos) { "  high ground" } else { "" };
-        return format!("{kind}  {ap} AP  {cover}{high}");
+        let path = selection.range.as_ref().and_then(|r| r.path_to(hover)).unwrap_or_default();
+        let intel = move_intel(b, unit, hover, &path);
+        let mut lines = vec![format!("{kind}  {ap} AP  {cover}{high}")];
+        match (intel.targets.len(), intel.flanked.len()) {
+            (0, _) => {}
+            (n, 0) => lines.push(format!("{n} target{} in sight", if n == 1 { "" } else { "s" })),
+            (n, f) => lines.push(format!("{n} target{} in sight, {f} FLANKED", if n == 1 { "" } else { "s" })),
+        }
+        if !intel.overwatchers.is_empty() {
+            lines.push(format!("! Overwatch: {} shot{} on the way", intel.overwatchers.len(), if intel.overwatchers.len() == 1 { "" } else { "s" }));
+        }
+        return lines.join("\n");
     }
     String::new()
 }

@@ -32,6 +32,7 @@
 //! | Esc, right-click | cancel aim / targeting |
 //! | hold Shift | fast-forward animations (x3) |
 //! | F5 | restart the mission |
+//! | H | controls cheat sheet |
 
 use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
@@ -102,8 +103,14 @@ fn keyboard_shortcuts(
     drag: Res<crate::camera::MouseDrag>,
     director: Res<CameraDirector>,
     mut virt: ResMut<Time<Virtual>>,
+    mut flags: ResMut<crate::html_ui::UiFlags>,
     mut commands: MessageWriter<PlayerCommand>,
 ) {
+    // H / F10: controls cheat sheet.
+    if keys.any_just_pressed([KeyCode::KeyH, KeyCode::F10]) {
+        let f = flags.0.entry("help".into()).or_insert(false);
+        *f = !*f;
+    }
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let bindings = [
         (KeyCode::Tab, if shift { PlayerCommand::PreviousUnit } else { PlayerCommand::NextUnit }),

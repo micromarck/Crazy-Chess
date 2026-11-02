@@ -74,6 +74,27 @@ fn draw_movement(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Sel
             .map(|p| tile_top(battle.map(), p) + Vec3::Y * 0.08);
         gizmos.linestrip(points, theme::HOVER);
         draw_cover_shields(&mut gizmos, battle.map(), hover);
+        // Look-ahead: who you could shoot from there (gold = you'd flank
+        // them) and overwatchers that would fire during the walk.
+        let path = range.path_to(hover).unwrap_or_default();
+        let intel = crate::tooltip::move_intel(battle, unit, hover, &path);
+        for id in &intel.targets {
+            let Some(e) = battle.unit(*id) else { continue };
+            let flank = intel.flanked.contains(id);
+            let color = if flank { theme::TRACER } else { theme::TARGET };
+            let top = tile_top(battle.map(), e.pos) + Vec3::Y * (theme::UNIT_HEIGHT + 0.9);
+            let d = if flank { 0.22 } else { 0.15 };
+            let diamond = [top + Vec3::Y * d, top + Vec3::X * d, top - Vec3::Y * d, top - Vec3::X * d, top + Vec3::Y * d];
+            gizmos.linestrip(diamond, color);
+            if flank {
+                ground_circle(&mut gizmos, tile_top(battle.map(), e.pos), 0.48, color);
+            }
+        }
+        for id in &intel.overwatchers {
+            let Some(e) = battle.unit(*id) else { continue };
+            let eye = tile_top(battle.map(), e.pos) + Vec3::Y * theme::UNIT_HEIGHT * 0.7;
+            gizmos.line(eye, tile_top(battle.map(), hover) + Vec3::Y * 0.6, theme::TRACER.with_alpha(0.7));
+        }
     }
 }
 
@@ -190,9 +211,13 @@ fn draw_health_bars(
     entities: Res<UnitEntities>,
     units: Query<(&UnitVisual, &Transform, &Visibility)>,
     camera: Single<&Transform, With<CameraRig>>,
+    selection: Res<Selection>,
+    time: Res<Time<Real>>,
 ) {
     let right = camera.right().as_vec3();
     let stealth = state.battle.stealth();
+    let preview = damage_preview(&state.battle, &selection);
+    let flash = 0.5 + 0.5 * (time.elapsed_secs() * 8.0).sin();
     for (id, entity) in &entities.0 {
         let (Some(unit), Ok((visual, tr, vis))) = (state.battle.unit(*id), units.get(*entity)) else { continue };
         if !unit.is_alive() || *vis == Visibility::Hidden {
@@ -236,10 +261,20 @@ fn draw_health_bars(
             Team::Player => theme::PLAYER,
             Team::Enemy => theme::ENEMY,
         };
+        // Pips a hit would take: certain (min damage) and possible (max).
+        let (dmin, dmax) = preview.iter().find(|(v, _, _)| *v == *id).map_or((0, 0), |(_, lo, hi)| (*lo, *hi));
         for i in 0..max {
             let a = start + right * (pip * i as f32 + 0.01);
             let b = a + right * (pip - 0.02);
-            let c = if i < unit.hp { color } else { Color::srgb(0.2, 0.2, 0.2) };
+            let c = if i >= unit.hp {
+                Color::srgb(0.2, 0.2, 0.2)
+            } else if i >= unit.hp - dmin {
+                theme::TARGET.with_alpha(0.4 + 0.6 * flash)
+            } else if i >= unit.hp - dmax {
+                theme::EXPLOSION.with_alpha(0.3 + 0.5 * flash)
+            } else {
+                color
+            };
             gizmos.line(a, b, c);
             gizmos.line(a + Vec3::Y * 0.03, b + Vec3::Y * 0.03, c);
         }
@@ -353,4 +388,34 @@ fn draw_zones(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleState>
         }
         gizmos.circle(Isometry3d::new(top, Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)), 0.25 + 0.1 * pulse, color);
     }
+}
+
+/// Damage ranges (victim, min, max) of the attack being lined up: the aimed
+/// one, the pending ability on the hovered target, or the primary attack on
+/// a hovered enemy.
+fn damage_preview(battle: &Battle, selection: &Selection) -> Vec<(UnitId, i32, i32)> {
+    let Some(sel) = selection.unit else { return Vec::new() };
+    let Some(unit) = battle.unit(sel) else { return Vec::new() };
+    let (ability, target) = match (selection.pending.as_ref(), selection.aim) {
+        (Some(a), Some(t)) => (a.clone(), Some(t)),
+        (Some(a), None) => {
+            let t = battle.ability(a).zip(selection.hovered).and_then(|(d, h)| crate::input::target_for(battle, d, h));
+            (a.clone(), t)
+        }
+        (None, _) => {
+            let Some(enemy) = selection.hovered.and_then(|h| battle.unit_at(h)).filter(|e| e.team != unit.team) else {
+                return Vec::new();
+            };
+            let Some(def) = battle.primary_attack(unit) else { return Vec::new() };
+            (def.id.clone(), Some(Target::Unit(enemy.id)))
+        }
+    };
+    let Some(target) = target else { return Vec::new() };
+    if battle.validate(&Action::UseAbility { unit: sel, ability: ability.clone(), target }).is_err() {
+        return Vec::new();
+    }
+    battle
+        .preview(sel, &ability, target)
+        .map(|v| v.into_iter().map(|(id, p)| (id, p.damage.0, p.damage.1)).collect())
+        .unwrap_or_default()
 }

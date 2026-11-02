@@ -78,6 +78,11 @@
   .mission.current { background: #2f5e44; }
   .mission .key { max-width: 320px; }
 
+  #help { top: 140px; left: 300px; padding: 12px; max-width: 560px; }
+  .help-grid { flex-direction: column; }
+  .help-row { flex-direction: row; margin-bottom: 3px; }
+  .help-key { color: #f2d24a; width: 160px; font-size: 13px; }
+  .help-text { font-size: 13px; max-width: 360px; }
   #loadout { top: 140px; left: 190px; padding: 8px; max-width: 760px; }
   .gear-row { flex-direction: column; margin-bottom: 8px; }
   .gear-name { font-size: 14px; }
@@ -172,6 +177,7 @@
   <button class="small-button" data-command="editor">Edit<span class="key">F1</span></button>
   <button class="small-button" data-command="toggle:missions">Missions<span class="key">list</span></button>
   <button class="small-button" data-command="toggle:loadout">Loadout<span class="key">squad</span></button>
+  <button class="small-button" data-command="toggle:help">Help<span class="key">H</span></button>
   <button class="small-button" data-command="cinematics">Cinema<span class="key" data-if="cinematics">on</span><span class="key" data-if="!cinematics">off</span></button>
 </div>
 
@@ -205,6 +211,29 @@
   <div class="lab-grid" data-for="a in anim_slots">
     <button class="lab-slot" data-command="anim:{{ a.slot }}"><span>{{ a.slot }}</span><span class="key">{{ a.source }}</span></button>
   </div>
+</div>
+
+<!-- Controls cheat sheet (H) -->
+<div id="help" class="panel" data-if="ui.help">
+  <span class="title" style="font-size: 16px; margin-bottom: 6px">Controls</span>
+  <div class="help-grid">
+    <div class="help-row"><span class="help-key">Left click</span><span class="help-text">select a soldier, move to a tile</span></div>
+    <div class="help-row"><span class="help-key">Click enemy</span><span class="help-text">aim (odds by the cursor), click again to fire</span></div>
+    <div class="help-row"><span class="help-key">Space / Enter</span><span class="help-text">fire the aimed ability</span></div>
+    <div class="help-row"><span class="help-key">Right click / Esc</span><span class="help-text">cancel aim, then targeting</span></div>
+    <div class="help-row"><span class="help-key">Drag from soldier</span><span class="help-text">drag to a tile and release to move</span></div>
+    <div class="help-row"><span class="help-key">1 - 9</span><span class="help-text">abilities (press again to fire when aimed)</span></div>
+    <div class="help-row"><span class="help-key">Tab / Shift+Tab</span><span class="help-text">next / previous soldier</span></div>
+    <div class="help-row"><span class="help-key">Enter</span><span class="help-text">end turn (when not aiming)</span></div>
+    <div class="help-row"><span class="help-key">Left drag, WASD</span><span class="help-text">pan</span></div>
+    <div class="help-row"><span class="help-key">Right drag, Q / E</span><span class="help-text">rotate and tilt</span></div>
+    <div class="help-row"><span class="help-key">Wheel, Z / X</span><span class="help-text">zoom</span></div>
+    <div class="help-row"><span class="help-key">F / Home</span><span class="help-text">focus selected / reset view</span></div>
+    <div class="help-row"><span class="help-key">Hold Shift</span><span class="help-text">fast-forward animations</span></div>
+    <div class="help-row"><span class="help-key">C / Space</span><span class="help-text">toggle / skip cinematic cameras</span></div>
+    <div class="help-row"><span class="help-key">F5</span><span class="help-text">restart mission</span></div>
+  </div>
+  <span class="dim" style="font-size: 12px; margin-top: 6px">Hover a tile: gold diamonds = enemies you'd flank, red = in sight, yellow lines = overwatch on the way.</span>
 </div>
 
 <!-- Squad loadouts: click a piece of gear to cycle it; applies on restart -->
