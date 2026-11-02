@@ -345,6 +345,7 @@ mod xml {
                 }
             }
         }
+        let auto_style = root.attribute("style") != Some("none") && !root.children().any(|c| c.has_tag_name("surfaces"));
         if let Some(h) = root.children().find(|c| c.has_tag_name("heights")) {
             for (row, line) in rows(h).iter().enumerate() {
                 for (x, ch) in line.chars().enumerate() {
@@ -384,6 +385,9 @@ mod xml {
         }
 
         // --- contents ---------------------------------------------------
+        if auto_style {
+            map.auto_surfaces();
+        }
         let mut def = MissionDef {
             id: root.attribute("id").unwrap_or("mission").to_string(),
             name: root.attribute("name").unwrap_or("Mission").to_string(),

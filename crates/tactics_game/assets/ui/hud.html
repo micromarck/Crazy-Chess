@@ -202,7 +202,13 @@
       <span class="key">{{ m.description }}</span>
     </button>
   </div>
-  <button class="mission" data-command="skirmish"><span>Random skirmish</span><span class="key">procedural map</span></button>
+  <span class="dim" style="font-size: 11px; margin-top: 6px; margin-bottom: 4px">GENERATE A MISSION (random objective)</span>
+  <div class="gear-buttons">
+    <button class="gear" data-command="generate:urban"><span class="key">streets, buildings</span><span>Urban</span></button>
+    <button class="gear" data-command="generate:industrial"><span class="key">yard, containers</span><span>Industrial</span></button>
+    <button class="gear" data-command="generate:wilds"><span class="key">hills, river, woods</span><span>Wilds</span></button>
+    <button class="gear" data-command="generate:any"><span class="key">surprise me</span><span>Any</span></button>
+  </div>
 </div>
 
 <!-- Character Lab (only in the lab mission): models + their animation slots -->

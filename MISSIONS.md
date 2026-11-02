@@ -99,6 +99,7 @@ read `<layout>`. (Scripts use the same convention.)
 |---|---|
 | `<layout>` | one character per tile, first row = top. `.` floor, `#` **cut out** (no tile: impassable, not drawn), `h` half cover, `H` full cover. Any other character is floor. |
 | `<heights>` | same shape as the layout: ground level `0`-`9` per tile. |
+| `<surfaces>` | same shape: how each tile **looks** (rules ignore it). Ground: `c` concrete, `a` asphalt, `l` road markings, `g` grass, `d` dirt, `w` wooden floor, `r` roof, `m` metal. Cover/walls: `B` brick (a low brick tile is a window), `C` shipping container, `G` hedge, `T` tree, `R` rock, `S` sandbags, `F` fence. Cut-outs: `W` water. `.` = default. Without this layer the mission is styled automatically (concrete, roofs on raised ground, brick wall runs, containers, sandbags); `<mission style="none">` keeps the plain look. |
 | `<cutout x y [width height]>` | cut a rectangle out of the grid. |
 | `<raise x y [width height] level>` | set the ground level of a rectangle. |
 | `<terrain x y [width height] type>` | `floor`, `half`, `full` or `void`. |
@@ -134,6 +135,32 @@ read `<layout>`. (Scripts use the same convention.)
 Area attacks (grenades, `explode`) damage destructible props; a destroyed
 prop frees its tile. Prop kinds with their own look: `barrel`, `crate`,
 `console`/`terminal`, `beacon`/`uplink` (anything else is a crate or wall).
+
+## Generated missions
+
+The **Missions** panel can generate a mission (`generate:<theme>` UI command,
+`TBS_MISSION=gen:urban` on desktop; the old "skirmish" now generates one too).
+`tactics_core::levelgen::generate` builds an ordinary `MissionDef`, so it
+uses doors, props, marked zones, dormant pods, patrols and scripts like a
+hand-made file. Same seed + settings = same mission; **Restart** replays it.
+
+| theme | what you get |
+|---|---|
+| Urban | a street grid with lane markings; blocks with brick buildings (windows, doors, wooden floors, furniture), flat roofs with parapets and ladders, plazas with trees and hedges; parked cars, barrels, crates |
+| Industrial | an asphalt yard with concrete pads, warehouses, rows of coloured shipping containers (some stacked with ladders), fences, fuel-barrel clusters |
+| Wilds | grassland with stepped hills, a winding river with bridges, a dirt track, woods, rocks, hedgerows and a cabin |
+
+| objective | win | lose |
+|---|---|---|
+| Eliminate | kill every hostile | squad wiped out |
+| Extract | whole squad on the EVAC zone (north), or kill everything | squad wiped out |
+| Hold | survive 6 turns; waves attack the BEACON | beacon integrity reaches 0 |
+| Recover | grab the DATA, bring it back to the EVAC point (south) | squad wiped out |
+
+The squad deploys at the south edge; objectives and enemies are only placed
+on tiles reachable from there (doors count as open, climbing obeys the 1-level
+rule and ladders), so every result is playable. Tests generate every theme
+and objective over several seeds and play them AI-vs-AI.
 
 ## Mission mechanics
 

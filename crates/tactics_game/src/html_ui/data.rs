@@ -131,8 +131,9 @@ pub fn collect_ui_data(
     // Missions.
     let current = state.mission.as_deref().and_then(|id| catalog.get(id));
     v.set("mission.active", bool_str(current.is_some()));
-    v.set("mission.name", current.map_or("Skirmish", |m| m.def.name.as_str()));
-    v.set("mission.description", current.map_or("", |m| m.def.description.as_str()));
+    let generated = state.generated.as_ref().filter(|_| state.mission.as_deref() == Some(crate::missions::GENERATED));
+    v.set("mission.name", current.map(|m| m.def.name.as_str()).or(generated.map(|g| g.name.as_str())).unwrap_or("Skirmish"));
+    v.set("mission.description", current.map(|m| m.def.description.as_str()).or(generated.map(|g| g.description.as_str())).unwrap_or(""));
     v.set("missions.ready", bool_str(catalog.ready));
     v.lists.insert(
         "missions".into(),

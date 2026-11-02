@@ -10,7 +10,7 @@
 //! per terrain/prop kind — nothing else depends on how the board looks.
 
 use bevy::prelude::*;
-use tactics_core::grid::{CoverLevel, Direction, GridPos, Terrain};
+use tactics_core::grid::{CoverLevel, Direction, GridPos, Surface, Terrain};
 
 use crate::coords::{LEVEL_HEIGHT, TILE_SIZE, grid_to_world, tile_top};
 use crate::state::{BattleReset, BattleState};
@@ -21,6 +21,7 @@ pub struct BoardPlugin;
 impl Plugin for BoardPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<BoardDirty>()
+            .add_systems(PreStartup, crate::scenery::setup_scenery)
             .add_systems(Startup, (setup_assets, spawn_board, spawn_lights).chain())
             .add_systems(Update, rebuild_board);
     }
@@ -52,7 +53,6 @@ struct BoardAssets {
     zone_tile: Handle<Mesh>,
     floor_a: Handle<StandardMaterial>,
     floor_b: Handle<StandardMaterial>,
-    cliff: Handle<StandardMaterial>,
     low_mat: Handle<StandardMaterial>,
     high_mat: Handle<StandardMaterial>,
     ladder_mat: Handle<StandardMaterial>,
@@ -88,7 +88,6 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
         zone_tile: meshes.add(Cuboid::new(t * 0.9, 0.03, t * 0.9)),
         floor_a: mat(theme::FLOOR_A, 0.9),
         floor_b: mat(theme::FLOOR_B, 0.9),
-        cliff: mat(Color::srgb(0.16, 0.17, 0.19), 0.95),
         low_mat: mat(theme::LOW_COVER, 0.7),
         high_mat: mat(theme::HIGH_COVER, 0.6),
         ladder_mat: mat(Color::srgb(0.85, 0.7, 0.2), 0.5),
@@ -133,7 +132,7 @@ fn zone_material(materials: &mut Assets<StandardMaterial>, color: Color) -> Hand
     })
 }
 
-fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<BattleState>) {
+fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, scenery: Res<crate::scenery::Scenery>, state: Res<BattleState>) {
     let battle = &state.battle;
     let map = battle.map();
     // Tiles covered by a living prop draw the prop instead of a cover block.
@@ -141,23 +140,33 @@ fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<Batt
 
     for pos in map.positions() {
         let terrain = map.terrain(pos);
+        let surface = map.surface(pos);
         if terrain == Terrain::Void {
-            continue; // Cut-outs are simply not drawn.
+            // Cut-outs are not drawn, except rivers, which get water.
+            if surface == Surface::Water {
+                spawn_piece(&mut commands, scenery.water(grid_to_world(pos)));
+            }
+            continue;
         }
         let top = tile_top(map, pos);
         let level = map.elevation(pos);
 
-        // Checkerboard floor makes distances readable at a glance.
-        let floor_mat = if (pos.x + pos.y) % 2 == 0 { &assets.floor_a } else { &assets.floor_b };
-        commands.spawn((BoardEntity, Mesh3d(assets.floor.clone()), MeshMaterial3d(floor_mat.clone()), Transform::from_translation(top - Vec3::Y * 0.05)));
+        // Checkerboard floor (in the surface's colours) keeps distances readable.
+        let floor_mat = scenery
+            .floor(surface, pos)
+            .unwrap_or_else(|| if (pos.x + pos.y) % 2 == 0 { assets.floor_a.clone() } else { assets.floor_b.clone() });
+        commands.spawn((BoardEntity, Mesh3d(assets.floor.clone()), MeshMaterial3d(floor_mat), Transform::from_translation(top - Vec3::Y * 0.05)));
+        if let Some(detail) = scenery.floor_detail(surface, top) {
+            spawn_piece(&mut commands, detail);
+        }
 
-        // Raised ground: a solid column down to level 0.
+        // Raised ground: a solid column down to level 0, looking like what it is.
         if level > 0 {
             let h = level as f32 * LEVEL_HEIGHT;
             commands.spawn((
                 BoardEntity,
                 Mesh3d(assets.column.clone()),
-                MeshMaterial3d(assets.cliff.clone()),
+                MeshMaterial3d(scenery.column(surface, pos)),
                 Transform::from_translation(grid_to_world(pos) + Vec3::Y * (h / 2.0 - 0.1)).with_scale(Vec3::new(1.0, h, 1.0)),
             ));
         }
@@ -208,6 +217,12 @@ fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<Batt
                 }
                 continue;
             }
+            if prop.kind == "car" {
+                for piece in scenery.car(top, pos) {
+                    spawn_piece(&mut commands, piece);
+                }
+                continue;
+            }
             let (mesh, mat, h) = match prop.kind.as_str() {
                 "beacon" | "uplink" => (&assets.beacon, &assets.beacon_mat, 1.4),
                 "barrel" => (&assets.barrel, &assets.barrel_mat, 0.7),
@@ -228,6 +243,22 @@ fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<Batt
             continue;
         }
 
+        // Styled cover (brick walls, containers, trees...).
+        if matches!(terrain, Terrain::LowCover | Terrain::HighCover)
+            && let Some((pieces, height)) = scenery.cover(terrain, surface, top, pos)
+        {
+            let parent = commands.spawn((BoardEntity, Transform::from_translation(top), Visibility::default())).id();
+            for mut piece in pieces {
+                piece.transform.translation -= top;
+                commands.spawn((Mesh3d(piece.mesh), MeshMaterial3d(piece.material), piece.transform, ChildOf(parent)));
+            }
+            if height > theme::UNIT_HEIGHT {
+                // Anchored at its base (height 0): the cutaway scales it from the ground.
+                commands.entity(parent).insert(crate::cutaway::Occluder::new(top, 0.0));
+            }
+            continue;
+        }
+
         let block = match terrain {
             Terrain::LowCover => Some((&assets.low, &assets.low_mat, theme::LOW_COVER_HEIGHT)),
             Terrain::HighCover => Some((&assets.high, &assets.high_mat, theme::HIGH_COVER_HEIGHT)),
@@ -240,6 +271,10 @@ fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<Batt
             }
         }
     }
+}
+
+fn spawn_piece(commands: &mut Commands, piece: crate::scenery::Piece) {
+    commands.spawn((BoardEntity, Mesh3d(piece.mesh), MeshMaterial3d(piece.material), piece.transform));
 }
 
 /// A ladder on `pos`, leaning against its highest neighbour.
@@ -295,6 +330,7 @@ fn rebuild_board(
     mut dirty: MessageReader<BoardDirty>,
     old: Query<Entity, With<BoardEntity>>,
     assets: Res<BoardAssets>,
+    scenery: Res<crate::scenery::Scenery>,
     state: Res<BattleState>,
 ) {
     // Read both (so neither piles up), rebuild once if either arrived.
@@ -305,5 +341,5 @@ fn rebuild_board(
     for e in &old {
         commands.entity(e).despawn();
     }
-    spawn_board(commands, assets, state);
+    spawn_board(commands, assets, scenery, state);
 }

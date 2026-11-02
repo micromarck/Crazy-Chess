@@ -13,6 +13,7 @@ use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::ui::RelativeCursorPosition;
+use tactics_core::grid::Surface;
 use tactics_core::prelude::*;
 
 use crate::FrameSet;
@@ -123,11 +124,23 @@ fn cell_color(battle: &Battle, p: GridPos) -> [u8; 4] {
     }
     let shade = (map.elevation(p) as i32 * 14).min(70);
     let lift = |v: i32| (v + shade).clamp(0, 255) as u8;
+    let surface = map.surface(p);
     match map.terrain(p) {
+        Terrain::Void if surface == Surface::Water => [30, 80, 130, 255],
         Terrain::Void => [8, 9, 12, 255],
-        Terrain::HighCover => [lift(120), lift(124), lift(134), 255],
+        Terrain::HighCover => match surface {
+            Surface::Tree => [lift(30), lift(80), lift(35), 255],
+            Surface::Brick => [lift(140), lift(70), lift(55), 255],
+            _ => [lift(120), lift(124), lift(134), 255],
+        },
         Terrain::LowCover => [lift(120), lift(92), lift(55), 255],
-        Terrain::Floor => [lift(42), lift(46), lift(52), 255],
+        Terrain::Floor => match surface {
+            Surface::Grass => [lift(45), lift(75), lift(35), 255],
+            Surface::Dirt => [lift(85), lift(65), lift(45), 255],
+            Surface::Asphalt | Surface::Lines => [lift(28), lift(29), lift(32), 255],
+            Surface::Interior => [lift(95), lift(70), lift(45), 255],
+            _ => [lift(42), lift(46), lift(52), 255],
+        },
     }
 }
 

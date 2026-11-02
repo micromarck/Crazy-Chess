@@ -415,6 +415,32 @@ impl Map {
         }
     }
 
+    /// Gives an unstyled map a plausible look (missions without a
+    /// `<surfaces>` layer): concrete ground, roofs on raised tiles, brick for
+    /// runs of full cover (walls), containers for lone tall blocks, sandbags
+    /// for low cover. Tiles that already have a surface are left alone.
+    pub fn auto_surfaces(&mut self) {
+        let snapshot = self.clone();
+        for p in snapshot.positions() {
+            if snapshot.surface(p) != Surface::Default {
+                continue;
+            }
+            let terrain = snapshot.terrain(p);
+            let neighbours = |t: Terrain| {
+                [Direction::North, Direction::East, Direction::South, Direction::West].iter().filter(|d| snapshot.terrain(p.step(**d)) == t).count()
+            };
+            let s = match terrain {
+                Terrain::HighCover if neighbours(Terrain::HighCover) >= 1 => Surface::Brick,
+                Terrain::HighCover => Surface::Container,
+                Terrain::LowCover => Surface::Sandbags,
+                Terrain::Floor if snapshot.elevation(p) > 0 => Surface::Roof,
+                Terrain::Floor => Surface::Concrete,
+                Terrain::Void => continue,
+            };
+            self.set_surface(p, s);
+        }
+    }
+
     /// Highest elevation on the map.
     pub fn max_elevation(&self) -> i8 {
         self.tiles.iter().map(|t| t.elevation).max().unwrap_or(0)

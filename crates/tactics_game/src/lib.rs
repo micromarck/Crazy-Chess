@@ -48,6 +48,7 @@ pub mod overlay;
 pub mod playback;
 pub mod rig;
 pub mod roster;
+pub mod scenery;
 pub mod settings;
 pub mod state;
 pub mod theme;
