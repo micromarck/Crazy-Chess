@@ -253,9 +253,9 @@ fn update_tooltip(
     ui_nodes: Query<(), With<Node>>,
     playback: Res<crate::playback::Playback>,
     director: Res<crate::camera_director::CameraDirector>,
-    mut tip: Single<(&mut Text, &mut Node, &mut Visibility), With<CursorTip>>,
+    mut tip: Single<(&mut Text, &mut Node, &mut Visibility, &mut TextColor), With<CursorTip>>,
 ) {
-    let (text, node, vis) = &mut *tip;
+    let (text, node, vis, color) = &mut *tip;
     let cursor = window.cursor_position();
     let active = player_can_act_now(&state, &playback, &director);
     let content = if active && cursor.is_some() && !pointer_over_ui(&hover_map, &ui_nodes) {
@@ -274,6 +274,14 @@ fn update_tooltip(
     let y = if c.y > h - 80.0 { c.y - 56.0 } else { c.y + 16.0 };
     node.left = px(x);
     node.top = px(y);
+    // Colour by the odds when the text leads with a hit chance.
+    let odds = content.split('%').next().and_then(|n| n.trim().parse::<i32>().ok());
+    color.0 = match odds {
+        Some(p) if p >= 70 => theme::HEAL,
+        Some(p) if p >= 40 => theme::TRACER,
+        Some(_) => theme::TARGET,
+        None => theme::UI_TEXT,
+    };
     if text.0 != content {
         text.0 = content;
     }

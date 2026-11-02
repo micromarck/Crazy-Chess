@@ -541,9 +541,11 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             if battle.is_revealed(*unit)
                 && let Some(pos) = pos_of(*unit)
             {
-                FloatingText::spawn(&mut p.commands, pos + Vec3::Y * (CHEST + 0.9), "!".into(), theme::TARGET);
+                // Pod reveal: glance at it so the player sees who's coming.
+                FloatingText::spawn(&mut p.commands, pos + Vec3::Y * (CHEST + 0.9), "CONTACT!".into(), theme::TARGET);
                 p.log.push(format!("  {} is alerted", name(*unit)));
-                return vec![Anim::Wait { remaining: 0.15 }];
+                look_at(&p.director, &mut p.rig, pos);
+                return vec![Anim::Wait { remaining: 0.35 }];
             }
             vec![]
         }
