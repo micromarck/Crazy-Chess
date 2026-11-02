@@ -37,11 +37,13 @@ pub struct GameSettings {
     pub action_camera: bool,
     /// 0 = easy, 1 = normal, 2 = hard.
     pub difficulty: u8,
+    /// Soldiers who fall are lost for good (roster).
+    pub permadeath: bool,
 }
 
 impl Default for GameSettings {
     fn default() -> Self {
-        Self { anim_speed: 1.0, camera_speed: 1.0, edge_scroll: false, invert_orbit: false, action_camera: true, difficulty: 1 }
+        Self { anim_speed: 1.0, camera_speed: 1.0, edge_scroll: false, invert_orbit: false, action_camera: true, difficulty: 1, permadeath: false }
     }
 }
 
@@ -78,6 +80,10 @@ impl GameSettings {
                 self.action_camera = !self.action_camera;
                 format!("Action camera {}", on_off(self.action_camera))
             }
+            "permadeath" => {
+                self.permadeath = !self.permadeath;
+                format!("Permadeath {}", on_off(self.permadeath))
+            }
             "difficulty" => {
                 self.difficulty = (self.difficulty + 1) % 3;
                 format!("AI difficulty: {}", self.difficulty_name())
@@ -90,8 +96,8 @@ impl GameSettings {
 
     pub fn to_text(&self) -> String {
         format!(
-            "anim_speed = {}\ncamera_speed = {}\nedge_scroll = {}\ninvert_orbit = {}\naction_camera = {}\ndifficulty = {}\n",
-            self.anim_speed, self.camera_speed, self.edge_scroll, self.invert_orbit, self.action_camera, self.difficulty
+            "anim_speed = {}\ncamera_speed = {}\nedge_scroll = {}\ninvert_orbit = {}\naction_camera = {}\ndifficulty = {}\npermadeath = {}\n",
+            self.anim_speed, self.camera_speed, self.edge_scroll, self.invert_orbit, self.action_camera, self.difficulty, self.permadeath
         )
     }
 
@@ -136,6 +142,7 @@ impl GameSettings {
                 "edge_scroll" => s.edge_scroll = b.unwrap_or(s.edge_scroll),
                 "invert_orbit" => s.invert_orbit = b.unwrap_or(s.invert_orbit),
                 "action_camera" => s.action_camera = b.unwrap_or(s.action_camera),
+                "permadeath" => s.permadeath = b.unwrap_or(s.permadeath),
                 "difficulty" => s.difficulty = v.parse::<u8>().ok().filter(|d| *d <= 2).unwrap_or(s.difficulty),
                 _ => {}
             }

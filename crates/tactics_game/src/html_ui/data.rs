@@ -34,6 +34,7 @@ pub fn collect_ui_data(
     library: Res<crate::models::ModelLibrary>,
     lab: Res<crate::lab::LabState>,
     settings: Res<crate::settings::GameSettings>,
+    roster: Res<crate::roster::Roster>,
     mut data: ResMut<UiData>,
 ) {
     let mut v = UiValues::default();
@@ -179,6 +180,33 @@ pub fn collect_ui_data(
     for (name, on) in &flags.0 {
         v.set(&format!("ui.{name}"), bool_str(*on));
     }
+
+    // Barracks (saved soldiers).
+    v.lists.insert("roster".into(), roster.rows());
+    v.set("barracks.count", roster.soldiers.len());
+    v.set("barracks.squad", roster.squad().count());
+    v.set("barracks.squad_max", crate::roster::SQUAD_SIZE);
+    let sel = roster.selected.and_then(|id| roster.get(id));
+    v.set("barracks.selected", bool_str(sel.is_some()));
+    if let Some(s) = sel {
+        use crate::looks::{ARMOR_NAMES, HAIR_NAMES, SKIN_NAMES};
+        let a = &s.appearance;
+        v.set("barracks.name", &s.name);
+        v.set("barracks.class", b.rules().class(&s.class).map_or(s.class.clone(), |c| c.name.clone()));
+        v.set("barracks.in_squad", if s.kia { "KIA" } else if s.in_squad { "In squad" } else { "At base" });
+        v.set("barracks.record", format!("{} missions   {} kills   {} wounds", s.missions, s.kills, s.wounds));
+        v.set("barracks.gear", crate::loadout::describe(b.rules(), &b.rules().gear_for(&s.class, s.loadout.as_deref(), &s.gear)));
+        v.set("look.build", format!("{:?}", a.build));
+        v.set("look.height", format!("{:.0}%", a.height_scale() * 100.0));
+        v.set("look.skin", SKIN_NAMES[a.skin as usize % SKIN_NAMES.len()]);
+        v.set("look.hair", format!("{:?}", a.hair));
+        v.set("look.hair_color", HAIR_NAMES[a.hair_color as usize % HAIR_NAMES.len()]);
+        v.set("look.headgear", format!("{:?}", a.headgear));
+        v.set("look.armor", ARMOR_NAMES[a.armor as usize % ARMOR_NAMES.len()]);
+        v.set("look.accent", ARMOR_NAMES[a.accent as usize % ARMOR_NAMES.len()]);
+        v.set("look.backpack", if a.backpack { "yes" } else { "no" });
+    }
+    v.set("settings.permadeath", if settings.permadeath { "on" } else { "off" });
 
     // Settings panel.
     let on = |b: bool| if b { "on" } else { "off" };

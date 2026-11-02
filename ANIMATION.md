@@ -46,6 +46,53 @@ Its animations cover every slot the game plays automatically:
 Soldiers (`soldier` model) and aliens (`alien` model) use it out of the box,
 drawn as simple shapes on the bones: no art needed.
 
+## Attachment points (sockets)
+
+Gear hangs off named **sockets**: a bone plus an offset and rotation. The
+humanoid's:
+
+| socket | on bone | used for |
+|---|---|---|
+| `weapon` | `weapon` (right-hand grip; -Z = barrel) | the held weapon |
+| `hand_l` | `hand_l` | off-hand items |
+| `head` | `head` (centre of the head) | hair, helmet, cap, beret, visor, hood |
+| `back` | `chest` | backpack |
+| `chest` | `chest` (front) | vests, armour plates, grenades, tags |
+| `hip_l`, `hip_r` | `hips` | medkits, stims |
+
+Custom skeletons inherit them and can move or add sockets (same name
+overrides):
+
+```ron
+skeletons: [(
+    id: "sectoid", extends: "humanoid",
+    sockets: [(name: "weapon", bone: "hand_r", offset: (0.0, -0.08, 0.0), rotation: (-90.0, 0.0, 0.0))],
+)],
+```
+
+**Held weapons** are drawn per weapon `look` (`Rifle`, `Shotgun`, `Sniper`,
+`Smg`, `Lmg`, `Pistol`, `Plasma`, `None`), or from a custom model: give the
+weapon `model: "my_gun"` and a `ModelDef` with a glTF `scene` (gun modelled
+with the grip at the origin, barrel along -Z). Items work the same way with
+`model` and `socket` (see MODULES.md).
+
+**Two-handed holds:** the left hand is placed on the foregrip by IK every
+frame, so rifles stay gripped in any animation, on any skeleton with
+`upper_arm_l`, `forearm_l`, `hand_l` and a `weapon` bone. It fades out while
+free-hand slots play (`throw`, `reload`, `heal`, `cast`, `death`, `taunt`).
+The humanoid's carry and aim poses were solved numerically for its bone
+lengths (`CARRY_R` / `AIM_R` in `humanoid.rs`; the solver is the ignored
+`rig::pose_solver` test in the game crate, handy if you change the arms).
+
+## Looks
+
+Soldiers differ by an **appearance**: build (slim / standard / heavy),
+height, skin tone, hair style and colour, headgear, armour and trim colours,
+backpack. Saved soldiers keep theirs (Barracks panel); others get a stable
+random look from their name. Head and hands take the skin colour, torso and
+arms the armour, legs the trim. Enemies without an appearance keep their
+team colours.
+
 ## How it plays
 
 ```
@@ -191,8 +238,21 @@ the wheel zooms. The combat log shows how each character's clips were mapped
     slots: { "mixamo.com": "idle" },   // clip -> slot overrides
     looping: ["wave"],           // extra looping slots
     replace: ["soldier"],        // use this character for these models in battle
+
+    // Attachment points: socket -> node of this file. Without them the game
+    // guesses (RightHand / hand_r / mixamorig:RightHand..., Head, Spine2...).
+    sockets: [
+        (name: "weapon", bone: "mixamorig:RightHand", offset: (0.0, 0.02, -0.05), rotation: (0.0, 0.0, 0.0)),
+        (name: "head", bone: "mixamorig:Head", offset: (0.0, 0.12, 0.0)),
+    ],
+    show_gear: false,            // also draw headgear / backpack / gear (the weapon always shows)
 )
 ```
+
+Things attached to glTF nodes are kept at real size and turned to face the
+soldier's forward, whatever the bone's own scale and rotation (Mixamo rigs
+are often scaled 0.01); `rotation` adds to that. The test robot has no hand
+bones, so its gun goes on the forearm (`LowerArm.R`).
 
 `replace` is how a character goes into battle: `["soldier"]` turns every
 soldier into it, `["alien"]` every sectoid. Any model id works (see the Lab

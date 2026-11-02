@@ -558,7 +558,7 @@ struct SocketFix {
     rotation: Quat,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn dress_gltf(
     mut commands: Commands,
     looks: Res<LooksAssets>,

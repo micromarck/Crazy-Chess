@@ -155,7 +155,7 @@ const RANKS: [&str; 5] = ["Pvt.", "Pvt.", "Cpl.", "Sgt.", "Spc."];
 
 /// A random soldier name like "Cpl. Maya Novak" (deterministic for a seed).
 pub fn random_name(seed: u64) -> String {
-    let mut rng = GameRng::new(seed ^ 0x0000_5EED_0F_A3E5);
+    let mut rng = GameRng::new(seed ^ 0x0000_005E_ED0F_A3E5);
     let mut pick = |n: usize| rng.range_inclusive(0, n as i32 - 1) as usize;
     format!("{} {} {}", RANKS[pick(RANKS.len())], FIRST[pick(FIRST.len())], LAST[pick(LAST.len())])
 }

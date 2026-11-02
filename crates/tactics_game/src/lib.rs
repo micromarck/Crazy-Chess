@@ -47,6 +47,7 @@ pub mod models;
 pub mod overlay;
 pub mod playback;
 pub mod rig;
+pub mod roster;
 pub mod settings;
 pub mod state;
 pub mod theme;
@@ -96,7 +97,7 @@ impl Plugin for TacticsPlugin {
             html_ui::HtmlUiPlugin,
             editor::EditorPlugin,
         ))
-        .add_plugins((characters::CharactersPlugin, lab::LabPlugin, tooltip::TooltipPlugin, cutaway::CutawayPlugin, minimap::MinimapPlugin, settings::SettingsPlugin, looks::LooksPlugin));
+        .add_plugins((characters::CharactersPlugin, lab::LabPlugin, tooltip::TooltipPlugin, cutaway::CutawayPlugin, minimap::MinimapPlugin, settings::SettingsPlugin, looks::LooksPlugin, roster::RosterPlugin));
     }
 }
 

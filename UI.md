@@ -61,6 +61,7 @@ Any `<button>` (or element with `data-command`) is clickable/tappable:
 |---|---|
 | `end_turn`, `next_unit`, `prev_unit`, `cancel`, `restart` | same as the End Turn button / Tab / Shift+Tab / Esc / F5 |
 | `confirm` | fire the aimed ability (Space) |
+| `roster:<command>` | Barracks: `select:<id>`, `squad`, `class`, `look:<field>`, `random_look`, `rename`, `recruit`, `dismiss` |
 | `gear:<what>:<member>[:<slot>]`, `apply_loadout` | edit squad loadouts (see the Loadout panel) |
 | `ability:<id>` | use the selected unit's ability (or start targeting it) |
 | `select:<unit id>` | select a squad member |
@@ -83,6 +84,8 @@ Values (strings; booleans are `true`/`false`):
 | `turn.round`, `turn.team` (`XCOM`/`ALIEN`), `turn.label`, `turn.is_player` | turn info |
 | `squad.alive`, `enemies.alive`, `enemies.label` | living units per side (with fog: hostiles in sight) |
 | `mission.concealed`, `mission.alarm`, `mission.objective`, `mission.has_objective` | stealth state and scripted objective |
+| `barracks.count`, `barracks.squad`, `barracks.squad_max`, `barracks.selected`, `barracks.name`, `barracks.class`, `barracks.in_squad`, `barracks.record`, `barracks.gear` | the Barracks and its selected soldier |
+| `look.build`, `look.height`, `look.skin`, `look.hair`, `look.hair_color`, `look.headgear`, `look.armor`, `look.accent`, `look.backpack` | the selected soldier's looks |
 | `battle.over`, `battle.won`, `battle.result`, `battle.seed` | outcome (set after final animations) |
 | `busy` | animations or a cinematic are playing |
 | `unit.selected`, `unit.name`, `unit.class`, `unit.hp`, `unit.max_hp`, `unit.hp_percent`, `unit.ap`, `unit.max_ap`, `unit.weapon`, `unit.ammo`, `unit.clip`, `unit.aim`, `unit.mobility`, `unit.defense`, `unit.status`, `unit.gear`, `unit.morale`, `unit.morale_state` (`steady`/`shaken`/`panicked`/`fearless`) | selected unit |
@@ -100,6 +103,7 @@ Lists (for `data-for`):
 | `abilities` | `id name description key cost charges cooldown state` (`state` = `ready` / `active` / `disabled`) |
 | `squad` | `id name hp max_hp hp_percent ap fear state` (`state` = `selected` / `ready` / `done`; `fear` = `SHAKEN`/`PANIC`/empty) |
 | `loadout` | `index name class preset weapon armor item0 item1 stats problems` (the player squad's gear) |
+| `roster` | `id name class tag record state` (saved soldiers; `tag` = `SQUAD` / `KIA` / empty) |
 | `log` | `text` |
 | `missions` | `id name description file state` (`state` = `current` / empty) |
 

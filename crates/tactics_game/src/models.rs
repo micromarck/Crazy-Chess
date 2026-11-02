@@ -314,10 +314,10 @@ pub fn spawn_model(
                 commands.entity(root).insert(Transform::from_scale(Vec3::splat(a.height_scale())));
             }
             // Two-handed weapons: the left hand follows the foregrip (IK).
-            if !matches!(outfit.weapon_model, Some(_)) || rig.skeleton.socket("weapon").is_some() {
-                if let Some(f) = crate::looks::foregrip(outfit.weapon) {
-                    commands.entity(root).insert(crate::rig::TwoHanded(f));
-                }
+            if rig.skeleton.socket("weapon").is_some()
+                && let Some(f) = crate::looks::foregrip(outfit.weapon)
+            {
+                commands.entity(root).insert(crate::rig::TwoHanded(f));
             }
             let sockets = crate::looks::rig_sockets(commands, &rig.skeleton, &bones);
             looks.dress_sockets(commands, library, &sockets, outfit, true);

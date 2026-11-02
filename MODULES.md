@@ -311,10 +311,10 @@ crit = weapon crit (weapon damage only) + crit_bonus + flank_crit_bonus (if flan
 
 | Section | Type | Key fields |
 |---|---|---|
-| `weapons` | `Weapon` | `id, name, damage_min, damage_max, crit_chance, crit_bonus, optimal_range, max_range, clip_size, classes` (who may carry it; empty = anyone) |
+| `weapons` | `Weapon` | `id, name, damage_min, damage_max, crit_chance, crit_bonus, optimal_range, max_range, clip_size, classes` (who may carry it; empty = anyone), `look` (`Rifle`, `Shotgun`, `Sniper`, `Smg`, `Lmg`, `Pistol`, `Plasma`, `None`), `model` (custom held model id) |
 | `classes` | `UnitClass` | `id, name, stats: (max_hp, mobility, aim, defense, sight, climb, bravery), weapon, abilities: [...], model, fearless, loadout` |
-| `squads` | `SquadDef` | `id` (`"player"` / `"enemy"` are deployed), `members: [(class, name, loadout, gear)]` |
-| `items` | `ItemDef` | `id, name, description, slot (Armor / Utility), stats: (max_hp, mobility, aim, defense, sight, bravery), abilities, charges, classes` |
+| `squads` | `SquadDef` | `id` (`"player"` / `"enemy"` are deployed), `members: [(class, name, loadout, gear, appearance)]` (the Barracks roster replaces `"player"` in game) |
+| `items` | `ItemDef` | `id, name, description, slot (Armor / Utility), stats: (max_hp, mobility, aim, defense, sight, bravery), abilities, charges, classes, model, socket` |
 | `loadouts` | `LoadoutDef` | `id, name, description, classes, gear: (weapon, armor, items: [...])` |
 | `maps` | `MapDef` | `id` (`"demo"` is used for the first battle), `name`, `ascii` (`.` floor, `h` half, `H` full, `#` void, `A`/`E` spawns) |
 | `ai_profiles` | `AiProfile` | `id` (`"default"` drives the enemy), `config: (shoot_threshold, area_min_score, heal_below, ...)` |
@@ -324,11 +324,17 @@ crit = weapon crit (weapon damage only) + crit_bonus + flank_crit_bonus (if flan
 | `presentations` | `AbilityPresentation` | `ability, animation, camera, camera_chance, projectile, windup` |
 | `camera_scripts` | `CameraScriptDef` | `id, steps` |
 | `presentation_settings` | `PresentationSettings` | `kill_camera, kill_camera_chance` |
-| `skeletons` | `SkeletonDef` | `id, extends, bones`; see [ANIMATION.md](ANIMATION.md) |
+| `skeletons` | `SkeletonDef` | `id, extends, bones, sockets`; see [ANIMATION.md](ANIMATION.md) |
 | `animations` | `AnimationDef` | `skeleton, slot, duration, looping, mask, additive, rotations, translations`; see ANIMATION.md |
 | `ui_layouts` | `UiLayoutDef` | `id` (`"hud"` replaces the HUD), `html`; see [UI.md](UI.md) |
 
 A class's `model` is the id of a `ModelDef` (base game: `"soldier"`, `"alien"`).
+A `ModelDef` with a glTF `scene` may list `sockets` whose `bone` is a node
+name in the file (where weapons and gear attach).
+
+An `appearance` (squad members) looks like
+`(build: Heavy, height: 1.05, skin: 2, hair: Short, hair_color: 1, headgear: Helmet, armor: 1, accent: 4, backpack: true)`
+(colours are palette indices; see ANIMATION.md, Looks).
 
 ### Loadouts (`items`, `loadouts`)
 

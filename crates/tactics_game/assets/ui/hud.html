@@ -79,6 +79,10 @@
   .mission .key { max-width: 320px; }
 
   #settings { top: 140px; left: 300px; padding: 10px; min-width: 300px; }
+  #barracks { top: 140px; left: 190px; padding: 8px; max-width: 880px; }
+  .barracks-body { flex-direction: row; }
+  .barracks-list { flex-direction: column; min-width: 240px; max-height: 420px; overflow: scroll; margin-right: 10px; }
+  .barracks-detail { flex-direction: column; max-width: 560px; }
   #help { top: 140px; left: 300px; padding: 12px; max-width: 560px; }
   .help-grid { flex-direction: column; }
   .help-row { flex-direction: row; margin-bottom: 3px; }
@@ -177,6 +181,7 @@
 <div id="tools">
   <button class="small-button" data-command="editor">Edit<span class="key">F1</span></button>
   <button class="small-button" data-command="toggle:missions">Missions<span class="key">list</span></button>
+  <button class="small-button" data-command="toggle:barracks">Barracks<span class="key">soldiers</span></button>
   <button class="small-button" data-command="toggle:loadout">Loadout<span class="key">squad</span></button>
   <button class="small-button" data-command="toggle:help">Help<span class="key">H</span></button>
   <button class="small-button" data-command="toggle:settings">Settings<span class="key">game</span></button>
@@ -218,6 +223,7 @@
 <!-- Settings: click a value to cycle / toggle it (saved on desktop) -->
 <div id="settings" class="panel" data-if="ui.settings">
   <span class="title" style="font-size: 16px; margin-bottom: 6px">Settings</span>
+  <button class="mission" data-command="setting:permadeath"><span>Permadeath (fallen soldiers are lost)</span><span class="key">{{ settings.permadeath }}</span></button>
   <button class="mission" data-command="setting:difficulty"><span>AI difficulty</span><span class="key">{{ settings.difficulty }}</span></button>
   <button class="mission" data-command="setting:anim_speed"><span>Animation speed</span><span class="key">{{ settings.anim_speed }}</span></button>
   <button class="mission" data-command="setting:camera_speed"><span>Camera speed</span><span class="key">{{ settings.camera_speed }}</span></button>
@@ -225,6 +231,49 @@
   <button class="mission" data-command="setting:edge_scroll"><span>Edge scrolling</span><span class="key">{{ settings.edge_scroll }}</span></button>
   <button class="mission" data-command="setting:invert_orbit"><span>Invert tilt</span><span class="key">{{ settings.invert_orbit }}</span></button>
   <button class="mission" data-command="cinematics"><span>Cinematic cameras</span><span class="key" data-if="cinematics">on</span><span class="key" data-if="!cinematics">off</span></button>
+</div>
+
+<!-- Barracks: saved soldiers, their looks and who deploys -->
+<div id="barracks" class="panel" data-if="ui.barracks and !lab.active">
+  <span class="title" style="font-size: 16px">Barracks</span>
+  <span class="dim" style="font-size: 12px; margin-bottom: 4px">Squad {{ barracks.squad }}/{{ barracks.squad_max }} - {{ barracks.count }} soldiers - saved automatically</span>
+  <div class="barracks-body">
+    <div class="barracks-list" data-for="s in roster">
+      <button class="member {{ s.state }}" data-command="roster:select:{{ s.id }}">
+        <span>{{ s.name }}</span>
+        <span class="key">{{ s.tag }} {{ s.class }} - {{ s.record }}</span>
+      </button>
+    </div>
+    <div class="barracks-detail" data-if="barracks.selected">
+      <span class="title" style="font-size: 15px">{{ barracks.name }}</span>
+      <span class="dim">{{ barracks.class }} - {{ barracks.in_squad }}</span>
+      <span class="dim" style="font-size: 12px">{{ barracks.record }}</span>
+      <span class="dim" style="font-size: 12px; margin-bottom: 4px">{{ barracks.gear }}</span>
+      <div class="gear-buttons">
+        <button class="gear" data-command="roster:look:build"><span class="key">build</span><span>{{ look.build }}</span></button>
+        <button class="gear" data-command="roster:look:height"><span class="key">height</span><span>{{ look.height }}</span></button>
+        <button class="gear" data-command="roster:look:skin"><span class="key">skin</span><span>{{ look.skin }}</span></button>
+        <button class="gear" data-command="roster:look:hair"><span class="key">hair</span><span>{{ look.hair }}</span></button>
+        <button class="gear" data-command="roster:look:hair_color"><span class="key">hair colour</span><span>{{ look.hair_color }}</span></button>
+        <button class="gear" data-command="roster:look:headgear"><span class="key">headgear</span><span>{{ look.headgear }}</span></button>
+        <button class="gear" data-command="roster:look:armor"><span class="key">armour</span><span>{{ look.armor }}</span></button>
+        <button class="gear" data-command="roster:look:accent"><span class="key">trim</span><span>{{ look.accent }}</span></button>
+        <button class="gear" data-command="roster:look:backpack"><span class="key">backpack</span><span>{{ look.backpack }}</span></button>
+      </div>
+      <div class="gear-buttons" style="margin-top: 6px">
+        <button class="gear" data-command="roster:random_look"><span class="key">look</span><span>Randomise</span></button>
+        <button class="gear" data-command="roster:rename"><span class="key">name</span><span>New name</span></button>
+        <button class="gear" data-command="roster:class"><span class="key">class</span><span>Retrain</span></button>
+        <button class="gear" data-command="roster:squad"><span class="key">squad</span><span>In / out</span></button>
+        <button class="gear" data-command="roster:dismiss"><span class="key">roster</span><span>Dismiss</span></button>
+      </div>
+    </div>
+  </div>
+  <div class="gear-buttons" style="margin-top: 6px">
+    <button class="gear" data-command="roster:recruit"><span class="key">new soldier</span><span>Recruit</span></button>
+    <button class="gear" data-command="toggle:loadout"><span class="key">weapons</span><span>Loadouts</span></button>
+    <button class="gear" data-command="apply_loadout"><span class="key">squad changes</span><span>Restart mission</span></button>
+  </div>
 </div>
 
 <!-- Controls cheat sheet (H) -->
@@ -325,7 +374,7 @@
 </div>
 
 <!-- Victory / defeat -->
-<div id="game-over" data-if="battle.over and !ui.missions and !ui.loadout">
+<div id="game-over" data-if="battle.over and !ui.missions and !ui.loadout and !ui.barracks">
   <div class="panel">
     <h1>{{ battle.result }}</h1>
     <span class="dim" style="margin-bottom: 14px; text-align: center">{{ battle.summary }}</span>

@@ -359,7 +359,7 @@ mod hold_probe {
         RigDef::build(&rules, "humanoid", &mut meshes).unwrap()
     }
 
-    fn report(def: &RigDef, slot: &str, pose: &mut Vec<BonePose>) -> (Vec3, Vec3, f32) {
+    fn report(def: &RigDef, slot: &str, pose: &mut [BonePose]) -> (Vec3, Vec3, f32) {
         let wi = def.skeleton.index_of("weapon").unwrap();
         def.apply_hand_ik(pose, 0.22, 1.0);
         let w = def.world_of(pose, wi);
