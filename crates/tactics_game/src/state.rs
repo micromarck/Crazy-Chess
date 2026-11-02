@@ -85,6 +85,9 @@ pub struct Selection {
     pub hovered: Option<GridPos>,
     /// Ability waiting for a target (targeting mode), if any.
     pub pending: Option<AbilityId>,
+    /// Target picked for `pending`, waiting for confirmation (second click,
+    /// Space, or pressing the ability again).
+    pub aim: Option<Target>,
     /// Cached movement range of `unit`.
     pub range: Option<ReachableSet>,
     range_key: Option<(UnitId, u64)>,
@@ -104,6 +107,7 @@ impl Selection {
     pub fn select(&mut self, unit: Option<UnitId>) {
         if unit != self.unit {
             self.pending = None;
+            self.aim = None;
         }
         self.unit = unit;
     }
@@ -114,6 +118,13 @@ impl Selection {
 #[derive(Message, Debug, Clone, PartialEq, Eq)]
 pub enum PlayerCommand {
     NextUnit,
+    PreviousUnit,
+    /// Centre the camera on the selected unit.
+    FocusSelected,
+    /// Fire the aimed ability.
+    Confirm,
+    /// Enter: confirm if aiming, otherwise end the turn.
+    ConfirmOrEndTurn,
     /// Use (self-targeted) or start targeting (others) an ability of the
     /// selected unit.
     UseAbility(AbilityId),

@@ -134,19 +134,29 @@ TBSium/
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).
+* Feel: spring-smoothed camera that follows lazily (dead zone) and frames
+  shots then returns to your zoom; walls between the camera and your soldiers
+  sink out of the way (cutaway); a cursor tooltip with odds / move cost;
+  aim-then-confirm attacks; turn and alarm banners; enemy turns skip hidden and
+  idle units instantly so big maps stay brisk.
 * Hand-made demo map + procedural skirmishes ("New Battle").
 
 ## Controls
 
 | | Desktop | Touch |
 |---|---|---|
-| Select / move / shoot | Left click | Tap |
+| Select / move | Left click | Tap |
+| Attack | Click an enemy to **aim** (camera frames the shot, odds by the cursor), click again / Space / Enter to **fire** | Tap to aim, tap again or **Fire** |
+| Cancel aim / targeting | Right-click or Esc | Cancel button |
 | Move by dragging | Drag from the selected soldier to a tile, release | — |
 | Pan | Left- or middle-drag the ground, WASD / arrows | One-finger drag |
 | Rotate / tilt | Right-drag (sideways / up-down), Q / E | Two-finger twist |
 | Zoom | Wheel (towards the cursor), Z / X | Pinch |
-| Abilities of the selected unit | 1-9 (Esc cancels targeting) | ability buttons |
-| Next unit / End turn | Tab / Enter | HUD buttons |
+| Abilities of the selected unit | 1-9 (press again to fire when aimed) | ability buttons |
+| Next / previous unit | Tab / Shift+Tab | Next button |
+| Centre on selected unit / reset view | F / Home | — |
+| End turn | Enter (when not aiming) | End Turn button |
+| Fast-forward animations | hold Shift (x3) | — |
 | Module editor | F1 | Edit button |
 | Skip a cinematic / toggle cinematics | Space / C | Cinema button |
 | Reload the HTML HUD | F6 | — |

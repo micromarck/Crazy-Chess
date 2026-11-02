@@ -157,7 +157,7 @@ fn rebuild_layout(
 ///
 /// | command | effect |
 /// |---|---|
-/// | `end_turn`, `next_unit`, `cancel`, `restart` | same as the keyboard shortcuts |
+/// | `end_turn`, `next_unit`, `prev_unit`, `cancel`, `confirm`, `restart` | same as the keyboard shortcuts |
 /// | `ability:<id>` | use / start targeting an ability of the selected unit |
 /// | `select:<unit id>` | select a squad member (see the `squad` list) |
 /// | `editor` | toggle the module editor |
@@ -193,6 +193,12 @@ pub fn run_ui_commands(
             }
             "next_unit" => {
                 player.write(PlayerCommand::NextUnit);
+            }
+            "prev_unit" => {
+                player.write(PlayerCommand::PreviousUnit);
+            }
+            "confirm" => {
+                player.write(PlayerCommand::Confirm);
             }
             "cancel" => {
                 player.write(PlayerCommand::CancelTargeting);

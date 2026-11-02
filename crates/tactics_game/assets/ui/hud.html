@@ -253,14 +253,17 @@
   <span data-if="!unit.selected">No unit selected - tap a soldier</span>
 </div>
 
-<!-- Odds / move info for whatever is under the pointer -->
+<!-- Full odds breakdown / move info for whatever is under the pointer
+     (a short version follows the cursor) -->
 <div id="hover" class="panel">
   <span>{{ hover.info }}</span>
 </div>
 
 <!-- Targeting banner -->
 <div id="targeting" data-if="targeting">
-  <span style="margin-right: 10px">{{ targeting.name }}: pick a target</span>
+  <span style="margin-right: 10px" data-if="!targeting.aimed">{{ targeting.name }}: pick a target</span>
+  <span style="margin-right: 10px" data-if="targeting.aimed">{{ targeting.name }}: click again to fire</span>
+  <button class="small-button" data-command="confirm" data-if="targeting.aimed">Fire<span class="key">Space</span></button>
   <button class="small-button" data-command="cancel">Cancel<span class="key">Esc</span></button>
 </div>
 

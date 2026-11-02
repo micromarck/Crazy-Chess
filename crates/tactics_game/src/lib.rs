@@ -32,6 +32,7 @@ pub mod camera_director;
 pub mod characters;
 pub mod content;
 pub mod coords;
+pub mod cutaway;
 pub mod editor;
 pub mod enemy_turn;
 pub mod html_ui;
@@ -46,6 +47,7 @@ pub mod playback;
 pub mod rig;
 pub mod state;
 pub mod theme;
+pub mod tooltip;
 pub mod units;
 
 use bevy::prelude::*;
@@ -91,7 +93,7 @@ impl Plugin for TacticsPlugin {
             html_ui::HtmlUiPlugin,
             editor::EditorPlugin,
         ))
-        .add_plugins((characters::CharactersPlugin, lab::LabPlugin));
+        .add_plugins((characters::CharactersPlugin, lab::LabPlugin, tooltip::TooltipPlugin, cutaway::CutawayPlugin));
     }
 }
 

@@ -167,6 +167,7 @@ fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<Batt
                         MeshMaterial3d(mat.clone()),
                         Transform::from_translation(top + Vec3::Y * theme::HIGH_COVER_HEIGHT * 0.475),
                         Name::new(format!("door:{}", prop.tag)),
+                        crate::cutaway::Occluder::new(top, theme::HIGH_COVER_HEIGHT * 0.95),
                     ));
                 }
                 continue;
@@ -178,13 +179,16 @@ fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<Batt
                 _ if prop.cover == CoverLevel::Full => (&assets.high, &assets.high_mat, theme::HIGH_COVER_HEIGHT),
                 _ => (&assets.crate_box, &assets.crate_mat, 0.6),
             };
-            commands.spawn((
+            let mut e = commands.spawn((
                 BoardEntity,
                 Mesh3d(mesh.clone()),
                 MeshMaterial3d(mat.clone()),
                 Transform::from_translation(top + Vec3::Y * h / 2.0),
                 Name::new(format!("prop:{}", prop.tag)),
             ));
+            if h > theme::UNIT_HEIGHT {
+                e.insert(crate::cutaway::Occluder::new(top, h));
+            }
             continue;
         }
 
@@ -194,7 +198,10 @@ fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<Batt
             _ => None,
         };
         if let Some((mesh, mat, h)) = block {
-            commands.spawn((BoardEntity, Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::from_translation(top + Vec3::Y * h / 2.0)));
+            let mut e = commands.spawn((BoardEntity, Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::from_translation(top + Vec3::Y * h / 2.0)));
+            if h > theme::UNIT_HEIGHT {
+                e.insert(crate::cutaway::Occluder::new(top, h));
+            }
         }
     }
 }

@@ -120,10 +120,28 @@ fn ground_circle(gizmos: &mut Gizmos, center: Vec3, radius: f32, color: Color) {
 }
 
 /// Targeting mode: ability range, valid targets and the area of effect.
-fn draw_targeting(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Selection>) {
+fn draw_targeting(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleState>, selection: Res<Selection>) {
     let (Some(id), Some(ability)) = (selection.unit, selection.pending.as_ref()) else { return };
     let battle = &state.battle;
     let (Some(unit), Some(def)) = (battle.unit(id), battle.ability(ability)) else { return };
+
+    // The aimed target: a pulsing ring and a sight line, waiting for "fire".
+    if let Some(aim) = selection.aim {
+        let at = match aim {
+            Target::Unit(t) => battle.unit(t).map(|u| u.pos),
+            Target::Tile(p) => Some(p),
+            Target::None => None,
+        };
+        if let Some(at) = at {
+            let pulse = 0.5 + 0.5 * (time.elapsed_secs() * 6.0).sin();
+            let center = tile_top(battle.map(), at);
+            let color = if def.targeting == Targeting::Ally { theme::HEAL } else { theme::TARGET };
+            ground_circle(&mut gizmos, center, 0.45 + 0.08 * pulse, color);
+            ground_circle(&mut gizmos, center, 0.3, color.with_alpha(0.5 + 0.5 * pulse));
+            let up = Vec3::Y * theme::UNIT_HEIGHT * 0.65;
+            gizmos.line(tile_top(battle.map(), unit.pos) + up, center + up, color.with_alpha(0.8));
+        }
+    }
 
     tile_rect(&mut gizmos, state.battle.map(), unit.pos, 0.95, theme::SELECTED);
     ground_circle(&mut gizmos, tile_top(battle.map(), unit.pos), battle.ability_range(unit, def), theme::MOVE_FAR.with_alpha(0.5));
@@ -140,7 +158,12 @@ fn draw_targeting(mut gizmos: Gizmos, state: Res<BattleState>, selection: Res<Se
     }
 
     // Area preview under the cursor.
-    if let (Some(profile), Some(hover)) = (def.effect.attack_profile(), selection.hovered)
+    // (At the aimed tile once aimed, so the blast stays put while you confirm.)
+    let area_at = match selection.aim {
+        Some(Target::Tile(p)) => Some(p),
+        _ => selection.hovered,
+    };
+    if let (Some(profile), Some(hover)) = (def.effect.attack_profile(), area_at)
         && profile.area_radius > 0.0 {
             let ok = battle
                 .validate(&Action::UseAbility { unit: id, ability: ability.clone(), target: Target::Tile(hover) })

@@ -124,12 +124,20 @@ pub struct Presenter<'w, 's> {
     anim: MessageWriter<'w, AnimCommand>,
     board: MessageWriter<'w, crate::board::BoardDirty>,
     spawn_visual: MessageWriter<'w, crate::units::SpawnUnitVisual>,
+    banner: MessageWriter<'w, crate::tooltip::Banner>,
 }
 
 /// Moves the camera unless a camera script owns it.
 fn look_at(director: &CameraDirector, rig: &mut CameraRig, p: Vec3) {
     if !director.is_active() {
-        rig.target_focus = p;
+        rig.follow(p);
+    }
+}
+
+/// Keeps two points in view (shooter and target), unless a script owns the camera.
+fn frame(director: &CameraDirector, rig: &mut CameraRig, a: Vec3, b: Vec3) {
+    if !director.is_active() {
+        rig.frame(a, b);
     }
 }
 
@@ -186,7 +194,16 @@ fn run_playback(
             let hidden = b.fog()
                 && b.unit(*unit).is_some_and(|u| u.team == Team::Enemy)
                 && !b.team_can_see(Team::Player, crate::coords::world_to_grid(*from));
-            *t += dt * MOVE_SPEED * if hidden { 6.0 } else { 1.0 } / seg(*from, *index);
+            // Accelerate out of the first step and settle into the last one.
+            let last = points.len().saturating_sub(1);
+            let ease = if *index == 0 && last > 0 {
+                0.6 + 0.4 * *t
+            } else if *index >= last {
+                1.0 - 0.35 * *t
+            } else {
+                1.0
+            };
+            *t += dt * MOVE_SPEED * ease * if hidden { 6.0 } else { 1.0 } / seg(*from, *index);
             while *t >= 1.0 && *index < points.len() {
                 let leftover = (*t - 1.0) * seg(*from, *index);
                 *from = points[*index];
@@ -202,8 +219,8 @@ fn run_playback(
                     }
                     tr.translation = pos;
                     p.commands.entity(*entity).insert(crate::units::FaceTarget(Some(*next)));
-                    if !hidden {
-                        look_at(&p.director, &mut p.rig, tr.translation);
+                    if !hidden && !p.director.is_active() {
+                        p.rig.track(tr.translation);
                     }
                 } else {
                     tr.translation = *from;
@@ -323,7 +340,10 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             p.anim.write(AnimCommand::OneShot { unit: *unit, slot });
             let scripted = play_camera(battle.rules(), &mut p.director, pres.camera.as_ref(), pres.camera_chance, actor, aim.unwrap_or(actor));
             if !scripted {
-                look_at(&p.director, &mut p.rig, aim.map_or(actor, |a| (a + actor) / 2.0));
+                match aim {
+                    Some(a) => frame(&p.director, &mut p.rig, actor, a),
+                    None => look_at(&p.director, &mut p.rig, actor),
+                }
             }
             FloatingText::spawn(&mut p.commands, actor + Vec3::Y * 1.6, def.name.to_uppercase(), theme::UI_TEXT);
 
@@ -362,7 +382,7 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
                 if let Some(e) = entity_of(*attacker) {
                     p.commands.entity(e).insert(crate::units::FaceTarget(Some(t)));
                 }
-                look_at(&p.director, &mut p.rig, (s + t) / 2.0);
+                frame(&p.director, &mut p.rig, s, t);
                 vec![Anim::Shot {
                     shooter: s + Vec3::Y * CHEST,
                     target: t + Vec3::Y * CHEST,
@@ -420,10 +440,21 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
                 Team::Enemy => "ALIEN",
             };
             p.log.push(format!("- Round {round}: {who} turn -"));
+            let (text, color) = match team {
+                Team::Player => (format!("XCOM TURN  -  ROUND {round}"), theme::PLAYER),
+                Team::Enemy => ("ALIEN ACTIVITY".to_string(), theme::ENEMY),
+            };
+            if !battle.is_over() {
+                p.banner.write(crate::tooltip::Banner { text, color });
+            }
             vec![Anim::Wait { remaining: 0.6 }]
         }
 
         GameEvent::BattleEnded { winner } => {
+            p.banner.write(match winner {
+                Team::Player => crate::tooltip::Banner { text: "MISSION ACCOMPLISHED".into(), color: theme::HEAL },
+                Team::Enemy => crate::tooltip::Banner { text: "MISSION FAILED".into(), color: theme::TARGET },
+            });
             p.log.push(match winner {
                 Team::Player => "Mission accomplished!".to_string(),
                 Team::Enemy => "Squad wiped out. Mission failed.".to_string(),
@@ -487,6 +518,7 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
                 None => "ALARM! Concealment broken".to_string(),
             };
             p.log.push(text.clone());
+            p.banner.write(crate::tooltip::Banner { text: "ALARM RAISED".into(), color: theme::TARGET });
             let at = by.and_then(pos_of).unwrap_or(p.rig.target_focus);
             if by.is_some() {
                 look_at(&p.director, &mut p.rig, at);

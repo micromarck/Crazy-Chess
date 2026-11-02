@@ -116,6 +116,7 @@ pub fn collect_ui_data(
     let pending = selection.pending.as_ref().and_then(|a| b.ability(a));
     v.set("targeting", bool_str(pending.is_some()));
     v.set("targeting.name", pending.map_or("", |d| d.name.as_str()));
+    v.set("targeting.aimed", bool_str(selection.aim.is_some()));
     v.set("hover.info", hover_info(&state, &selection));
 
     // Log.
@@ -279,7 +280,8 @@ pub fn hover_info(state: &BattleState, selection: &Selection) -> String {
         });
         if let Some(def) = ability.as_ref().and_then(|a| b.ability(a)) {
             s = format!("[{}]\n", def.name);
-            match target_for(b, def, hover).map(|t| b.preview(sel, &def.id, t)) {
+            // The aimed target wins: that's the shot about to be fired.
+            match selection.aim.or_else(|| target_for(b, def, hover)).map(|t| b.preview(sel, &def.id, t)) {
                 Some(Ok(previews)) if !previews.is_empty() => {
                     for (victim, p) in &previews {
                         if let Some(v) = b.unit(*victim) {
@@ -304,7 +306,7 @@ pub fn hover_info(state: &BattleState, selection: &Selection) -> String {
         }
     }
     if s.is_empty() {
-        s = "Hover an enemy for odds,\na tile to move".into();
+        s = "Click an enemy to aim, a tile to move\nRight-drag: rotate   Wheel: zoom   F: focus".into();
     }
     s.trim_end().to_string()
 }
