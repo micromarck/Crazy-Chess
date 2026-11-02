@@ -28,7 +28,7 @@
 
 use crate::action::{Action, ActionError, Target};
 use crate::combat::{ShotPreview, preview_attack};
-use crate::content::{AbilityDef, AbilityEffect, AbilityId, AbilityRange, AttackProfile, Ruleset, Targeting};
+use crate::content::{AbilityDef, AbilityEffect, AbilityId, AbilityRange, AttackProfile, ItemDef, Loadout, Ruleset, Targeting};
 use crate::event::{GameEvent, ShotOutcome};
 use crate::grid::{GridPos, Map};
 use crate::pathfinding::{self, ReachableSet};
@@ -36,6 +36,7 @@ use crate::rng::GameRng;
 use crate::unit::{Team, Unit, UnitId};
 use crate::visibility;
 
+mod morale;
 mod stealth;
 mod world;
 pub use stealth::{DoorState, Stealth};
@@ -102,16 +103,42 @@ impl Battle {
         }
     }
 
-    /// Places a new unit of class `class` on the map and returns its id.
+    /// Places a new unit of class `class` with its default gear on the map
+    /// and returns its id.
     ///
     /// Fails if the class (or its weapon) isn't registered, or the tile is not
     /// free — data modules can be wrong, so this reports instead of panicking.
     pub fn spawn(&mut self, class: &str, name: impl Into<String>, team: Team, pos: GridPos) -> Result<UnitId, String> {
-        let class = self.rules.class(class).ok_or_else(|| format!("unknown unit class '{class}'"))?;
+        self.spawn_equipped(class, name, team, pos, None, &Loadout::default())
+    }
+
+    /// Like [`Battle::spawn`] with a loadout: `preset` (a [`LoadoutDef`] id)
+    /// and individual `overrides` on top of the class's default gear.
+    /// Illegal or unknown gear is an error.
+    pub fn spawn_equipped(
+        &mut self,
+        class: &str,
+        name: impl Into<String>,
+        team: Team,
+        pos: GridPos,
+        preset: Option<&str>,
+        overrides: &Loadout,
+    ) -> Result<UnitId, String> {
+        let class = self.rules.class(class).ok_or_else(|| format!("unknown unit class '{class}'"))?.clone();
+        if let Some(p) = preset
+            && self.rules.loadout(p).is_none()
+        {
+            return Err(format!("unknown loadout '{p}'"));
+        }
+        let gear = self.rules.gear_for(&class.id, preset, overrides);
+        if let Some(problem) = self.rules.check_gear(&class.id, &gear).into_iter().next() {
+            return Err(problem);
+        }
+        let weapon_id = gear.weapon.clone().unwrap_or_else(|| class.weapon.clone());
         let mut weapon = self
             .rules
-            .weapon(&class.weapon)
-            .ok_or_else(|| format!("class '{}' uses unknown weapon '{}'", class.id, class.weapon))?
+            .weapon(&weapon_id)
+            .ok_or_else(|| format!("class '{}' uses unknown weapon '{weapon_id}'", class.id))?
             .clone();
         if !self.map.is_walkable(pos) {
             return Err(format!("cannot spawn on non-walkable tile {pos}"));
@@ -120,6 +147,36 @@ impl Battle {
             return Err(format!("tile {pos} already occupied"));
         }
         weapon.ammo = weapon.clip_size;
+
+        // Items: stats, abilities and their uses.
+        let mut stats = class.stats;
+        let mut abilities = class.abilities.clone();
+        let mut charges: std::collections::BTreeMap<AbilityId, u32> = Default::default();
+        let items: Vec<ItemDef> =
+            gear.armor.iter().chain(gear.items.iter()).filter_map(|id| self.rules.item(id).cloned()).collect();
+        for item in &items {
+            let m = item.stats;
+            stats.max_hp = (stats.max_hp + m.max_hp).max(1);
+            stats.mobility = (stats.mobility as i32 + m.mobility).max(2) as u32;
+            stats.aim += m.aim;
+            stats.defense += m.defense;
+            stats.sight = (stats.sight + m.sight).max(1.0);
+            stats.bravery += m.bravery;
+            for a in &item.abilities {
+                let Some(def) = self.rules.ability(a) else { continue };
+                if let Some(per_item) = item.charges.or(def.charges)
+                    && def.charges.is_some()
+                {
+                    // Classes that know the ability natively keep its own uses.
+                    let base = if class.abilities.contains(a) { def.charges.unwrap_or(0) } else { 0 };
+                    *charges.entry(a.clone()).or_insert(base) += per_item;
+                }
+                if !abilities.contains(a) {
+                    abilities.push(a.clone());
+                }
+            }
+        }
+
         let id = UnitId(self.units.len() as u32);
         let unit = Unit {
             id,
@@ -127,16 +184,19 @@ impl Battle {
             class: class.id.clone(),
             team,
             pos,
-            hp: class.stats.max_hp,
+            hp: stats.max_hp,
             action_points: if team == self.active_team { self.rules.combat.action_points } else { 0 },
-            stats: class.stats,
+            stats,
             weapon,
-            abilities: class.abilities.clone(),
+            abilities,
             cooldowns: Default::default(),
-            charges: Default::default(),
+            charges,
             status: Default::default(),
             model: class.model.clone(),
             ai: Default::default(),
+            fear: 0,
+            fearless: class.fearless,
+            gear: Loadout { weapon: Some(weapon_id), ..gear },
         };
         self.units.push(unit);
         Ok(id)
@@ -491,7 +551,11 @@ impl Battle {
                 }
             }
             AbilityEffect::Overwatch(_) => self.unit_mut(unit).status.overwatch = Some(def.id.clone()),
-            AbilityEffect::Defend { defense_bonus } => self.unit_mut(unit).status.defense_bonus = *defense_bonus,
+            AbilityEffect::Defend { defense_bonus } => {
+                self.unit_mut(unit).status.defense_bonus = *defense_bonus;
+                let relief = self.rules.combat.morale.hunker_relief;
+                self.add_fear(unit, -relief, events);
+            }
             AbilityEffect::Reload => {
                 let u = self.unit_mut(unit);
                 u.weapon.ammo = u.weapon.clip_size;
@@ -636,7 +700,10 @@ impl Battle {
         if let ShotOutcome::Hit { damage, .. } = outcome {
             // The attack event already shows the damage; this applies it and
             // runs damaged/death scripts.
-            self.apply_damage(target, damage, false, events);
+            self.apply_damage_from(target, damage, false, Some(attacker), events);
+        } else {
+            let shot_at = self.rules.combat.morale.shot_at;
+            self.add_fear(target, shot_at, events);
         }
     }
 
@@ -673,6 +740,7 @@ impl Battle {
             });
         }
         events.push(GameEvent::TurnStarted { team, round: self.round });
+        self.morale_turn_start(team, events);
         self.on_turn_start(events);
         self.check_victory(events);
     }

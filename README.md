@@ -20,6 +20,16 @@ and custom animations override or add slots, all in data. **Drop a rigged
 mapped by name automatically; test it in the **Character Lab (F7)**. See
 **[ANIMATION.md](ANIMATION.md)**.
 
+Units carry **loadouts** (weapon, armor, two utility items: grenades,
+medkits, scopes...) defined as module data and edited in game with the
+**Loadout** panel. **Morale**: fear rises with wounds, near misses, fallen
+comrades, flanks and bad odds, and falls with kills and hunkering; shaken
+and panicked units (yours too) aim worse and panicked ones lose AP. Robots
+and drones are fearless. The **AI** reads threat (the damage it would take at
+each spot), plans "move then shoot", hunts flanks, focuses fire, avoids
+grenade clusters and walking into overwatch, and changes behaviour with fear
+(confident, steady, shaken, panicked).
+
 Levels are **XML mission files** in one folder (`assets/missions/`): grid
 layout with cut-outs, a height map (units climb 1 level unless a ladder or
 their class allows more; 3D line of sight, high-ground bonus), units, props
@@ -55,9 +65,11 @@ TBSium/
     │       ├── battle/        authoritative state, turns, overwatch (mod.rs)
     │       │                  + props, script hooks, flags (world.rs)
     │       │                  + pods, stealth, doors, fog, goals (stealth.rs)
+    │       │                  + fear triggers (morale.rs)
     │       ├── mission.rs     XML mission format
     │       ├── script.rs      Rhai scripting sandbox
-    │       ├── ai.rs          utility-based enemy AI
+    │       ├── ai.rs          utility AI: threat, flanks, plans, fear moods
+    │       ├── content/       ruleset, modules, gear (items/loadouts), morale
     │       ├── scenario.rs    demo map + procedural skirmish generator
     │       └── rng.rs         deterministic SplitMix64
     └── tactics_game/          Bevy 3D frontend

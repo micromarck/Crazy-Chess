@@ -121,8 +121,8 @@ impl Battle {
             for m in members {
                 match battle.free_tile_near(d.pos) {
                     Some(p) => {
-                        if let Err(e) = battle.spawn(&m.class, m.name.clone(), d.team, p) {
-                            warnings.push(e);
+                        if let Err(e) = battle.spawn_equipped(&m.class, m.name.clone(), d.team, p, m.loadout.as_deref(), &m.gear) {
+                            warnings.push(format!("{}: {e}", m.name));
                         }
                     }
                     None => warnings.push(format!("deploy: no room for {}", m.name)),
@@ -131,7 +131,7 @@ impl Battle {
         }
 
         for u in &mission.units {
-            match battle.spawn(&u.class, u.name.clone(), u.team, u.pos) {
+            match battle.spawn_equipped(&u.class, u.name.clone(), u.team, u.pos, u.loadout.as_deref(), &u.gear) {
                 Ok(id) => {
                     if let Some(tag) = &u.tag {
                         battle.unit_tags.insert(id, tag.clone());
@@ -303,6 +303,7 @@ impl Battle {
                     max_hp: u.stats.max_hp,
                     alive: u.is_alive(),
                     dormant: u.ai.dormant,
+                    fear: u.fear,
                 })
                 .collect(),
             props: self.props.iter().map(|p| WorldProp { tag: p.tag.clone(), pos: p.pos, hp: p.hp, alive: p.alive }).collect(),
@@ -384,6 +385,7 @@ impl Battle {
             ScriptCommand::SetFlag { name, value } => {
                 self.flags.insert(name, value);
             }
+            ScriptCommand::AddFear { unit, amount } => self.add_fear(UnitId(unit), amount, events),
             ScriptCommand::Objective(text) => self.set_objective(text, events),
             ScriptCommand::RaiseAlarm => self.raise_alarm(None, events),
             ScriptCommand::Wake { unit } => self.wake(UnitId(unit), events),
@@ -422,6 +424,18 @@ impl Battle {
     /// `damaged` / `death` / `unit_killed` hooks. `announce` emits
     /// [`GameEvent::UnitDamaged`] (attacks already reported their damage).
     pub(super) fn apply_damage(&mut self, target: UnitId, amount: i32, announce: bool, events: &mut Vec<GameEvent>) {
+        self.apply_damage_from(target, amount, announce, None, events);
+    }
+
+    /// [`Battle::apply_damage`] knowing who did it (for morale).
+    pub(super) fn apply_damage_from(
+        &mut self,
+        target: UnitId,
+        amount: i32,
+        announce: bool,
+        attacker: Option<UnitId>,
+        events: &mut Vec<GameEvent>,
+    ) {
         let Some(t) = self.units.get_mut(target.0 as usize).filter(|u| u.is_alive()) else { return };
         let amount = amount.max(0).min(t.hp.max(0) + 1_000);
         t.hp -= amount;
@@ -437,6 +451,10 @@ impl Battle {
         let pos = self.units[target.0 as usize].pos;
         if !died {
             self.wake(target, events);
+            let per = self.rules.combat.morale.per_damage;
+            self.add_fear(target, per * amount, events);
+        } else {
+            self.fear_on_death(target, attacker, events);
         }
         self.fire(Trigger { unit: Some(target), pos: Some(pos), amount: amount as i64, ..Trigger::new(HookEvent::Damaged) }, events);
         if died {

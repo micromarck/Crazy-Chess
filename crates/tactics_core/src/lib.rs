@@ -62,6 +62,8 @@
 
 pub mod action;
 pub mod ai;
+#[cfg(test)]
+mod ai_legacy;
 pub mod battle;
 pub mod combat;
 pub mod content;

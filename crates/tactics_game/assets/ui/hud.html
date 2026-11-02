@@ -78,6 +78,17 @@
   .mission.current { background: #2f5e44; }
   .mission .key { max-width: 320px; }
 
+  #loadout { top: 140px; left: 190px; padding: 8px; max-width: 760px; }
+  .gear-row { flex-direction: column; margin-bottom: 8px; }
+  .gear-name { font-size: 14px; }
+  .gear-buttons { flex-direction: row; flex-wrap: wrap; }
+  .gear { min-width: 120px; height: 44px; font-size: 12px; margin-left: 0px; margin-right: 4px; margin-top: 2px; padding: 2px 6px; }
+  .morale { font-size: 13px; }
+  .morale.steady { color: #9be39b; }
+  .morale.shaken { color: #f2d24a; }
+  .morale.panicked { color: #c49bff; }
+  .morale.fearless { color: #9aa1ad; }
+  .fear-tag { font-size: 11px; color: #f2d24a; }
   #lab { top: 140px; left: 12px; padding: 6px; max-width: 420px; }
   .lab-item {
     height: auto;
@@ -160,6 +171,7 @@
 <div id="tools">
   <button class="small-button" data-command="editor">Edit<span class="key">F1</span></button>
   <button class="small-button" data-command="toggle:missions">Missions<span class="key">list</span></button>
+  <button class="small-button" data-command="toggle:loadout">Loadout<span class="key">squad</span></button>
   <button class="small-button" data-command="cinematics">Cinema<span class="key" data-if="cinematics">on</span><span class="key" data-if="!cinematics">off</span></button>
 </div>
 
@@ -195,12 +207,32 @@
   </div>
 </div>
 
+<!-- Squad loadouts: click a piece of gear to cycle it; applies on restart -->
+<div id="loadout" class="panel" data-if="ui.loadout and !lab.active">
+  <span class="dim" style="font-size: 11px; margin-bottom: 4px">LOADOUT - click to change, then apply (restarts the mission)</span>
+  <div data-for="m in loadout">
+    <div class="gear-row">
+      <span class="gear-name">{{ m.name }} - {{ m.class }}</span>
+      <div class="gear-buttons">
+        <button class="gear" data-command="gear:preset:{{ m.index }}"><span class="key">preset</span><span>{{ m.preset }}</span></button>
+        <button class="gear" data-command="gear:weapon:{{ m.index }}"><span class="key">weapon</span><span>{{ m.weapon }}</span></button>
+        <button class="gear" data-command="gear:armor:{{ m.index }}"><span class="key">armor</span><span>{{ m.armor }}</span></button>
+        <button class="gear" data-command="gear:item:{{ m.index }}:0"><span class="key">item 1</span><span>{{ m.item0 }}</span></button>
+        <button class="gear" data-command="gear:item:{{ m.index }}:1"><span class="key">item 2</span><span>{{ m.item1 }}</span></button>
+      </div>
+      <span class="dim" style="font-size: 12px">{{ m.stats }}</span>
+      <span style="font-size: 12px; color: #ff8a7a">{{ m.problems }}</span>
+    </div>
+  </div>
+  <button class="mission" data-command="apply_loadout"><span>Apply and restart mission</span></button>
+</div>
+
 <!-- Squad roster: click a soldier to select them -->
 <div id="roster" class="panel" data-if="!editor.open and !lab.active">
   <span class="dim" style="font-size: 11px; margin-bottom: 4px">SQUAD</span>
   <div data-for="m in squad">
     <button class="member {{ m.state }}" data-command="select:{{ m.id }}">
-      <span>{{ m.name }}  {{ m.hp }}/{{ m.max_hp }}</span>
+      <span>{{ m.name }}  {{ m.hp }}/{{ m.max_hp }}  <span class="fear-tag">{{ m.fear }}</span></span>
       <div class="hp-track"><div class="hp-fill" style="width: {{ m.hp_percent }}%"></div></div>
     </button>
   </div>
@@ -213,7 +245,9 @@
     <span class="dim">{{ unit.class }}</span>
     <span>HP {{ unit.hp }}/{{ unit.max_hp }}    AP {{ unit.ap }}/{{ unit.max_ap }}</span>
     <span>{{ unit.weapon }}  ammo {{ unit.ammo }}/{{ unit.clip }}</span>
-    <span class="dim">Aim {{ unit.aim }}  Mobility {{ unit.mobility }}</span>
+    <span class="dim">Aim {{ unit.aim }}  Mobility {{ unit.mobility }}  Def {{ unit.defense }}</span>
+    <span class="dim">{{ unit.gear }}</span>
+    <span class="morale {{ unit.morale_state }}">Morale: {{ unit.morale }}</span>
     <span style="color: #f2d24a">{{ unit.status }}</span>
   </div>
   <span data-if="!unit.selected">No unit selected - tap a soldier</span>

@@ -57,6 +57,8 @@ pub struct Weapon {
     /// Rounds currently loaded (instance state: set to `clip_size` on spawn).
     #[cfg_attr(feature = "data", serde(skip))]
     pub ammo: i32,
+    /// Classes allowed to carry it in a loadout (empty = everyone).
+    pub classes: Vec<String>,
 }
 
 impl Default for Weapon {
@@ -72,6 +74,7 @@ impl Default for Weapon {
             max_range: 18.0,
             clip_size: 4,
             ammo: 0,
+            classes: Vec::new(),
         }
     }
 }
@@ -92,6 +95,9 @@ pub struct UnitStats {
     /// Levels the unit can step **up** in one move (1 = normal infantry,
     /// higher = jump jets / flyers). Ladders allow any climb.
     pub climb: i8,
+    /// Fear resistance: 50 = normal, 100 = unshakeable, 0 = fragile
+    /// (see [`MoraleRules`](crate::content::MoraleRules)).
+    pub bravery: i32,
 }
 
 impl Default for UnitStats {
@@ -103,6 +109,7 @@ impl Default for UnitStats {
             defense: 0,
             sight: 14.0,
             climb: 1,
+            bravery: 50,
         }
     }
 }
@@ -122,6 +129,10 @@ pub struct UnitClass {
     pub abilities: Vec<AbilityId>,
     /// Hint for the renderer (`"soldier"`, `"alien"`...); the core ignores it.
     pub model: String,
+    /// Never afraid (robots, drones, constructs): fear stays at 0.
+    pub fearless: bool,
+    /// Default loadout preset (see [`LoadoutDef`](crate::content::LoadoutDef)).
+    pub loadout: Option<String>,
 }
 
 /// Temporary conditions on a unit. A future "status effect" module type will
@@ -173,6 +184,12 @@ pub struct Unit {
     pub model: String,
     /// AI behaviour state (dormant pods, patrols).
     pub ai: UnitAi,
+    /// 0-100, see [`MoraleRules`](crate::content::MoraleRules).
+    pub fear: i32,
+    /// Copied from the class: never afraid.
+    pub fearless: bool,
+    /// What the unit carries (resolved at spawn).
+    pub gear: crate::content::Loadout,
 }
 
 impl Unit {

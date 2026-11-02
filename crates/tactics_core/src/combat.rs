@@ -81,6 +81,11 @@ pub fn preview_attack(
         None => push("Aim", attacker.stats.aim),
     }
     push("Ability", profile.accuracy_bonus);
+    let fear = rules.morale.aim_modifier(attacker.fear);
+    match rules.morale.level(attacker.fear) {
+        crate::content::FearLevel::Panicked => push("Panicked", fear),
+        _ => push("Shaken", fear),
+    }
     if map.elevation(origin) > map.elevation(target.pos) {
         push("Height advantage", rules.height_advantage_bonus);
     }
@@ -153,6 +158,9 @@ mod tests {
             charges: Default::default(),
             status: UnitStatus::default(),
             ai: Default::default(),
+            fear: 0,
+            fearless: false,
+            gear: Default::default(),
             model: String::new(),
         }
     }

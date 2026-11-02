@@ -64,6 +64,7 @@ impl GameModule for GrenadierModule {
             max_range: 16.0,
             clip_size: 5,
             ammo: 0,
+            classes: Vec::new(),
         });
         rules.add_class(UnitClass {
             id: "grenadier".into(),
@@ -74,6 +75,47 @@ impl GameModule for GrenadierModule {
                 .map(AbilityId::new)
                 .to_vec(),
             model: "soldier".into(),
+            ..Default::default()
+        });
+
+        // Items that carry the new abilities, and loadout presets using them.
+        rules.add_item(ItemDef {
+            id: "frag".into(),
+            name: "Frag Grenade".into(),
+            description: "Grants Frag Grenade (one throw per grenade carried).".into(),
+            slot: ItemSlot::Utility,
+            abilities: vec!["frag_grenade".into()],
+            charges: Some(1),
+            ..Default::default()
+        });
+        rules.add_item(ItemDef {
+            id: "medkit_item".into(),
+            name: "Medkit".into(),
+            description: "Grants Medkit (two uses per kit).".into(),
+            slot: ItemSlot::Utility,
+            abilities: vec!["medkit".into()],
+            charges: Some(2),
+            ..Default::default()
+        });
+        let preset = |id: &str, name: &str, desc: &str, weapon: &str, armor: Option<&str>, items: &[&str]| LoadoutDef {
+            id: id.into(),
+            name: name.into(),
+            description: desc.into(),
+            classes: Vec::new(),
+            gear: Loadout {
+                weapon: Some(weapon.into()),
+                armor: armor.map(String::from),
+                items: items.iter().map(|s| s.to_string()).collect(),
+            },
+        };
+        rules.add_loadout(preset("standard", "Standard", "Rifle, kevlar, one frag.", "rifle", Some("kevlar"), &["frag"]));
+        rules.add_loadout(preset("breacher", "Breacher", "Shotgun, plated armor, frag and stims: room clearing.", "shotgun", Some("plated_armor"), &["frag", "stims"]));
+        rules.add_loadout(preset("recon", "Recon", "SMG, ghost suit, scope: fast and quiet.", "smg", Some("ghost_suit"), &["scope"]));
+        rules.add_loadout(preset("medic", "Field Medic", "Rifle, kevlar, two medkits.", "rifle", Some("kevlar"), &["medkit_item", "medkit_item"]));
+        rules.add_loadout(preset("heavy", "Heavy", "LMG, plated armor, two frags.", "lmg", Some("plated_armor"), &["frag", "frag"]));
+        rules.add_loadout(LoadoutDef {
+            classes: vec!["sniper".into()],
+            ..preset("marksman_kit", "Marksman", "Sniper rifle, scope, dog tags.", "sniper_rifle", Some("ghost_suit"), &["scope", "dog_tags"])
         });
 
         // Visuals: throw animation, lobbed projectile, explosion camera.
@@ -95,7 +137,7 @@ impl GameModule for GrenadierModule {
 
         // 3. Modify existing content -----------------------------------------
         rules.grant_ability("rifleman", "medkit");
-        rules.add_squad(SquadDef::new(
+        let mut squad = SquadDef::new(
             "player",
             &[
                 ("rifleman", "Sgt. Vance"),
@@ -103,6 +145,11 @@ impl GameModule for GrenadierModule {
                 ("sniper", "Spc. Moreau"),
                 ("grenadier", "Pvt. Kowalski"),
             ],
-        ));
+        );
+        // Default loadouts (players change them in the Loadout panel).
+        for (member, preset) in squad.members.iter_mut().zip(["standard", "breacher", "marksman_kit", "heavy"]) {
+            member.loadout = Some(preset.into());
+        }
+        rules.add_squad(squad);
     }
 }

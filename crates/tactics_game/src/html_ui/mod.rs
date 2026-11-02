@@ -169,6 +169,8 @@ fn rebuild_layout(
 /// | `model:<id>` | Character Lab: show this model on the selected unit |
 /// | `anim:<slot>` | Character Lab: play this animation slot |
 /// | `lab_walk` | Character Lab: toggle the walk loop |
+/// | `gear:<what>:<member>[:<slot>]` | change a squad member's loadout (see [`crate::loadout`]) |
+/// | `apply_loadout` | restart the mission with the new loadouts |
 /// | `log:<text>` | print a message (handy while designing layouts) |
 #[allow(clippy::too_many_arguments)]
 pub fn run_ui_commands(
@@ -180,7 +182,7 @@ pub fn run_ui_commands(
     mut layout: ResMut<HtmlLayout>,
     mut selection: ResMut<Selection>,
     mut flags: ResMut<UiFlags>,
-    state: Res<BattleState>,
+    mut state: ResMut<BattleState>,
     mut log: ResMut<LogMessages>,
 ) {
     for UiCommand(cmd) in commands.read() {
@@ -236,6 +238,13 @@ pub fn run_ui_commands(
             }
             "lab_walk" => {
                 lab.write(crate::lab::LabCommand::ToggleWalk);
+            }
+            "gear" => match crate::loadout::command(arg, state.battle.rules_mut()) {
+                Some(msg) => log.push(msg),
+                None => log.push(format!("UI: bad gear command '{arg}'")),
+            },
+            "apply_loadout" => {
+                player.write(PlayerCommand::Restart);
             }
             "log" => log.push(arg.to_string()),
             other => log.push(format!("UI: unknown command '{other}'")),

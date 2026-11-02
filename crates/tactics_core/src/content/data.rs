@@ -27,7 +27,7 @@
 
 use super::{
     AbilityDef, AbilityPresentation, AiProfile, CameraScriptDef, CombatRules, GameModule, MapDef, ModelDef,
-    ModuleInfo, PresentationSettings, Ruleset, SkeletonDef, AnimationDef as SkeletalAnimation, SquadDef, UiLayoutDef, UnitClass, Weapon,
+    ItemDef, LoadoutDef, ModuleInfo, PresentationSettings, Ruleset, SkeletonDef, AnimationDef as SkeletalAnimation, SquadDef, UiLayoutDef, UnitClass, Weapon,
 };
 
 /// "Give this existing class this ability" — lets data modules extend classes
@@ -53,6 +53,10 @@ pub struct DataModule {
     pub maps: Vec<MapDef>,
     pub ai_profiles: Vec<AiProfile>,
     pub grants: Vec<AbilityGrant>,
+    /// Armor and utility items.
+    pub items: Vec<ItemDef>,
+    /// Named loadout presets.
+    pub loadouts: Vec<LoadoutDef>,
     /// 3D models and their animation clips.
     pub models: Vec<ModelDef>,
     /// Per-ability visuals (animation, camera script, projectile).
@@ -141,6 +145,12 @@ impl GameModule for DataModule {
         }
         for g in &self.grants {
             rules.grant_ability(&g.class, &g.ability);
+        }
+        for i in &self.items {
+            rules.add_item(i.clone());
+        }
+        for l in &self.loadouts {
+            rules.add_loadout(l.clone());
         }
         for m in &self.models {
             rules.add_model(m.clone());
@@ -251,5 +261,40 @@ mod tests {
         let text = module.to_ron();
         let back = DataModule::from_ron(&text).unwrap_or_else(|e| panic!("{e}\n{text}"));
         assert_eq!(module, back);
+    }
+}
+
+#[cfg(test)]
+mod gear_docs_tests {
+    use super::*;
+    use crate::content::{GameModule, Ruleset};
+
+    /// The example in MODULES.md ("Loadouts", "Morale and fear") parses and applies.
+    #[test]
+    fn gear_and_morale_example_parses() {
+        let text = r#"(
+            info: (id: "gear_example", name: "Gear example"),
+            combat: (morale: (shaken_at: 30, panicked_at: 60, ally_killed_near: 35)),
+            items: [
+                (id: "exo", name: "Exo Suit", slot: Armor,
+                 stats: (max_hp: 5, mobility: -4, defense: 10), classes: ["grenadier"]),
+            ],
+            loadouts: [
+                (id: "tank", name: "Tank", gear: (weapon: "lmg", armor: "exo", items: ["frag", "frag"])),
+            ],
+            squads: [
+                (id: "player", members: [
+                    (class: "grenadier", name: "Pvt. Kowalski", loadout: "tank"),
+                    (class: "assault", name: "Cpl. Okoye", loadout: "breacher", gear: (items: ["stims"])),
+                ]),
+            ],
+        )"#;
+        let module = DataModule::from_ron(text).unwrap_or_else(|e| panic!("{e}"));
+        let mut rules = Ruleset::standard();
+        rules.add_module(&crate::modules::GrenadierModule);
+        rules.add_module(&module as &dyn GameModule);
+        assert_eq!(rules.combat.morale.shaken_at, 30);
+        assert_eq!(rules.combat.morale.recovery, 8, "unset fields keep defaults");
+        assert!(rules.validate().is_empty(), "{:?}", rules.validate());
     }
 }

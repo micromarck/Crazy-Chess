@@ -311,12 +311,14 @@ crit = weapon crit (weapon damage only) + crit_bonus + flank_crit_bonus (if flan
 
 | Section | Type | Key fields |
 |---|---|---|
-| `weapons` | `Weapon` | `id, name, damage_min, damage_max, crit_chance, crit_bonus, optimal_range, max_range, clip_size` |
-| `classes` | `UnitClass` | `id, name, stats: (max_hp, mobility, aim, defense, sight), weapon, abilities: [...], model` |
-| `squads` | `SquadDef` | `id` (`"player"` / `"enemy"` are deployed), `members: [(class, name)]` |
+| `weapons` | `Weapon` | `id, name, damage_min, damage_max, crit_chance, crit_bonus, optimal_range, max_range, clip_size, classes` (who may carry it; empty = anyone) |
+| `classes` | `UnitClass` | `id, name, stats: (max_hp, mobility, aim, defense, sight, climb, bravery), weapon, abilities: [...], model, fearless, loadout` |
+| `squads` | `SquadDef` | `id` (`"player"` / `"enemy"` are deployed), `members: [(class, name, loadout, gear)]` |
+| `items` | `ItemDef` | `id, name, description, slot (Armor / Utility), stats: (max_hp, mobility, aim, defense, sight, bravery), abilities, charges, classes` |
+| `loadouts` | `LoadoutDef` | `id, name, description, classes, gear: (weapon, armor, items: [...])` |
 | `maps` | `MapDef` | `id` (`"demo"` is used for the first battle), `name`, `ascii` (`.` floor, `h` half, `H` full, `#` void, `A`/`E` spawns) |
 | `ai_profiles` | `AiProfile` | `id` (`"default"` drives the enemy), `config: (shoot_threshold, area_min_score, heal_below, ...)` |
-| `combat` | `CombatRules` | `min_hit, max_hit, falloff_per_tile, close_bonus_per_tile, max_close_bonus, action_points` |
+| `combat` | `CombatRules` | `min_hit, max_hit, falloff_per_tile, close_bonus_per_tile, max_close_bonus, action_points, height_advantage_bonus, morale: (...)` (see "Morale and fear") |
 | `grants` | `AbilityGrant` | `(class, ability)`: add a move to an existing class |
 | `models` | `ModelDef` | see "Models, animations and camera scripts" |
 | `presentations` | `AbilityPresentation` | `ability, animation, camera, camera_chance, projectile, windup` |
@@ -327,6 +329,64 @@ crit = weapon crit (weapon damage only) + crit_bonus + flank_crit_bonus (if flan
 | `ui_layouts` | `UiLayoutDef` | `id` (`"hud"` replaces the HUD), `html`; see [UI.md](UI.md) |
 
 A class's `model` is the id of a `ModelDef` (base game: `"soldier"`, `"alien"`).
+
+### Loadouts (`items`, `loadouts`)
+
+A unit carries a **weapon**, one **armor** item and up to two **utility**
+items. Items add stats and grant abilities; an ability with limited
+`charges` gets uses per item carried (two frag grenades = two throws).
+
+```ron
+items: [
+    (id: "smoke", name: "Smoke Grenade", slot: Utility,
+     abilities: ["smoke_grenade"], charges: 1),
+    (id: "exo", name: "Exo Suit", slot: Armor,
+     stats: (max_hp: 5, mobility: -4, defense: 10), classes: ["grenadier"]),
+],
+loadouts: [
+    (id: "tank", name: "Tank", gear: (weapon: "lmg", armor: "exo", items: ["frag", "frag"])),
+],
+squads: [
+    (id: "player", members: [
+        (class: "grenadier", name: "Pvt. Kowalski", loadout: "tank"),
+        (class: "assault", name: "Cpl. Okoye", loadout: "breacher", gear: (items: ["smoke", "stims"])),
+    ]),
+],
+```
+
+Gear is resolved as: class weapon → class `loadout` preset → the member's
+`loadout` preset → the member's `gear` overrides. `armor: ""` / `items: [""]`
+mean "explicitly none". Illegal gear (unknown ids, class restrictions, wrong
+slot, more than two utility items) is reported by `validate()` and refused
+at spawn. In game, the **Loadout** button edits the player squad; mission
+units take `loadout`, `weapon`, `armor` and `items` attributes.
+
+Bundled: weapons rifle, shotgun, sniper rifle (snipers only), SMG, LMG;
+armor Kevlar Vest, Plated Armor, Ghost Suit; utility Scope, Combat Stims,
+Lucky Dog Tags, Frag Grenade, Medkit; presets Standard, Breacher, Recon,
+Field Medic, Heavy, Marksman.
+
+### Morale and fear (`combat.morale`)
+
+Units have **fear** (0-100). Taking hits, being shot at, allies dying nearby,
+being flanked or outnumbered raise it; kills, hunkering down and quiet turns
+in cover lower it. Gains are scaled by **bravery** (stat, default 50; 100 =
+immune to gains, 0 = double). Classes with `fearless: true` (the Drone Pack's
+drones; any robot you add) never feel fear.
+
+| level | at | effect |
+|---|---|---|
+| Steady | below `shaken_at` (40) | none |
+| Shaken | `shaken_at` | -10 aim; the AI gets cautious |
+| Panicked | `panicked_at` (75) | -25 aim, loses 1 AP per turn; the AI flees or hunkers |
+
+This applies to **your soldiers too**. Every number is in `MoraleRules`;
+override them in a module's `combat: (morale: (...))`, or set
+`enabled: false` to turn morale off.
+
+```ron
+combat: (morale: (shaken_at: 30, panicked_at: 60, ally_killed_near: 35)),
+```
 
 ---
 
@@ -408,19 +468,8 @@ destructible tiles (new `GameEvent::TerrainChanged`); `board.rs` rebuilds
 the affected tile.
 
 ### 3. Items and equipment
-Grenades, armour, scopes, medkits as inventory instead of fixed class moves.
-```rust
-pub struct ItemDef {
-    pub id: String, pub name: String,
-    pub slot: ItemSlot,                // Primary, Secondary, Armor, Utility
-    pub stat_modifiers: UnitStats,     // added to the class stats
-    pub grants_abilities: Vec<AbilityId>,
-    pub charges: Option<u32>,
-}
-// UnitClass gains `loadout: Vec<String>`; SquadMember can override it.
-```
-Hooks: `Battle::spawn` merges item stats and abilities; ability charges can be
-tied to item stacks.
+✅ Done: see "Loadouts" above. Next steps: an inventory screen between
+missions, items found on the map (props that grant items), weapon mods.
 
 ### 4. Mission objectives and win conditions
 ```rust
@@ -475,7 +524,8 @@ Hooks: enable Bevy's `audio` feature, play the sounds in `playback.rs`'s
 `start_event`, and add a particle crate or a small gizmo-based emitter.
 
 ### 9. AI behaviours
-Today an AI profile is a set of weights (`AiConfig`). Next steps:
+Today an AI profile is a set of weights (`AiConfig`) plus fear-driven moods
+(see `ai.rs`: Confident / Steady / Shaken / Panicked). Next steps:
 per-class profiles (`UnitClass.ai_profile`), then behaviour *types*
 (`Aggressive`, `Support`, `Sniper`, `Berserker`) implemented as strategies in
 `ai.rs` and selected by data.

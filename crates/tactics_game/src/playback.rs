@@ -518,6 +518,25 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             p.board.write(crate::board::BoardDirty);
             vec![Anim::Wait { remaining: 0.15 }]
         }
+        GameEvent::MoraleChanged { unit, level, .. } => {
+            use tactics_core::content::FearLevel;
+            let (text, color) = match level {
+                FearLevel::Steady => ("RALLIED", theme::HEAL),
+                FearLevel::Shaken => ("SHAKEN", theme::TRACER),
+                FearLevel::Panicked => ("PANICKED!", theme::BEAM),
+            };
+            if battle.is_revealed(*unit) {
+                if let Some(pos) = pos_of(*unit) {
+                    FloatingText::spawn(&mut p.commands, pos + Vec3::Y * (CHEST + 1.1), text.into(), color);
+                }
+                p.log.push(format!("  {} is {}", name(*unit), level.name().to_lowercase()));
+                if *level == FearLevel::Panicked {
+                    p.anim.write(AnimCommand::OneShot { unit: *unit, slot: "hit".into() });
+                    return vec![Anim::Wait { remaining: 0.35 }];
+                }
+            }
+            vec![]
+        }
         GameEvent::ObjectiveChanged { text } => {
             p.log.push(format!("Objective: {text}"));
             vec![]
