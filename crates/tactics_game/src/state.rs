@@ -46,11 +46,74 @@ pub struct BattleState {
     pub seed: u64,
     /// Id of the mission being played (`None` = skirmish / demo).
     pub mission: Option<String>,
+    /// Running totals for the end-of-mission summary.
+    pub stats: MissionStats,
+}
+
+/// What the squad did this battle (shown on the game-over screen).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MissionStats {
+    /// Attack rolls by the squad (area attacks count each victim).
+    pub shots: u32,
+    pub hits: u32,
+    pub crits: u32,
+    pub kills: u32,
+    pub damage_dealt: i32,
+    pub damage_taken: i32,
+    pub soldiers_lost: u32,
+}
+
+impl MissionStats {
+    /// Counts the squad-relevant parts of `events` (call before they're
+    /// played back; `battle` is the state after them).
+    pub fn record(&mut self, battle: &Battle, events: &[GameEvent]) {
+        let team = |id: UnitId| battle.unit(id).map(|u| u.team);
+        for e in events {
+            match e {
+                GameEvent::AttackResolved { attacker, target, outcome, .. } => {
+                    let damage = match outcome {
+                        ShotOutcome::Hit { damage, .. } => *damage,
+                        ShotOutcome::Miss => 0,
+                    };
+                    if team(*attacker) == Some(Team::Player) && team(*target) == Some(Team::Enemy) {
+                        self.shots += 1;
+                        if let ShotOutcome::Hit { critical, .. } = outcome {
+                            self.hits += 1;
+                            self.crits += *critical as u32;
+                        }
+                        self.damage_dealt += damage;
+                    } else if team(*target) == Some(Team::Player) {
+                        self.damage_taken += damage;
+                    }
+                }
+                GameEvent::UnitDamaged { unit, amount } => match team(*unit) {
+                    Some(Team::Player) => self.damage_taken += amount,
+                    Some(Team::Enemy) => self.damage_dealt += amount,
+                    None => {}
+                },
+                GameEvent::UnitKilled { unit } => match team(*unit) {
+                    Some(Team::Player) => self.soldiers_lost += 1,
+                    Some(Team::Enemy) => self.kills += 1,
+                    None => {}
+                },
+                _ => {}
+            }
+        }
+    }
+
+    /// One-line summary for the HUD.
+    pub fn summary(&self, rounds: u32) -> String {
+        let accuracy = (self.hits * 100).checked_div(self.shots).map_or("-".into(), |a| format!("{a}%"));
+        format!(
+            "Rounds {rounds}   Kills {}   Accuracy {accuracy} ({}/{}, {} crits)\nDamage dealt {}   taken {}   Soldiers lost {}",
+            self.kills, self.hits, self.shots, self.crits, self.damage_dealt, self.damage_taken, self.soldiers_lost
+        )
+    }
 }
 
 impl BattleState {
     pub fn new(battle: Battle) -> Self {
-        Self { battle, revision: 0, seed: DEFAULT_SEED, mission: None }
+        Self { battle, revision: 0, seed: DEFAULT_SEED, mission: None, stats: MissionStats::default() }
     }
 
     /// Applies an action and queues its events for animation.
@@ -59,6 +122,7 @@ impl BattleState {
         match self.battle.apply(action.clone()) {
             Ok(events) => {
                 self.revision += 1;
+                self.stats.record(&self.battle, &events);
                 playback.enqueue(events);
                 Ok(())
             }
@@ -143,3 +207,29 @@ pub enum PlayerCommand {
 /// Sent after the battle has been replaced, so visuals can be rebuilt.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct BattleReset;
+
+#[cfg(test)]
+mod stats_tests {
+    use super::*;
+
+    #[test]
+    fn stats_count_the_squads_shots_kills_and_losses() {
+        let (rules, _) = crate::content::build_ruleset();
+        let mut b = Battle::new(Map::from_ascii("......"), rules, 1);
+        let a = b.spawn("rifleman", "A", Team::Player, GridPos::new(0, 0)).unwrap();
+        let e = b.spawn("sectoid", "E", Team::Enemy, GridPos::new(5, 0)).unwrap();
+        let mut s = MissionStats::default();
+        let shot = |hit: bool| GameEvent::AttackResolved {
+            attacker: a,
+            ability: "shoot".into(),
+            target: e,
+            origin: GridPos::new(0, 0),
+            hit_chance: 50,
+            outcome: if hit { ShotOutcome::Hit { damage: 3, critical: true } } else { ShotOutcome::Miss },
+            reaction: false,
+        };
+        s.record(&b, &[shot(true), shot(false), GameEvent::UnitKilled { unit: e }, GameEvent::UnitDamaged { unit: a, amount: 2 }]);
+        assert_eq!((s.shots, s.hits, s.crits, s.kills, s.damage_dealt, s.damage_taken), (2, 1, 1, 1, 3, 2));
+        assert!(s.summary(4).contains("Accuracy 50%"));
+    }
+}

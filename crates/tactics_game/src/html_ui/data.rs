@@ -68,6 +68,7 @@ pub fn collect_ui_data(
         },
     );
     v.set("battle.seed", format!("{:#x}", state.seed));
+    v.set("battle.summary", state.stats.summary(b.round()));
     v.set("busy", bool_str(playback.is_busy() || director.is_active()));
 
     // Selected unit.

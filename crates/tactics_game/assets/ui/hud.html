@@ -324,9 +324,14 @@
 </div>
 
 <!-- Victory / defeat -->
-<div id="game-over" data-if="battle.over">
+<div id="game-over" data-if="battle.over and !ui.missions and !ui.loadout">
   <div class="panel">
     <h1>{{ battle.result }}</h1>
-    <button data-command="restart">New Battle<span class="key">F5</span></button>
+    <span class="dim" style="margin-bottom: 14px; text-align: center">{{ battle.summary }}</span>
+    <div style="flex-direction: row">
+      <button data-command="restart">Play again<span class="key">F5</span></button>
+      <button data-command="toggle:missions">Missions<span class="key">pick another</span></button>
+      <button data-command="toggle:loadout">Loadout<span class="key">then play again</span></button>
+    </div>
   </div>
 </div>

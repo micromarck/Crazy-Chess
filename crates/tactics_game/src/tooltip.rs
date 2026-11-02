@@ -319,8 +319,10 @@ fn zone_labels(
     mut commands: Commands,
     state: Res<BattleState>,
     camera: Single<(&Camera, &GlobalTransform), With<crate::camera::CameraRig>>,
+    window: Single<&Window>,
     mut labels: Query<(Entity, &ZoneLabelText, &mut Text, &mut Node, &mut Visibility, &mut TextColor)>,
 ) {
+    let (w, h) = (window.width(), window.height());
     let (cam, cam_tr) = *camera;
     let battle = &state.battle;
     let zones: Vec<_> = battle.zones().iter().filter(|z| z.visible).collect();
@@ -338,16 +340,51 @@ fn zone_labels(
             ground.y + 2.4,
             -((z.min.y + z.max.y) as f32 / 2.0) * crate::coords::TILE_SIZE,
         );
-        match cam.world_to_viewport(cam_tr, world) {
-            Ok(screen) => {
-                node.left = px(screen.x - 40.0);
-                node.top = px(screen.y - 12.0);
-                *vis = Visibility::Inherited;
+        // Off-screen (or behind the camera): pin the label to the screen
+        // edge with an arrow pointing the way.
+        let screen = cam.world_to_viewport(cam_tr, world).ok();
+        let to_point = world - cam_tr.translation();
+        let behind = to_point.dot(*cam_tr.forward()) < 0.0;
+        let margin = 70.0;
+        let label = match screen.filter(|_| !behind) {
+            Some(p) if p.x > margin && p.x < w - margin && p.y > 40.0 && p.y < h - 120.0 => {
+                node.left = px(p.x - 40.0);
+                node.top = px(p.y - 12.0);
+                z.label.clone()
             }
-            Err(_) => *vis = Visibility::Hidden,
-        }
-        if text.0 != z.label {
-            text.0 = z.label.clone();
+            other => {
+                // Direction on screen (flip when behind).
+                let centre = Vec2::new(w / 2.0, h / 2.0);
+                let raw = other.unwrap_or_else(|| {
+                    let right = cam_tr.right().dot(to_point);
+                    let up = cam_tr.up().dot(to_point);
+                    centre + Vec2::new(right, -up) * 100.0
+                });
+                let mut d = raw - centre;
+                if behind {
+                    d = -d;
+                }
+                let d = if d.length() < 1.0 { Vec2::Y } else { d };
+                let k = ((w / 2.0 - margin) / d.x.abs().max(1e-3)).min((h / 2.0 - 120.0) / d.y.abs().max(1e-3));
+                let at = centre + d * k;
+                node.left = px(at.x - 40.0);
+                node.top = px(at.y - 12.0);
+                let arrow = if d.x.abs() > d.y.abs() {
+                    if d.x > 0.0 { ">" } else { "<" }
+                } else if d.y > 0.0 {
+                    "v"
+                } else {
+                    "^"
+                };
+                match arrow {
+                    ">" | "v" => format!("{} {arrow}", z.label),
+                    _ => format!("{arrow} {}", z.label),
+                }
+            }
+        };
+        *vis = Visibility::Inherited;
+        if text.0 != label {
+            text.0 = label;
         }
         color.0 = match z.kind.as_str() {
             "evac" => theme::ZONE_EVAC,

@@ -239,6 +239,7 @@ pub fn start_battle(
     let begin_events = battle.begin();
 
     state.battle = battle;
+    state.stats = Default::default();
     state.seed = seed;
     state.mission = mission;
     state.revision += 1;
