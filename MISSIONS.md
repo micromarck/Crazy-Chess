@@ -7,6 +7,7 @@ props and zones, and scripts attached to any of them.
 ```
 assets/missions/
 ├── index.xml               lists the missions (and which one starts first)
+├── training.mission.xml        Basic Training: guided controls tutorial
 ├── depot.mission.xml           small demo
 ├── rooftops.mission.xml        heights and ladders
 ├── proving_grounds.mission.xml 40x32 sandbox: every mechanic
