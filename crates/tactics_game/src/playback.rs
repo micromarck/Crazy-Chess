@@ -181,7 +181,12 @@ fn run_playback(
             // Constant speed: progress along a segment depends on its length,
             // so diagonals take longer than straight steps.
             let seg = |from: Vec3, i: usize| points.get(i).map_or(1.0, |p| from.distance(*p).max(0.05));
-            *t += dt * MOVE_SPEED / seg(*from, *index);
+            // Enemies moving in the fog walk fast and the camera ignores them.
+            let b = &p.state.battle;
+            let hidden = b.fog()
+                && b.unit(*unit).is_some_and(|u| u.team == Team::Enemy)
+                && !b.team_can_see(Team::Player, crate::coords::world_to_grid(*from));
+            *t += dt * MOVE_SPEED * if hidden { 6.0 } else { 1.0 } / seg(*from, *index);
             while *t >= 1.0 && *index < points.len() {
                 let leftover = (*t - 1.0) * seg(*from, *index);
                 *from = points[*index];
@@ -197,7 +202,9 @@ fn run_playback(
                     }
                     tr.translation = pos;
                     p.commands.entity(*entity).insert(crate::units::FaceTarget(Some(*next)));
-                    look_at(&p.director, &mut p.rig, tr.translation);
+                    if !hidden {
+                        look_at(&p.director, &mut p.rig, tr.translation);
+                    }
                 } else {
                     tr.translation = *from;
                 }
@@ -470,6 +477,49 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
         }
         GameEvent::TerrainChanged { .. } => {
             p.board.write(crate::board::BoardDirty);
+            vec![]
+        }
+
+        // --- mission mechanics ---------------------------------------------
+        GameEvent::Alarm { by } => {
+            let text = match by {
+                Some(u) => format!("ALARM! {} spotted the squad", name(*u)),
+                None => "ALARM! Concealment broken".to_string(),
+            };
+            p.log.push(text.clone());
+            let at = by.and_then(pos_of).unwrap_or(p.rig.target_focus);
+            if by.is_some() {
+                look_at(&p.director, &mut p.rig, at);
+            }
+            FloatingText::spawn(&mut p.commands, at + Vec3::Y * 2.0, "ALARM!".into(), theme::TARGET);
+            if !p.director.is_active() {
+                p.rig.shake = p.rig.shake.max(0.4);
+            }
+            vec![Anim::Wait { remaining: 1.0 }]
+        }
+        GameEvent::UnitAlerted { unit } => {
+            // Only announce what the squad can see; the rest wake in the dark.
+            if battle.is_revealed(*unit)
+                && let Some(pos) = pos_of(*unit)
+            {
+                FloatingText::spawn(&mut p.commands, pos + Vec3::Y * (CHEST + 0.9), "!".into(), theme::TARGET);
+                p.log.push(format!("  {} is alerted", name(*unit)));
+                return vec![Anim::Wait { remaining: 0.15 }];
+            }
+            vec![]
+        }
+        GameEvent::DoorChanged { prop, open } => {
+            if *open
+                && let Some(pr) = battle.prop(*prop)
+            {
+                let at = tile_top(battle.map(), pr.pos) + Vec3::Y * 2.0;
+                FloatingText::spawn(&mut p.commands, at, "door opens".into(), theme::UI_DIM);
+            }
+            p.board.write(crate::board::BoardDirty);
+            vec![Anim::Wait { remaining: 0.15 }]
+        }
+        GameEvent::ObjectiveChanged { text } => {
+            p.log.push(format!("Objective: {text}"));
             vec![]
         }
     }

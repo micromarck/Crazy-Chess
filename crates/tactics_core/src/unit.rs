@@ -134,6 +134,20 @@ pub struct UnitStatus {
     pub defense_bonus: i32,
 }
 
+/// Behaviour state of an AI-controlled unit (mission mechanics).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct UnitAi {
+    /// Not yet active: holds position (or walks its patrol) until woken by
+    /// being spotted, being hurt, its pod waking, or the alarm.
+    pub dormant: bool,
+    /// Units sharing a pod name wake together.
+    pub pod: Option<String>,
+    /// Waypoints walked in a loop while dormant.
+    pub patrol: Vec<GridPos>,
+    /// Index of the next patrol waypoint.
+    pub patrol_index: usize,
+}
+
 /// A single combatant on the battlefield.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Unit {
@@ -157,6 +171,8 @@ pub struct Unit {
     pub status: UnitStatus,
     /// Renderer hint copied from the class.
     pub model: String,
+    /// AI behaviour state (dormant pods, patrols).
+    pub ai: UnitAi,
 }
 
 impl Unit {

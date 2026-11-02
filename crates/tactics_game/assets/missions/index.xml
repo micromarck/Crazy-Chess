@@ -6,5 +6,9 @@
 <missions start="depot">
   <mission file="depot.mission.xml"/>
   <mission file="rooftops.mission.xml"/>
+  <mission file="proving_grounds.mission.xml"/>
+  <mission file="holdout.mission.xml"/>
+  <mission file="complex.mission.xml"/>
+  <mission file="infiltration.mission.xml"/>
   <mission file="lab.mission.xml"/>
 </missions>

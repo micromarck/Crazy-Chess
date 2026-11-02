@@ -61,6 +61,10 @@ pub enum HookEvent {
     Spotted,
     /// Props: this prop is destroyed.
     Destroyed,
+    /// Mission: the alarm was raised (stealth broken, all enemies wake).
+    Alarm,
+    /// Doors: this door opened.
+    Opened,
 }
 
 impl HookEvent {
@@ -74,6 +78,8 @@ impl HookEvent {
             "damaged" => Self::Damaged,
             "spotted" => Self::Spotted,
             "destroyed" => Self::Destroyed,
+            "alarm" => Self::Alarm,
+            "opened" => Self::Opened,
             _ => return None,
         })
     }
@@ -101,6 +107,12 @@ pub struct UnitPlacement {
     /// Name scripts can use to find the unit (`unit_by_tag("leader")`).
     pub tag: Option<String>,
     pub hooks: Vec<ScriptHook>,
+    /// Starts inactive (see [`crate::unit::UnitAi`]).
+    pub dormant: bool,
+    /// Pod name: dormant units in the same pod wake together.
+    pub pod: Option<String>,
+    /// Patrol waypoints walked while dormant.
+    pub patrol: Vec<GridPos>,
 }
 
 /// "Deploy the ruleset's squad `squad` for `team` around `pos`."
@@ -125,6 +137,17 @@ pub struct PropDef {
     pub hp: Option<i32>,
     /// Model id (from a `ModelDef`) to draw it with.
     pub model: Option<String>,
+    pub hooks: Vec<ScriptHook>,
+}
+
+/// A door: blocks movement and sight; opens when a unit steps next to it
+/// (unless locked). Each tile of the rectangle is one door panel sharing `tag`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DoorDef {
+    pub tag: String,
+    pub tiles: Vec<GridPos>,
+    pub locked: bool,
+    /// Hooks (`opened`) on the first panel.
     pub hooks: Vec<ScriptHook>,
 }
 
@@ -155,7 +178,15 @@ pub struct MissionDef {
     pub deploys: Vec<DeployDef>,
     pub props: Vec<PropDef>,
     pub zones: Vec<ZoneDef>,
-    /// Mission-level hooks (`start`, `turn_start`, `unit_killed`).
+    pub doors: Vec<DoorDef>,
+    /// Enemies are only shown while the squad can see them.
+    pub fog: bool,
+    /// The squad starts concealed: unalerted enemies only notice soldiers
+    /// within `detection` tiles; being noticed or attacking raises the alarm.
+    pub concealment: bool,
+    /// Detection radius (tiles) for concealment.
+    pub detection: f32,
+    /// Mission-level hooks (`start`, `turn_start`, `unit_killed`, `alarm`).
     pub hooks: Vec<ScriptHook>,
     /// Shared script code (functions) available to every hook.
     pub library: String,
@@ -346,6 +377,10 @@ mod xml {
             deploys: Vec::new(),
             props: Vec::new(),
             zones: Vec::new(),
+            doors: Vec::new(),
+            fog: root.attribute("fog") == Some("true"),
+            concealment: root.attribute("concealment") == Some("true"),
+            detection: root.attribute("detection").and_then(|d| d.trim().parse().ok()).unwrap_or(5.0),
             hooks: scripts(&doc, root)?,
             library: String::new(),
             seed: root.attribute("seed").and_then(|s| s.trim().parse().ok()),
@@ -367,6 +402,31 @@ mod xml {
                     name: n.attribute("name").unwrap_or("Unit").to_string(),
                     pos: pos(n)?,
                     tag: n.attribute("tag").map(String::from),
+                    hooks: scripts(&doc, n)?,
+                    dormant: n.attribute("dormant") == Some("true"),
+                    pod: n.attribute("pod").map(String::from),
+                    patrol: match n.attribute("patrol") {
+                        None => Vec::new(),
+                        Some(text) => text
+                            .split_whitespace()
+                            .map(|pair| {
+                                let (x, y) = pair
+                                    .split_once(',')
+                                    .and_then(|(x, y)| Some((x.trim().parse::<i32>().ok()?, y.trim().parse::<i32>().ok()?)))
+                                    .ok_or_else(|| err(&doc, n, format!("bad patrol point '{pair}' (use \"x,y x,y ...\")")))?;
+                                let p = at(x, y);
+                                if !def_in_bounds(width, height, p) {
+                                    return Err(err(&doc, n, format!("patrol point '{pair}' is outside the map")));
+                                }
+                                Ok(p)
+                            })
+                            .collect::<Result<Vec<_>, String>>()?,
+                    },
+                }),
+                "door" => def.doors.push(DoorDef {
+                    tag: n.attribute("tag").unwrap_or("door").to_string(),
+                    tiles: rect(n)?,
+                    locked: n.attribute("locked") == Some("true"),
                     hooks: scripts(&doc, n)?,
                 }),
                 "deploy" => def.deploys.push(DeployDef {
@@ -486,6 +546,31 @@ mod tests {
         assert_eq!(m.zones[0].hooks[0].team, Some(Team::Player));
         assert!(m.library.contains("fn helper"));
         assert_eq!(m.hooks.len(), 1);
+    }
+
+    #[test]
+    fn stealth_attributes_doors_and_patrols() {
+        let m = parse_mission(
+            r#"<mission fog="true" concealment="true" detection="4.5">
+                 <layout>
+                   ......
+                   ......
+                   ......
+                 </layout>
+                 <door tag="vault" x="2" y="0" width="2" locked="true"><script on="opened">message("in");</script></door>
+                 <unit class="sectoid" x="0" y="0" dormant="true" pod="a" patrol="0,0 5,0 5,2"/>
+               </mission>"#,
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        assert!(m.fog && m.concealment);
+        assert_eq!(m.detection, 4.5);
+        assert_eq!(m.doors[0].tiles, vec![GridPos::new(2, 2), GridPos::new(3, 2)]);
+        assert!(m.doors[0].locked);
+        let u = &m.units[0];
+        assert!(u.dormant);
+        assert_eq!(u.pod.as_deref(), Some("a"));
+        assert_eq!(u.patrol, vec![GridPos::new(0, 2), GridPos::new(5, 2), GridPos::new(5, 0)]);
+        assert!(parse_mission(r#"<mission><layout>..</layout><unit class="a" x="0" y="0" patrol="9,9"/></mission>"#).is_err());
     }
 
     #[test]

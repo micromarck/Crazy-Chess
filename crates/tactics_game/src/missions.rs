@@ -122,7 +122,13 @@ fn track_loading(
     if catalog.ready {
         if !catalog.started {
             catalog.started = true;
-            let first = catalog.start.clone().filter(|s| catalog.get(s).is_some()).or_else(|| catalog.missions.first().map(|m| m.def.id.clone()));
+            // `TBS_MISSION=<id>` (desktop) overrides the index's start mission,
+            // handy for testing a level.
+            #[cfg(not(target_arch = "wasm32"))]
+            let wanted = std::env::var("TBS_MISSION").ok().or_else(|| catalog.start.clone());
+            #[cfg(target_arch = "wasm32")]
+            let wanted = catalog.start.clone();
+            let first = wanted.filter(|s| catalog.get(s).is_some()).or_else(|| catalog.missions.first().map(|m| m.def.id.clone()));
             if let Some(id) = first {
                 start.write(StartBattle::Mission(id));
             }
@@ -314,6 +320,44 @@ mod tests {
                 assert!(errors.is_empty(), "{f} seed {seed}: {errors:?}");
                 assert!(b.round() > 1 || b.is_over(), "{f}: no progress");
             }
+        }
+    }
+
+    /// The large missions really use their mechanics when played AI vs AI:
+    /// doors open, pods wake, the infiltration alarm goes off.
+    #[test]
+    fn large_missions_exercise_their_mechanics() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(MISSION_DIR);
+        let (rules, _) = crate::content::build_ruleset();
+        for (file, want_doors, want_alarm) in [
+            ("depot.mission.xml", false, false),
+            ("proving_grounds.mission.xml", true, false),
+            ("holdout.mission.xml", false, false),
+            ("complex.mission.xml", true, false),
+            ("infiltration.mission.xml", true, true),
+        ] {
+            let def = parse_mission(&std::fs::read_to_string(dir.join(file)).unwrap()).unwrap();
+            let (mut b, _) = Battle::from_mission(rules.clone(), &def, 0);
+            assert_eq!(b.stealth().concealed, want_alarm, "{file}: concealment");
+            let errors = b.dry_run_scripts();
+            assert!(errors.is_empty(), "{file}: {errors:?}");
+            let mut events = b.begin();
+            for _ in 0..3000 {
+                if b.is_over() || b.round() > 25 {
+                    break;
+                }
+                let action = ai::next_team_action(&b, &AiConfig::default());
+                events.extend(b.apply(action).unwrap());
+            }
+            let count = |f: fn(&GameEvent) -> bool| events.iter().filter(|e| f(e)).count();
+            let doors = count(|e| matches!(e, GameEvent::DoorChanged { open: true, .. }));
+            let alerted = count(|e| matches!(e, GameEvent::UnitAlerted { .. }));
+            let alarms = count(|e| matches!(e, GameEvent::Alarm { .. }));
+            eprintln!("{file}: round {} winner {:?} doors {doors} alerted {alerted} alarms {alarms} objective '{}'", b.round(), b.winner(), b.objective());
+            assert!(!want_doors || doors > 0, "{file}: no door opened");
+            assert!(!want_alarm || alarms == 1, "{file}: alarm count {alarms}");
+            assert!(alerted > 0 || file.starts_with("holdout") || file.starts_with("depot"), "{file}: no pod woke");
+            assert!(!b.objective().is_empty() || file.starts_with("depot"), "{file}: objective set");
         }
     }
 }

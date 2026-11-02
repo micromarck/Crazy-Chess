@@ -69,4 +69,13 @@ pub enum GameEvent {
     Message { text: String },
     /// A mission script failed (syntax/runtime error, limit reached).
     ScriptError { message: String },
+    /// The alarm was raised: the squad lost concealment and every enemy is
+    /// now active. `by` is the unit that noticed the squad, if any.
+    Alarm { by: Option<UnitId> },
+    /// A dormant unit became active (its pod was spotted, it was hit...).
+    UnitAlerted { unit: UnitId },
+    /// A door panel opened or closed (its tile's terrain changed too).
+    DoorChanged { prop: PropId, open: bool },
+    /// The mission objective text changed (script `objective`).
+    ObjectiveChanged { text: String },
 }

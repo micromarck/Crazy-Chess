@@ -39,6 +39,20 @@ pub enum ScriptCommand {
     SetLadder { pos: GridPos, ladder: bool },
     GiveAp { unit: u32, amount: i32 },
     SetFlag { name: String, value: i64 },
+    /// Sets the objective text shown in the HUD.
+    Objective(String),
+    /// Breaks concealment and wakes every enemy.
+    RaiseAlarm,
+    /// Wakes a dormant unit (and its pod).
+    Wake { unit: u32 },
+    /// Wakes every dormant unit.
+    WakeAll,
+    OpenDoor { tag: String },
+    CloseDoor { tag: String },
+    LockDoor { tag: String, locked: bool },
+    /// AI units of `team` head here while no enemy is in sight.
+    AiGoal { team: Team, pos: GridPos },
+    ClearAiGoal { team: Team },
     Win,
     Lose,
 }
@@ -52,6 +66,10 @@ pub struct ScriptWorld {
     pub props: Vec<WorldProp>,
     pub map: Option<Map>,
     pub flags: BTreeMap<String, i64>,
+    /// The alarm has been raised.
+    pub alarm: bool,
+    /// The squad is still concealed.
+    pub concealed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +82,7 @@ pub struct WorldUnit {
     pub hp: i32,
     pub max_hp: i32,
     pub alive: bool,
+    pub dormant: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -202,6 +221,21 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
     cmd!("set_height", |x: INT, y: INT, level: INT| Ok(ScriptCommand::SetHeight { pos: grid(x, y), level: level.clamp(0, 9) as i8 }));
     cmd!("set_ladder", |x: INT, y: INT, on: bool| Ok(ScriptCommand::SetLadder { pos: grid(x, y), ladder: on }));
     cmd!("give_ap", |unit: INT, amount: INT| Ok(ScriptCommand::GiveAp { unit: unit as u32, amount: amount as i32 }));
+    cmd!("objective", |text: &str| Ok(ScriptCommand::Objective(text.to_string())));
+    cmd!("raise_alarm", | | Ok(ScriptCommand::RaiseAlarm));
+    cmd!("wake", |unit: INT| Ok(ScriptCommand::Wake { unit: unit as u32 }));
+    cmd!("wake_all", | | Ok(ScriptCommand::WakeAll));
+    cmd!("open_door", |tag: &str| Ok(ScriptCommand::OpenDoor { tag: tag.into() }));
+    cmd!("close_door", |tag: &str| Ok(ScriptCommand::CloseDoor { tag: tag.into() }));
+    cmd!("lock_door", |tag: &str, locked: bool| Ok(ScriptCommand::LockDoor { tag: tag.into(), locked }));
+    cmd!("ai_goal", |team: &str, x: INT, y: INT| {
+        let team = parse_team(team).ok_or_else(|| fail(format!("unknown team '{team}'")))?;
+        Ok(ScriptCommand::AiGoal { team, pos: grid(x, y) })
+    });
+    cmd!("clear_ai_goal", |team: &str| {
+        let team = parse_team(team).ok_or_else(|| fail(format!("unknown team '{team}'")))?;
+        Ok(ScriptCommand::ClearAiGoal { team })
+    });
     cmd!("win", | | Ok(ScriptCommand::Win));
     cmd!("lose", | | Ok(ScriptCommand::Lose));
     {
@@ -255,6 +289,24 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
         w.units.iter().filter(|u| u.alive && Some(u.team) == t).count() as INT
     });
     let w = world.clone();
+    engine.register_fn("count_in_area", move |x: INT, y: INT, width: INT, height: INT, team: &str| -> INT {
+        // (x, y) is the top-left corner in top-down mission coordinates.
+        let t = parse_team(team);
+        w.units
+            .iter()
+            .filter(|u| u.alive && (t.is_none() || Some(u.team) == t))
+            .filter(|u| {
+                let uy = (h - 1 - u.pos.y) as INT;
+                (u.pos.x as INT) >= x && (u.pos.x as INT) < x + width && uy >= y && uy < y + height
+            })
+            .count() as INT
+    });
+    let w = world.clone();
+    engine.register_fn("unit_dormant", move |id: INT| w.units.iter().any(|u| u.id as INT == id && u.dormant));
+    let (alarm, concealed) = (world.alarm, world.concealed);
+    engine.register_fn("alarm", move || alarm);
+    engine.register_fn("concealed", move || concealed);
+    let w = world.clone();
     engine.register_fn("prop_alive", move |tag: &str| w.props.iter().any(|p| p.tag == tag && p.alive));
     let w = world.clone();
     engine.register_fn("height", move |x: INT, y: INT| -> INT { w.map.as_ref().map_or(0, |m| m.elevation(grid(x, y)) as INT) });
@@ -288,10 +340,13 @@ mod tests {
                 hp: 6,
                 max_hp: 6,
                 alive: true,
+                dormant: false,
             }],
             props: vec![],
             map: Some(Map::new(5, 5)),
             flags: [("seen".to_string(), 1)].into(),
+            alarm: false,
+            concealed: true,
         }
     }
 
@@ -316,6 +371,31 @@ mod tests {
         assert_eq!(cmds[3], ScriptCommand::Win);
         assert_eq!(cmds[4], ScriptCommand::Explode { pos: GridPos::new(2, 4), radius: 1.5, damage: 2 });
         assert_eq!(cmds[5], ScriptCommand::Message("top-down y".into()));
+    }
+
+    #[test]
+    fn stealth_queries_and_commands() {
+        let code = r#"
+            if concealed() && !alarm() { objective("Stay hidden"); }
+            // Boss at grid (1, 0) = top-down row 4.
+            if count_in_area(0, 3, 3, 2, "enemy") == 1 && count_in_area(0, 0, 5, 3, "") == 0 { raise_alarm(); }
+            ai_goal("enemy", 2, 2);
+            open_door("vault");
+            lock_door("vault", false);
+            wake(4);
+        "#;
+        let cmds = run(code, "", &ScriptVars::default(), &world()).unwrap();
+        assert_eq!(
+            cmds,
+            vec![
+                ScriptCommand::Objective("Stay hidden".into()),
+                ScriptCommand::RaiseAlarm,
+                ScriptCommand::AiGoal { team: Team::Enemy, pos: GridPos::new(2, 2) },
+                ScriptCommand::OpenDoor { tag: "vault".into() },
+                ScriptCommand::LockDoor { tag: "vault".into(), locked: false },
+                ScriptCommand::Wake { unit: 4 },
+            ]
+        );
     }
 
     #[test]

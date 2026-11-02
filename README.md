@@ -23,7 +23,11 @@ mapped by name automatically; test it in the **Character Lab (F7)**. See
 Levels are **XML mission files** in one folder (`assets/missions/`): grid
 layout with cut-outs, a height map (units climb 1 level unless a ladder or
 their class allows more; 3D line of sight, high-ground bonus), units, props
-and zones, with **scripts** attached to any of them. See
+and zones, with **scripts** attached to any of them. Modular mission
+mechanics: **dormant pods, patrols, concealment and alarms, doors, fog of
+war, AI goals and objectives**. Bundled large levels: *Proving Grounds*
+(sandbox), *Hold the Beacon* (defend and extract), *Clear the Complex*
+(explore and clear) and *Silent Theft* (stealth heist). See
 **[MISSIONS.md](MISSIONS.md)**.
 
 The HUD is an **HTML/CSS layout** (`assets/ui/hud.html`) rendered natively on
@@ -50,6 +54,7 @@ TBSium/
     │       ├── event.rs       what happened (consumed by the renderer)
     │       ├── battle/        authoritative state, turns, overwatch (mod.rs)
     │       │                  + props, script hooks, flags (world.rs)
+    │       │                  + pods, stealth, doors, fog, goals (stealth.rs)
     │       ├── mission.rs     XML mission format
     │       ├── script.rs      Rhai scripting sandbox
     │       ├── ai.rs          utility-based enemy AI

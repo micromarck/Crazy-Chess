@@ -46,6 +46,9 @@ struct BoardAssets {
     barrel: Handle<Mesh>,
     crate_box: Handle<Mesh>,
     console: Handle<Mesh>,
+    door: Handle<Mesh>,
+    door_post: Handle<Mesh>,
+    beacon: Handle<Mesh>,
     floor_a: Handle<StandardMaterial>,
     floor_b: Handle<StandardMaterial>,
     cliff: Handle<StandardMaterial>,
@@ -55,6 +58,9 @@ struct BoardAssets {
     barrel_mat: Handle<StandardMaterial>,
     crate_mat: Handle<StandardMaterial>,
     console_mat: Handle<StandardMaterial>,
+    door_mat: Handle<StandardMaterial>,
+    locked_mat: Handle<StandardMaterial>,
+    beacon_mat: Handle<StandardMaterial>,
 }
 
 fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
@@ -72,6 +78,9 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
         barrel: meshes.add(Cylinder::new(0.3, 0.7)),
         crate_box: meshes.add(Cuboid::new(0.75, 0.6, 0.75)),
         console: meshes.add(Cuboid::new(0.8, 0.9, 0.4)),
+        door: meshes.add(Cuboid::new(t * 0.9, theme::HIGH_COVER_HEIGHT * 0.95, t * 0.9)),
+        door_post: meshes.add(Cuboid::new(0.12, theme::HIGH_COVER_HEIGHT, 0.12)),
+        beacon: meshes.add(Cylinder::new(0.35, 1.4)),
         floor_a: mat(theme::FLOOR_A, 0.9),
         floor_b: mat(theme::FLOOR_B, 0.9),
         cliff: mat(Color::srgb(0.16, 0.17, 0.19), 0.95),
@@ -83,6 +92,21 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
         console_mat: materials.add(StandardMaterial {
             base_color: Color::srgb(0.2, 0.25, 0.3),
             emissive: LinearRgba::rgb(0.1, 0.6, 0.8),
+            ..default()
+        }),
+        door_mat: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.25, 0.45, 0.5),
+            emissive: LinearRgba::rgb(0.05, 0.25, 0.3),
+            ..default()
+        }),
+        locked_mat: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.5, 0.2, 0.15),
+            emissive: LinearRgba::rgb(0.4, 0.06, 0.03),
+            ..default()
+        }),
+        beacon_mat: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.3, 0.8, 0.5),
+            emissive: LinearRgba::rgb(0.2, 1.2, 0.5),
             ..default()
         }),
     };
@@ -123,7 +147,32 @@ fn spawn_board(mut commands: Commands, assets: Res<BoardAssets>, state: Res<Batt
         }
 
         if let Some(prop) = prop_at(pos) {
+            // Doors: a panel while closed (red when locked), two posts when open.
+            if let Some(door) = prop.door {
+                if door.open {
+                    for side in [-0.42, 0.42] {
+                        let offset = Vec3::new(side, theme::HIGH_COVER_HEIGHT / 2.0, side);
+                        commands.spawn((
+                            BoardEntity,
+                            Mesh3d(assets.door_post.clone()),
+                            MeshMaterial3d(assets.door_mat.clone()),
+                            Transform::from_translation(top + offset),
+                        ));
+                    }
+                } else {
+                    let mat = if door.locked { &assets.locked_mat } else { &assets.door_mat };
+                    commands.spawn((
+                        BoardEntity,
+                        Mesh3d(assets.door.clone()),
+                        MeshMaterial3d(mat.clone()),
+                        Transform::from_translation(top + Vec3::Y * theme::HIGH_COVER_HEIGHT * 0.475),
+                        Name::new(format!("door:{}", prop.tag)),
+                    ));
+                }
+                continue;
+            }
             let (mesh, mat, h) = match prop.kind.as_str() {
+                "beacon" | "uplink" => (&assets.beacon, &assets.beacon_mat, 1.4),
                 "barrel" => (&assets.barrel, &assets.barrel_mat, 0.7),
                 "console" | "terminal" => (&assets.console, &assets.console_mat, 0.9),
                 _ if prop.cover == CoverLevel::Full => (&assets.high, &assets.high_mat, theme::HIGH_COVER_HEIGHT),
