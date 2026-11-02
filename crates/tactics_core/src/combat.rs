@@ -161,6 +161,7 @@ mod tests {
             fear: 0,
             fearless: false,
             gear: Default::default(),
+            appearance: None,
             model: String::new(),
         }
     }

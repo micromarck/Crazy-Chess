@@ -172,8 +172,19 @@ pub struct RigMaterials {
     pub accent: Handle<StandardMaterial>,
 }
 
-/// Spawns the rig under `parent`. Returns the rig root.
-pub fn spawn_rig(commands: &mut Commands, def: &Arc<RigDef>, materials: &RigMaterials, owner: Entity, parent: Entity) -> Entity {
+/// Per-bone override of the material and the shape's scale (individual looks).
+pub type BoneDresser<'a> = &'a dyn Fn(&tactics_core::content::BoneDef) -> Option<(Handle<StandardMaterial>, Vec3)>;
+
+/// Spawns the rig under `parent`. Returns the rig root and the bone entities
+/// (indexed like `def.skeleton.bones`, for attaching things to sockets).
+pub fn spawn_rig(
+    commands: &mut Commands,
+    def: &Arc<RigDef>,
+    materials: &RigMaterials,
+    dress: BoneDresser,
+    owner: Entity,
+    parent: Entity,
+) -> (Entity, Vec<Entity>) {
     let root = commands.spawn((Transform::default(), Visibility::default(), ChildOf(parent))).id();
     let mut bones: Vec<Entity> = Vec::with_capacity(def.skeleton.bones.len());
     for (i, b) in def.skeleton.bones.iter().enumerate() {
@@ -182,18 +193,24 @@ pub fn spawn_rig(commands: &mut Commands, def: &Arc<RigDef>, materials: &RigMate
             .spawn((def.bone_transform(i, BonePose::default()), Visibility::default(), Name::new(b.name.clone()), ChildOf(attach)))
             .id();
         if let Some(mesh) = &def.meshes[i] {
-            let mat = match b.color {
+            let base = match b.color {
                 BoneColor::Team => &materials.team,
                 BoneColor::Dark => &materials.dark,
                 BoneColor::Light => &materials.light,
                 BoneColor::Accent => &materials.accent,
             };
-            commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::from_translation(Vec3::from(b.shape_offset)), ChildOf(e)));
+            let (mat, scale) = dress(b).unwrap_or((base.clone(), Vec3::ONE));
+            commands.spawn((
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(mat),
+                Transform::from_translation(Vec3::from(b.shape_offset)).with_scale(scale),
+                ChildOf(e),
+            ));
         }
         bones.push(e);
     }
-    commands.entity(root).insert(Rig { def: def.clone(), bones, owner });
-    root
+    commands.entity(root).insert(Rig { def: def.clone(), bones: bones.clone(), owner });
+    (root, bones)
 }
 
 #[cfg(test)]

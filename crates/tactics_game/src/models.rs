@@ -61,6 +61,8 @@ pub struct LoadedModel {
     pub fit: Option<(f32, f32)>,
     /// Where the model came from, for the Character Lab.
     pub source: String,
+    /// Draw headgear / backpack / gear on the glTF scene too (not just the weapon).
+    pub show_gear: bool,
 }
 
 /// All models of the ruleset, by id.
@@ -179,6 +181,7 @@ fn build_library(
                 clips,
                 auto_fit: None,
                 fit: None,
+                show_gear: false,
             });
     }
     commands.insert_resource(library);
@@ -272,11 +275,15 @@ fn spawn_primitive(commands: &mut Commands, assets: &PrimitiveAssets, shape: Pri
     }
 }
 
-/// Spawns the model `model_id` under `pivot` (a child of `unit_root`).
+/// Spawns the model `model_id` under `pivot` (a child of `unit_root`),
+/// dressed in `outfit` (see [`crate::looks`]).
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_model(
     commands: &mut Commands,
     library: &ModelLibrary,
     primitives: &PrimitiveAssets,
+    looks: &crate::looks::LooksAssets,
+    outfit: &crate::looks::Outfit,
     model_id: &str,
     team: Team,
     unit_root: Entity,
@@ -300,7 +307,14 @@ pub fn spawn_model(
                 light: primitives.light.clone(),
                 accent: primitives.eye.clone(),
             };
-            let root = crate::rig::spawn_rig(commands, rig, &materials, unit_root, pivot);
+            let dress = |b: &tactics_core::content::BoneDef| looks.dress_bone(b, outfit);
+            let (root, bones) = crate::rig::spawn_rig(commands, rig, &materials, &dress, unit_root, pivot);
+            // Height from the look (uniform, so animated limbs don't shear).
+            if let Some(a) = outfit.appearance {
+                commands.entity(root).insert(Transform::from_scale(Vec3::splat(a.height_scale())));
+            }
+            let sockets = crate::looks::rig_sockets(commands, &rig.skeleton, &bones);
+            looks.dress_sockets(commands, library, &sockets, outfit, true);
             if model.scene.is_some() {
                 commands.entity(root).insert(FallbackModel);
             }

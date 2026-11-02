@@ -40,6 +40,7 @@ pub mod hud;
 pub mod input;
 pub mod lab;
 pub mod loadout;
+pub mod looks;
 pub mod minimap;
 pub mod missions;
 pub mod models;
@@ -95,7 +96,7 @@ impl Plugin for TacticsPlugin {
             html_ui::HtmlUiPlugin,
             editor::EditorPlugin,
         ))
-        .add_plugins((characters::CharactersPlugin, lab::LabPlugin, tooltip::TooltipPlugin, cutaway::CutawayPlugin, minimap::MinimapPlugin, settings::SettingsPlugin));
+        .add_plugins((characters::CharactersPlugin, lab::LabPlugin, tooltip::TooltipPlugin, cutaway::CutawayPlugin, minimap::MinimapPlugin, settings::SettingsPlugin, looks::LooksPlugin));
     }
 }
 

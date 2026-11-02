@@ -82,17 +82,35 @@ pub fn skeleton() -> SkeletonDef {
         bones.push(arm("shin", n("thigh"), [0.0, -0.27, 0.0], Capsule { radius: 0.06, length: 0.16 }, [0.0, -0.12, 0.0], Dark));
         bones.push(arm("foot", n("shin"), [0.0, -0.23, 0.0], Cube { size: [0.1, 0.05, 0.22] }, [0.0, 0.0, -0.04], Dark));
     }
-    // The weapon rests pointing down so that raising the arm 90° aims it forward.
+    // The weapon grip: a joint in the right hand whose -Z is the barrel. The
+    // gun itself is drawn by the game at the `weapon` socket (per weapon).
     bones.push(BoneDef {
         name: "weapon".into(),
         parent: Some("hand_r".into()),
         offset: [0.0, -0.05, 0.0],
         rotation: [-90.0, 0.0, 0.0],
-        shape: Cube { size: [0.07, 0.1, 0.55] },
-        shape_offset: [0.0, 0.0, -0.17],
+        shape: BoneShape::None,
+        shape_offset: [0.0; 3],
         color: Dark,
     });
-    SkeletonDef { id: HUMANOID.into(), extends: None, bones }
+    let socket = |name: &str, bone: &str, offset: [f32; 3], rotation: [f32; 3]| SocketDef {
+        name: name.into(),
+        bone: bone.into(),
+        offset,
+        rotation,
+    };
+    let sockets = vec![
+        // Guns, held at the grip; -Z points down the barrel.
+        socket("weapon", "weapon", [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
+        socket("hand_l", "hand_l", [0.0, -0.05, 0.0], [0.0, 0.0, 0.0]),
+        // Headgear sits on the crown of the head sphere.
+        socket("head", "head", [0.0, 0.12, 0.0], [0.0, 0.0, 0.0]),
+        socket("back", "chest", [0.0, 0.06, 0.13], [0.0, 0.0, 0.0]),
+        socket("chest", "chest", [0.0, 0.08, -0.12], [0.0, 0.0, 0.0]),
+        socket("hip_l", "hips", [-0.17, 0.0, 0.0], [0.0, 0.0, 0.0]),
+        socket("hip_r", "hips", [0.17, 0.0, 0.0], [0.0, 0.0, 0.0]),
+    ];
+    SkeletonDef { id: HUMANOID.into(), extends: None, bones, sockets }
 }
 
 /// Keyframe helper: `(time, [x, y, z])`.

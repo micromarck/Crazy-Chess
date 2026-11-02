@@ -74,6 +74,13 @@ pub struct CharacterSettings {
     pub looping: Vec<String>,
     /// Existing model ids this character replaces (`["soldier"]`).
     pub replace: Vec<String>,
+    /// Attachment points: `(name: "weapon", bone: "<node name>", offset,
+    /// rotation)`. Without them the game guesses from node names (a right
+    /// hand for `weapon`, `Head` for `head`...), see `crate::looks`.
+    pub sockets: Vec<tactics_core::content::SocketDef>,
+    /// Also draw headgear, backpacks and gear on this model (the held weapon
+    /// is always drawn). Off by default: custom models usually have their own.
+    pub show_gear: bool,
 }
 
 impl Default for CharacterSettings {
@@ -87,6 +94,8 @@ impl Default for CharacterSettings {
             slots: BTreeMap::new(),
             looping: Vec::new(),
             replace: Vec::new(),
+            sockets: Vec::new(),
+            show_gear: false,
         }
     }
 }
@@ -270,6 +279,7 @@ fn register_characters(
                 scale: settings.scale.unwrap_or(1.0),
                 offset: settings.offset,
                 yaw_degrees: settings.yaw_degrees,
+                sockets: settings.sockets.clone(),
                 ..Default::default()
             },
             scene: Some(scene),
@@ -277,6 +287,7 @@ fn register_characters(
             clips,
             auto_fit: settings.scale.is_none().then_some(settings.height),
             fit: None,
+            show_gear: settings.show_gear,
             source: format!("character {}", entry.file),
         };
         // The humanoid rig stands in while the scene spawns.
