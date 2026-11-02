@@ -12,7 +12,7 @@ reference for what the game expects from a model:
 
 Clips: 0 idle (loop), 1 walk (loop), 2 shoot, 3 hit, 4 death.
 
-Usage:  python3 tools/gen_drone_gltf.py  (from the tactics/ folder)
+Usage:  python3 tools/gen_drone_gltf.py  (from the repository root)
 """
 import base64
 import json
