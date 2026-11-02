@@ -74,7 +74,7 @@ pub fn fields_for(def: &AbilityDef) -> Vec<EditField> {
         f.push(Range);
     }
     match &def.effect {
-        AbilityEffect::Attack(p) | AbilityEffect::Overwatch(p) => {
+        AbilityEffect::Attack(p) | AbilityEffect::Overwatch(p) | AbilityEffect::Suppress(p) => {
             f.extend([BaseAccuracy, AccuracyBonus, HalfCoverPenalty, FullCoverPenalty, CritBonus, FlankCritBonus]);
             if matches!(p.damage, DamageSource::Fixed { .. }) {
                 f.extend([DamageMin, DamageMax]);

@@ -40,6 +40,8 @@ pub struct StatModifiers {
     pub sight: f32,
     /// Fear resistance (see `MoraleRules`).
     pub bravery: i32,
+    /// Extra spare magazines (ammo pouches).
+    pub magazines: i32,
 }
 
 /// An equippable item.

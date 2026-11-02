@@ -83,6 +83,9 @@ pub struct UnitAnimator {
     base_prev: Option<(String, f32, f32)>,
     /// Seconds since death (rig death pose is held).
     death_time: f32,
+    /// A one-shot was (re)started: replay its glTF clip from the start even
+    /// if the same slot is already showing (e.g. several hits in one burst).
+    restart: bool,
 }
 
 impl UnitAnimator {
@@ -99,6 +102,7 @@ impl UnitAnimator {
             base: ("idle".into(), 0.0),
             base_prev: None,
             death_time: 0.0,
+            restart: false,
         }
     }
 
@@ -133,7 +137,13 @@ fn apply_commands(
             AnimCommand::OneShot { slot, .. } => {
                 // Length: the glTF clip or skeleton animation, else a default.
                 let length = library.animation_length(&a.model, slot, &clips).unwrap_or(PROCEDURAL_ONE_SHOT);
+                // The same move re-triggered right after it started (every
+                // round of a burst): let it play on instead of stuttering.
+                if a.one_shot.as_ref().is_some_and(|(s, e, l)| s == slot && *e < (0.3 * l).min(0.25)) {
+                    continue;
+                }
                 a.one_shot = Some((slot.clone(), 0.0, length));
+                a.restart = true;
             }
             AnimCommand::Walking { on, .. } => a.walking = *on,
             AnimCommand::Died { .. } => a.dead = true,
@@ -191,6 +201,9 @@ fn drive_animators(
         let clip = library.clip(&a.model, &slot);
         if let Some(player_entity) = a.player {
             let wanted = if clip.is_some() { slot.clone() } else { "idle".to_string() };
+            if std::mem::take(&mut a.restart) && clip.is_some() {
+                a.playing_clip = None;
+            }
             if a.playing_clip.as_deref() != Some(wanted.as_str())
                 && let (Some(c), Ok((mut player, mut transitions))) =
                     (library.clip(&a.model, &wanted), players.get_mut(player_entity))

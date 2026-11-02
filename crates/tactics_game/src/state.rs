@@ -94,6 +94,27 @@ impl MissionStats {
                         self.damage_taken += damage;
                     }
                 }
+                // Volleys: every round the squad fires counts as a shot; the
+                // damage of each round goes to whoever it hit.
+                GameEvent::Volley { attacker, bullets, .. } => {
+                    self.last_actor = Some(*attacker);
+                    let squad = team(*attacker) == Some(Team::Player);
+                    if squad {
+                        self.shots += bullets.len() as u32;
+                    }
+                    for b in bullets {
+                        match b.hit.and_then(team) {
+                            Some(Team::Enemy) if squad => {
+                                self.hits += 1;
+                                self.crits += b.critical as u32;
+                                self.damage_dealt += b.damage;
+                            }
+                            Some(Team::Enemy) => self.damage_dealt += b.damage,
+                            Some(Team::Player) => self.damage_taken += b.damage,
+                            None => {}
+                        }
+                    }
+                }
                 GameEvent::UnitDamaged { unit, amount } => match team(*unit) {
                     Some(Team::Player) => self.damage_taken += amount,
                     Some(Team::Enemy) => self.damage_dealt += amount,
@@ -248,5 +269,28 @@ mod stats_tests {
         s.record(&b, &[shot(true), shot(false), GameEvent::UnitKilled { unit: e }, GameEvent::UnitDamaged { unit: a, amount: 2 }]);
         assert_eq!((s.shots, s.hits, s.crits, s.kills, s.damage_dealt, s.damage_taken), (2, 1, 1, 1, 3, 2));
         assert!(s.summary(4).contains("Accuracy 50%"));
+
+        // A 4-round volley: 2 on the enemy (one crit), 1 into cover, 1 wide.
+        let bullet = |hit: Option<UnitId>, critical| tactics_core::event::Bullet {
+            end: [5.0, 0.0, 0.7],
+            hit,
+            prop: None,
+            damage: 2,
+            critical,
+            blocked: false,
+        };
+        let mut v = MissionStats::default();
+        let volley = GameEvent::Volley {
+            attacker: a,
+            ability: "shoot".into(),
+            target: e,
+            origin: [0.0, 0.0, 0.9],
+            hit_chance: 40,
+            reaction: false,
+            suppress: false,
+            bullets: vec![bullet(Some(e), true), bullet(Some(e), false), bullet(None, false), bullet(None, false)],
+        };
+        v.record(&b, &[volley]);
+        assert_eq!((v.shots, v.hits, v.crits, v.damage_dealt), (4, 2, 1, 4));
     }
 }

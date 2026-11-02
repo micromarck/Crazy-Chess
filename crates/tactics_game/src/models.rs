@@ -266,7 +266,7 @@ fn spawn_primitive(commands: &mut Commands, assets: &PrimitiveAssets, shape: Pri
             part(&assets.gun, assets.dark.clone(), Transform::from_xyz(0.2, body_h * 0.6, -0.25));
         }
         PrimitiveShape::Drone => {
-            let y = 0.95;
+            let y = 1.85; // flies (matches the drone class `body`)
             part(&assets.drone_body, team_mat, Transform::from_xyz(0.0, y, 0.0));
             part(&assets.drone_eye, assets.eye.clone(), Transform::from_xyz(0.0, y + 0.03, -0.31));
             part(&assets.rotor, assets.dark.clone(), Transform::from_xyz(-0.42, y + 0.22, 0.0));

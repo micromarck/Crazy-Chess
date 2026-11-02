@@ -270,6 +270,8 @@ fn draw_health_bars(
                 Color::srgba(1.0, 0.3, 0.2, 0.55),
             );
         }
+        // Top of the unit (flyers hover higher).
+        let head = theme::UNIT_HEIGHT.max(unit.body.span().1);
         // Fear: a yellow (shaken) or violet (panicked) ring above the head.
         if !unit.fearless {
             let morale = &state.battle.rules().combat.morale;
@@ -279,19 +281,19 @@ fn draw_health_bars(
                 tactics_core::content::FearLevel::Panicked => Some(theme::BEAM),
             };
             if let Some(color) = ring {
-                let top = tr.translation + Vec3::Y * (theme::UNIT_HEIGHT + 0.55);
+                let top = tr.translation + Vec3::Y * (head + 0.55);
                 gizmos.circle(Isometry3d::new(top, Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)), 0.22, color);
                 gizmos.circle(Isometry3d::new(top, Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)), 0.18, color);
             }
         }
         if unit.ai.dormant && unit.team == Team::Enemy {
             gizmos.circle(
-                Isometry3d::new(tr.translation + Vec3::Y * (theme::UNIT_HEIGHT + 0.65), Quat::IDENTITY),
+                Isometry3d::new(tr.translation + Vec3::Y * (head + 0.65), Quat::IDENTITY),
                 0.06,
                 theme::UI_DIM,
             );
         }
-        let base = tr.translation + Vec3::Y * (theme::UNIT_HEIGHT + 0.35);
+        let base = tr.translation + Vec3::Y * (head + 0.35);
         let max = unit.stats.max_hp.max(1);
         let pip = 0.09;
         let start = base - right * (pip * max as f32 / 2.0);
@@ -356,6 +358,51 @@ fn draw_tracer(mut gizmos: Gizmos, playback: Res<Playback>) {
             let k = (t / ARC_TIME).min(1.0);
             gizmos.linestrip((0..=12).map(|i| at(k * i as f32 / 12.0)), theme::EXPLOSION.with_alpha(0.6));
             gizmos.sphere(Isometry3d::from_translation(at(k)), 0.09, theme::TRACER);
+        }
+        Some(Anim::Volley { muzzle, bullets, style, interval, per_round, t }) => {
+            if *t < AIM_TIME {
+                // Aim line to where the first round is going.
+                if let Some(b) = bullets.first() {
+                    gizmos.line(*muzzle, b.end, theme::TARGET.with_alpha(0.25));
+                }
+                return;
+            }
+            for (i, b) in bullets.iter().enumerate() {
+                let (fire, land) = b.timing(i, *per_round, *interval, *muzzle);
+                if *t < fire {
+                    continue;
+                }
+                let fly = (land - fire).max(1e-3);
+                let k = ((*t - fire) / fly).min(1.0);
+                match style {
+                    ProjectileStyle::Beam => {
+                        // A beam snaps out and lingers briefly.
+                        let fade = 1.0 - ((*t - land) / 0.25).clamp(0.0, 1.0);
+                        if fade <= 0.0 {
+                            continue;
+                        }
+                        let head = muzzle.lerp(b.end, k);
+                        for (j, off) in [Vec3::ZERO, Vec3::Y * 0.025, -Vec3::Y * 0.025, Vec3::X * 0.025].iter().enumerate() {
+                            let c = if j == 0 { Color::WHITE } else { theme::BEAM };
+                            gizmos.line(*muzzle + *off, head + *off, c.with_alpha(fade));
+                        }
+                    }
+                    _ => {
+                        if k >= 1.0 {
+                            // Impact spark for a moment after landing.
+                            let age = *t - land;
+                            if age < 0.12 {
+                                let c = if b.hit.is_some() { theme::TARGET } else { theme::TRACER };
+                                gizmos.sphere(Isometry3d::from_translation(b.end), 0.05 + age, c.with_alpha(1.0 - age / 0.12));
+                            }
+                            continue;
+                        }
+                        let head = muzzle.lerp(b.end, k);
+                        let tail = muzzle.lerp(b.end, (k - 0.3).max(0.0));
+                        gizmos.line(tail, head, theme::TRACER);
+                    }
+                }
+            }
         }
         Some(Anim::Shot { shooter, target, outcome, style, t, .. }) => {
             let mut end = *target;

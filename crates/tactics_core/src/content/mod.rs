@@ -136,6 +136,10 @@ pub struct CombatRules {
     pub action_points: u8,
     /// Aim bonus when the attack comes from higher ground than the target.
     pub height_advantage_bonus: i32,
+    /// Aim penalty while suppressed.
+    pub suppression_aim: i32,
+    /// Fear added to a unit that gets suppressed.
+    pub suppression_fear: i32,
     /// Fear and its effects.
     pub morale: MoraleRules,
 }
@@ -150,6 +154,8 @@ impl Default for CombatRules {
             max_close_bonus: 15,
             action_points: 2,
             height_advantage_bonus: 15,
+            suppression_aim: 25,
+            suppression_fear: 15,
             morale: MoraleRules::default(),
         }
     }

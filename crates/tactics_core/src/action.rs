@@ -73,6 +73,8 @@ pub enum ActionError {
     NoLineOfSight,
     OutOfRange,
     OutOfAmmo,
+    /// No spare magazines left to reload with.
+    OutOfMagazines,
     AlreadyFullAmmo,
     NothingToHeal,
 }
@@ -96,6 +98,7 @@ impl fmt::Display for ActionError {
             ActionError::OutOfRange => write!(f, "out of range"),
             ActionError::OutOfAmmo => write!(f, "out of ammo, reload first"),
             ActionError::AlreadyFullAmmo => write!(f, "magazine is already full"),
+            ActionError::OutOfMagazines => write!(f, "no spare magazines left"),
             ActionError::NothingToHeal => write!(f, "target is at full health"),
         }
     }

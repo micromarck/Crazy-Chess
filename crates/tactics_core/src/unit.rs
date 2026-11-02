@@ -76,6 +76,17 @@ pub struct Weapon {
     pub ammo: i32,
     /// Classes allowed to carry it in a loadout (empty = everyone).
     pub classes: Vec<String>,
+    /// Rounds fired per shot action (attacks may override with `rounds`).
+    pub burst: u32,
+    /// Projectiles per round (shotgun pellets).
+    pub pellets: u32,
+    /// Mechanical spread of each projectile, degrees (adds to aim error).
+    pub spread: f32,
+    /// Spare magazines carried into battle (each Reload uses one).
+    pub magazines: u32,
+    /// Spare magazines left (instance state: set from `magazines` on spawn).
+    #[cfg_attr(feature = "data", serde(skip))]
+    pub spare: u32,
     /// How it's drawn in the hand.
     pub look: WeaponLook,
     /// Model id (a `ModelDef`, e.g. a glTF) drawn at the `weapon` socket
@@ -97,6 +108,11 @@ impl Default for Weapon {
             clip_size: 4,
             ammo: 0,
             classes: Vec::new(),
+            burst: 1,
+            pellets: 1,
+            spread: 0.6,
+            magazines: 3,
+            spare: 0,
             look: WeaponLook::Rifle,
             model: None,
         }
@@ -138,6 +154,47 @@ impl Default for UnitStats {
     }
 }
 
+/// The physical size of a unit for traced shots, in metres above the ground
+/// of its tile. Flying units (drones) hover: their hitbox, muzzle and the
+/// point enemies aim at all sit higher, so they shoot over and are shot over
+/// low cover and the heads of units in between.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
+pub struct Body {
+    /// Gap between the ground and the bottom of the hitbox (0 = standing).
+    pub hover: f32,
+    /// Height of the hitbox.
+    pub height: f32,
+    /// Gun height above the ground, if not the usual 72% up the hitbox
+    /// (e.g. a drone's gun slung under its body).
+    pub muzzle: Option<f32>,
+}
+
+impl Default for Body {
+    fn default() -> Self {
+        Self { hover: 0.0, height: 1.25, muzzle: None }
+    }
+}
+
+impl Body {
+    /// Bottom and top of the hitbox above the tile's ground.
+    pub fn span(&self) -> (f32, f32) {
+        (self.hover.max(0.0), self.hover.max(0.0) + self.height.max(0.1))
+    }
+    /// Where shots come from (gun height).
+    pub fn muzzle(&self) -> f32 {
+        self.muzzle.unwrap_or(self.hover.max(0.0) + 0.72 * self.height.max(0.1))
+    }
+    /// Where enemies aim (centre of mass).
+    pub fn aim_point(&self) -> f32 {
+        self.hover.max(0.0) + 0.56 * self.height.max(0.1)
+    }
+    /// Flying: high enough that cover of `cover_height` metres is beneath it.
+    pub fn above(&self, cover_height: f32) -> bool {
+        self.hover >= cover_height
+    }
+}
+
 /// A unit archetype: stats, weapon and the abilities it knows.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
@@ -155,6 +212,9 @@ pub struct UnitClass {
     pub model: String,
     /// Never afraid (robots, drones, constructs): fear stays at 0.
     pub fearless: bool,
+    /// Hitbox and hover height (see [`Body`]); e.g. drones
+    /// `body: (hover: 0.8, height: 0.6)`.
+    pub body: Body,
     /// Default loadout preset (see [`LoadoutDef`](crate::content::LoadoutDef)).
     pub loadout: Option<String>,
 }
@@ -167,6 +227,9 @@ pub struct UnitStatus {
     pub overwatch: Option<AbilityId>,
     /// Extra defence from a Defend ability (hunker) until the unit's next turn.
     pub defense_bonus: i32,
+    /// Pinned by suppressive fire: (suppressor, its ability). Aim penalty;
+    /// moving draws fire. Lasts until the suppressor's next turn.
+    pub suppressed_by: Option<(UnitId, AbilityId)>,
 }
 
 /// Behaviour state of an AI-controlled unit (mission mechanics).
@@ -212,6 +275,8 @@ pub struct Unit {
     pub fear: i32,
     /// Copied from the class: never afraid.
     pub fearless: bool,
+    /// Copied from the class: hitbox and hover height.
+    pub body: Body,
     /// What the unit carries (resolved at spawn).
     pub gear: crate::content::Loadout,
     /// Looks (`None` = derived from the name by the frontend).

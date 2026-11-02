@@ -36,6 +36,7 @@ use crate::rng::GameRng;
 use crate::unit::{Team, Unit, UnitId};
 use crate::visibility;
 
+mod ballistics;
 mod morale;
 mod stealth;
 mod world;
@@ -150,6 +151,7 @@ impl Battle {
             return Err(format!("tile {pos} already occupied"));
         }
         weapon.ammo = weapon.clip_size;
+        weapon.spare = weapon.magazines;
 
         // Items: stats, abilities and their uses.
         let mut stats = class.stats;
@@ -165,6 +167,7 @@ impl Battle {
             stats.defense += m.defense;
             stats.sight = (stats.sight + m.sight).max(1.0);
             stats.bravery += m.bravery;
+            weapon.spare = (weapon.spare as i32 + m.magazines).max(0) as u32;
             for a in &item.abilities {
                 let Some(def) = self.rules.ability(a) else { continue };
                 if let Some(per_item) = item.charges.or(def.charges)
@@ -199,6 +202,7 @@ impl Battle {
             ai: Default::default(),
             fear: 0,
             fearless: class.fearless,
+            body: class.body,
             gear: Loadout { weapon: Some(weapon_id), ..gear },
             appearance: None,
         };
@@ -451,6 +455,8 @@ impl Battle {
                     AbilityEffect::Reload if u.weapon.ammo >= u.weapon.clip_size => {
                         return Err(ActionError::AlreadyFullAmmo);
                     }
+                    AbilityEffect::Reload if u.weapon.spare == 0 => return Err(ActionError::OutOfMagazines),
+                    AbilityEffect::Suppress(_) if u.weapon.ammo <= 0 => return Err(ActionError::OutOfAmmo),
                     _ => {}
                 }
                 let point = self.check_target(u, def, *target)?;
@@ -517,14 +523,25 @@ impl Battle {
         let point = self.check_target(&self.units[unit.0 as usize], &def, target).expect("validated");
         events.push(GameEvent::AbilityUsed { unit, ability: ability.clone(), target });
         // Attacking gives a concealed squad away.
-        if self.stealth.concealed && self.units[unit.0 as usize].team == Team::Player && matches!(def.effect, AbilityEffect::Attack(_)) {
+        if self.stealth.concealed
+            && self.units[unit.0 as usize].team == Team::Player
+            && matches!(def.effect, AbilityEffect::Attack(_) | AbilityEffect::Suppress(_))
+        {
             self.raise_alarm(None, events);
         }
 
         // Costs.
         let charges = self.charges_left(&self.units[unit.0 as usize], &def);
+        // Ballistic weapon fire spends one round per round fired (in the volley).
+        let volley_ammo = match &def.effect {
+            AbilityEffect::Attack(p) => p.is_ballistic() && def.ammo_cost > 0,
+            AbilityEffect::Suppress(_) => true,
+            _ => false,
+        };
         let u = self.unit_mut(unit);
-        u.weapon.ammo -= def.ammo_cost;
+        if !volley_ammo {
+            u.weapon.ammo -= def.ammo_cost;
+        }
         if def.cooldown > 0 {
             u.cooldowns.insert(ability.clone(), def.cooldown);
         }
@@ -543,6 +560,34 @@ impl Battle {
     /// Executes an ability's effect. **Add new effect kinds here.**
     fn run_effect(&mut self, unit: UnitId, def: &AbilityDef, point: GridPos, target: Target, events: &mut Vec<GameEvent>) {
         match &def.effect {
+            AbilityEffect::Attack(profile) if profile.is_ballistic() => {
+                let victim = match target {
+                    Target::Unit(id) => Some(id),
+                    _ => self.unit_at(point).map(|u| u.id),
+                };
+                if let Some(victim) = victim {
+                    let uses_ammo = def.ammo_cost > 0;
+                    let cap = uses_ammo.then(|| self.units[unit.0 as usize].weapon.ammo.max(0) as u32);
+                    let fired = self.fire_volley(unit, victim, &def.id, profile, cap, false, false, events);
+                    if uses_ammo {
+                        let u = self.unit_mut(unit);
+                        u.weapon.ammo = (u.weapon.ammo - fired as i32).max(0);
+                    }
+                }
+            }
+            AbilityEffect::Suppress(profile) => {
+                if let Some(victim) = self.unit_at(point).map(|u| u.id) {
+                    let cap = Some(self.units[unit.0 as usize].weapon.ammo.max(0) as u32);
+                    let fired = self.fire_volley(unit, victim, &def.id, profile, cap, false, true, events);
+                    let u = self.unit_mut(unit);
+                    u.weapon.ammo = (u.weapon.ammo - fired as i32).max(0);
+                    if self.units[victim.0 as usize].is_alive() {
+                        self.units[victim.0 as usize].status.suppressed_by = Some((unit, def.id.clone()));
+                        let fear = self.rules.combat.suppression_fear;
+                        self.add_fear(victim, fear, events);
+                    }
+                }
+            }
             AbilityEffect::Attack(profile) => {
                 if profile.area_radius > 0.0 {
                     events.push(GameEvent::Explosion { center: point, radius: profile.area_radius });
@@ -570,6 +615,7 @@ impl Battle {
             AbilityEffect::Reload => {
                 let u = self.unit_mut(unit);
                 u.weapon.ammo = u.weapon.clip_size;
+                u.weapon.spare = u.weapon.spare.saturating_sub(1);
             }
             AbilityEffect::Heal { amount } => {
                 if let Some(healee) = self.unit_at(point).map(|u| u.id) {
@@ -622,16 +668,36 @@ impl Battle {
                 events.push(GameEvent::UnitMoved { unit: id, from: segment_start, path: std::mem::take(&mut segment) });
                 segment_start = step;
                 self.unit_mut(watcher).status.overwatch = None;
-                self.unit_mut(watcher).weapon.ammo -= 1;
-                let watcher_pos = self.units[watcher.0 as usize].pos;
                 let profile = self
                     .rules
                     .ability(&ability)
                     .and_then(|d| d.effect.attack_profile().cloned())
                     .unwrap_or_default();
-                self.resolve_attack(watcher, id, &ability, watcher_pos, &profile, true, events);
+                self.reaction_volley(watcher, id, &ability, &profile, events);
                 if !self.units[id.0 as usize].is_alive() || self.is_over() {
                     return;
+                }
+            }
+
+            // Moving while suppressed draws the suppressor's fire (once).
+            if let Some((gunner, ability)) = self.units[id.0 as usize].status.suppressed_by.clone() {
+                let g = &self.units[gunner.0 as usize];
+                if g.is_alive() && g.weapon.ammo > 0 && visibility::has_line_of_sight(&self.map, g.pos, step) {
+                    if !segment.is_empty() {
+                        events.push(GameEvent::UnitMoved { unit: id, from: segment_start, path: std::mem::take(&mut segment) });
+                        segment_start = step;
+                    }
+                    self.unit_mut(id).status.suppressed_by = None;
+                    let mut profile = self
+                        .rules
+                        .ability(&ability)
+                        .and_then(|d| d.effect.attack_profile().cloned())
+                        .unwrap_or_default();
+                    profile.rounds = None; // a normal burst, not the full suppression belt
+                    self.reaction_volley(gunner, id, &ability, &profile, events);
+                    if !self.units[id.0 as usize].is_alive() || self.is_over() {
+                        return;
+                    }
                 }
             }
 
@@ -666,6 +732,21 @@ impl Battle {
             (w.weapon.ammo > 0 && in_range && visibility::has_line_of_sight(&self.map, w.pos, m.pos))
                 .then_some((w.id, ability))
         })
+    }
+
+    /// Reaction fire (overwatch, suppression): a ballistic volley that spends
+    /// ammo, or a rolled attack for non-ballistic profiles.
+    fn reaction_volley(&mut self, shooter: UnitId, target: UnitId, ability: &AbilityId, profile: &AttackProfile, events: &mut Vec<GameEvent>) {
+        if profile.is_ballistic() {
+            let cap = Some(self.units[shooter.0 as usize].weapon.ammo.max(0) as u32);
+            let fired = self.fire_volley(shooter, target, ability, profile, cap, true, false, events);
+            let u = self.unit_mut(shooter);
+            u.weapon.ammo = (u.weapon.ammo - fired as i32).max(0);
+        } else {
+            let pos = self.units[shooter.0 as usize].pos;
+            self.unit_mut(shooter).weapon.ammo -= 1;
+            self.resolve_attack(shooter, target, ability, pos, profile, true, events);
+        }
     }
 
     /// Rolls one attack and applies damage. Does not touch AP or ammo.
@@ -740,6 +821,13 @@ impl Battle {
         // Refresh the incoming team: AP back, reactive stances expire (they
         // protected the unit during the opponent's turn), cooldowns tick.
         let team = self.active_team;
+        // Suppression lasts until the suppressor's next turn.
+        let suppressors: Vec<bool> = self.units.iter().map(|u| u.team == team).collect();
+        for u in self.units.iter_mut() {
+            if u.status.suppressed_by.as_ref().is_some_and(|(g, _)| suppressors[g.0 as usize]) {
+                u.status.suppressed_by = None;
+            }
+        }
         let ap = self.rules.combat.action_points;
         for u in self.units.iter_mut().filter(|u| u.team == team && u.is_alive()) {
             u.action_points = ap;
@@ -821,9 +909,13 @@ mod tests {
         let (mut b, a, e) = duel(OPEN, "rifleman");
         let events = b.apply(shoot(a, e)).unwrap();
         assert!(matches!(events[0], GameEvent::AbilityUsed { .. }));
-        assert!(events.iter().any(|ev| matches!(ev, GameEvent::AttackResolved { .. })));
+        let fired = events.iter().find_map(|ev| match ev {
+            GameEvent::Volley { bullets, .. } => Some(bullets.len() as i32),
+            _ => None,
+        });
         let u = b.unit(a).unwrap();
-        assert_eq!(u.weapon.ammo, u.weapon.clip_size - 1);
+        assert_eq!(fired, Some(u.weapon.burst as i32), "a burst of traced rounds");
+        assert_eq!(u.weapon.ammo, u.weapon.clip_size - u.weapon.burst as i32);
         assert!(b.is_over() || b.active_team() == Team::Enemy);
     }
 
@@ -841,7 +933,7 @@ mod tests {
         assert_eq!(b.active_team(), Team::Enemy);
         let events = b.apply(Action::Move { unit: e, to: GridPos::new(4, 2) }).unwrap();
         assert!(
-            events.iter().any(|ev| matches!(ev, GameEvent::AttackResolved { reaction: true, .. })),
+            events.iter().any(|ev| matches!(ev, GameEvent::Volley { reaction: true, .. })),
             "overwatch should fire: {events:?}"
         );
         assert!(b.unit(a).unwrap().status.overwatch.is_none(), "overwatch is consumed");
@@ -939,11 +1031,11 @@ mod tests {
     #[test]
     fn live_tuning_changes_odds() {
         let (mut b, a, e) = duel(OPEN, "rifleman");
-        let before = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.hit_chance;
+        let before = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.aim_chance;
         if let AbilityEffect::Attack(p) = &mut b.rules_mut().ability_mut(&"shoot".into()).unwrap().effect {
             p.accuracy_bonus = -30;
         }
-        let after = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.hit_chance;
+        let after = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.aim_chance;
         assert_eq!(after, before - 30);
     }
 }

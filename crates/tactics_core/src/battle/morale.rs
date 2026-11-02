@@ -159,11 +159,11 @@ mod tests {
         let mut b = Battle::new(Map::from_ascii("........"), rules(), 5);
         let a = b.spawn("rifleman", "A", Team::Player, GridPos::new(0, 0)).unwrap();
         let e = b.spawn("sectoid", "E", Team::Enemy, GridPos::new(6, 0)).unwrap();
-        let calm = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.hit_chance;
+        let calm = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.aim_chance;
         let mut events = Vec::new();
         b.add_fear(a, 40, &mut events); // bravery 50: x1
         assert!(events.iter().any(|ev| matches!(ev, GameEvent::MoraleChanged { level: FearLevel::Shaken, .. })));
-        let shaken = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.hit_chance;
+        let shaken = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.aim_chance;
         assert_eq!(calm - shaken, 10);
         b.add_fear(a, 60, &mut events);
         assert_eq!(b.rules().combat.morale.level(b.unit(a).unwrap().fear), FearLevel::Panicked);

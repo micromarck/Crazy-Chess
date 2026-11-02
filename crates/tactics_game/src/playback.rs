@@ -66,6 +66,9 @@ pub enum Anim {
     Walk { unit: UnitId, entity: Entity, from: Vec3, points: Vec<Vec3>, index: usize, t: f32 },
     /// Aim, then fire a projectile that lands at `AIM_TIME + SHOT_TIME`.
     Shot { shooter: Vec3, target: Vec3, target_unit: UnitId, outcome: ShotOutcome, style: ProjectileStyle, t: f32 },
+    /// A ballistic volley: each traced bullet flies from `muzzle` to its end,
+    /// rounds `interval` apart (pellets of one round together).
+    Volley { muzzle: Vec3, bullets: Vec<VolleyBullet>, style: ProjectileStyle, interval: f32, per_round: usize, t: f32 },
     /// A lobbed projectile (grenade) from `from` to `to`.
     Projectile { from: Vec3, to: Vec3, t: f32 },
     /// Expanding blast ring (drawn by the overlay).
@@ -74,6 +77,29 @@ pub enum Anim {
     Death { entity: Entity, t: f32, duration: f32, topple: bool },
     /// Do nothing for a while (wind-ups, banners).
     Wait { remaining: f32 },
+}
+
+/// One bullet of an [`Anim::Volley`].
+#[derive(Debug, Clone)]
+pub struct VolleyBullet {
+    pub end: Vec3,
+    pub hit: Option<UnitId>,
+    pub damage: i32,
+    pub critical: bool,
+    pub blocked: bool,
+    /// Its landing has been shown.
+    pub landed: bool,
+}
+
+/// Seconds a bullet takes to fly, per tile (tracers are fast).
+pub const BULLET_TIME_PER_TILE: f32 = 0.025;
+
+impl VolleyBullet {
+    /// When bullet `i` leaves the muzzle and when it lands.
+    pub fn timing(&self, i: usize, per_round: usize, interval: f32, muzzle: Vec3) -> (f32, f32) {
+        let fire = AIM_TIME + (i / per_round.max(1)) as f32 * interval;
+        (fire, fire + (self.end.distance(muzzle) * BULLET_TIME_PER_TILE).max(0.05))
+    }
 }
 
 /// Queue of events awaiting presentation plus the animations in progress.
@@ -252,6 +278,25 @@ fn run_playback(
             }
             *t >= land + 0.2
         }
+        Anim::Volley { muzzle, bullets, interval, per_round, t, .. } => {
+            *t += dt;
+            let mut last = 0.0f32;
+            for (i, b) in bullets.iter_mut().enumerate() {
+                let (_, land) = b.timing(i, *per_round, *interval, *muzzle);
+                last = last.max(land);
+                if !b.landed && *t >= land {
+                    b.landed = true;
+                    if let Some(u) = b.hit {
+                        let (text, color) = if b.critical { (format!("CRIT {}", b.damage), theme::TRACER) } else { (format!("-{}", b.damage), theme::TARGET) };
+                        FloatingText::spawn(&mut p.commands, b.end + Vec3::Y * 0.5, text, color);
+                        p.anim.write(AnimCommand::OneShot { unit: u, slot: "hit".into() });
+                    } else if b.blocked {
+                        FloatingText::spawn(&mut p.commands, b.end + Vec3::Y * 0.3, "BLOCKED".into(), theme::UI_DIM);
+                    }
+                }
+            }
+            *t >= last + 0.25
+        }
         Anim::Projectile { t, .. } => {
             *t += dt;
             *t >= ARC_TIME
@@ -294,6 +339,7 @@ fn default_slot(def: &AbilityDef) -> &'static str {
         AbilityEffect::Defend { .. } => "hunker",
         AbilityEffect::Reload => "reload",
         AbilityEffect::Heal { .. } => "heal",
+        AbilityEffect::Suppress(_) => "overwatch",
     }
 }
 
@@ -367,6 +413,67 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             let c = tile_top(battle.map(), *center);
             look_at(&p.director, &mut p.rig, c);
             vec![Anim::Explosion { center: c, radius: *radius, t: 0.0 }]
+        }
+
+        GameEvent::Volley { attacker, ability, target, origin, hit_chance, reaction, suppress, bullets } => {
+            playback.last_attacker = Some(*attacker);
+            let Some(s) = pos_of(*attacker) else { return vec![] };
+            let t = pos_of(*target).unwrap_or(s);
+            let muzzle = Vec3::new(origin[0], origin[2], -origin[1]);
+            let hits_on_target = bullets.iter().filter(|b| b.hit == Some(*target)).count();
+            let total: i32 = bullets.iter().filter(|b| b.hit == Some(*target)).map(|b| b.damage).sum();
+            let what = if *suppress { "suppresses" } else if *reaction { "reaction-fires at" } else { "fires at" };
+            p.log.push(format!(
+                "  {} {what} {}: {} round(s) at {hit_chance}%, {hits_on_target} hit{}",
+                name(*attacker),
+                name(*target),
+                bullets.len(),
+                if total > 0 { format!(" for {total}") } else { String::new() }
+            ));
+            // Anyone else who caught a bullet.
+            let attacker_team = battle.unit(*attacker).map(|u| u.team);
+            let mut others: Vec<UnitId> = bullets.iter().filter_map(|b| b.hit).filter(|u| u != target).collect();
+            others.dedup();
+            for u in others {
+                let friendly = battle.unit(u).map(|x| x.team) == attacker_team;
+                let label = if friendly { "FRIENDLY FIRE" } else { "STRAY HIT" };
+                p.log.push(format!("  {} is hit by {}!", name(u), if friendly { "friendly fire" } else { "a stray round" }));
+                if let Some(pos) = pos_of(u) {
+                    FloatingText::spawn(&mut p.commands, pos + Vec3::Y * 1.9, label.into(), if friendly { theme::TARGET } else { theme::TRACER });
+                }
+            }
+            if *reaction {
+                let label = if battle.unit(*target).is_some_and(|u| u.status.suppressed_by.is_none()) && !*suppress { "REACTION FIRE" } else { "OVERWATCH" };
+                FloatingText::spawn(&mut p.commands, s + Vec3::Y * 1.6, label.into(), theme::TRACER);
+                p.anim.write(AnimCommand::OneShot { unit: *attacker, slot: "shoot".into() });
+            }
+            if *suppress {
+                FloatingText::spawn(&mut p.commands, t + Vec3::Y * 1.9, "SUPPRESSED".into(), theme::TRACER);
+            }
+            if hits_on_target == 0 && !bullets.is_empty() {
+                FloatingText::spawn(&mut p.commands, t + Vec3::Y * (CHEST + 0.9), "MISSED".into(), theme::UI_DIM);
+            }
+            if let Some(e) = entity_of(*attacker) {
+                p.commands.entity(e).insert(crate::units::FaceTarget(Some(t)));
+            }
+            frame(&p.director, &mut p.rig, p.settings.action_camera, s, t);
+            let style = battle.rules().presentation_of(ability).map_or(ProjectileStyle::Tracer, |pr| pr.projectile);
+            let style = if matches!(style, ProjectileStyle::None | ProjectileStyle::Arc) { ProjectileStyle::Tracer } else { style };
+            let per_round = battle.unit(*attacker).map_or(1, |u| u.weapon.pellets.max(1) as usize);
+            let per_round = if per_round > 1 && bullets.len() % per_round == 0 { per_round } else { 1 };
+            let interval = if *suppress { 0.06 } else { 0.09 };
+            let bullets = bullets
+                .iter()
+                .map(|b| VolleyBullet {
+                    end: Vec3::new(b.end[0], b.end[2], -b.end[1]),
+                    hit: b.hit,
+                    damage: b.damage,
+                    critical: b.critical,
+                    blocked: b.blocked,
+                    landed: false,
+                })
+                .collect();
+            vec![Anim::Volley { muzzle, bullets, style, interval, per_round, t: 0.0 }]
         }
 
         GameEvent::AttackResolved { attacker, ability, target, hit_chance, outcome, reaction, origin } => {
