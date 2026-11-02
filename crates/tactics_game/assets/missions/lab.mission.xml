@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Character Lab: a quiet stage for testing models and animations (F7).
+  The panel on the left lists every model (built-in rigs, module glTFs and
+  characters dropped into assets/characters/). Pick one, then play its slots.
+  No enemies, and win="script", so the lab never ends on its own.
+-->
+<mission id="lab" name="Character Lab" win="script">
+  <description>Preview models and play their animations. Drop rigged .glb/.gltf files into assets/characters/.</description>
+  <layout>
+    .........
+    .........
+    .........
+    .........
+    .........
+    .........
+    .........
+  </layout>
+  <unit team="player" class="rifleman" name="Test Subject" x="4" y="3" tag="subject"/>
+  <prop tag="ref_crate" kind="crate" x="6" y="3" cover="half"/>
+  <prop tag="ref_wall" kind="wall" x="2" y="3" cover="full"/>
+  <script on="start">message("Character Lab: pick a model on the left, then play its animations.");</script>
+</mission>

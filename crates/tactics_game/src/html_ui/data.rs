@@ -30,6 +30,8 @@ pub fn collect_ui_data(
     director: Res<CameraDirector>,
     catalog: Res<MissionCatalog>,
     flags: Res<UiFlags>,
+    library: Res<crate::models::ModelLibrary>,
+    lab: Res<crate::lab::LabState>,
     mut data: ResMut<UiData>,
 ) {
     let mut v = UiValues::default();
@@ -120,6 +122,31 @@ pub fn collect_ui_data(
             })
             .collect(),
     );
+
+    // Character Lab.
+    let lab_active = state.mission.as_deref() == Some(crate::lab::LAB_MISSION);
+    v.set("lab.active", bool_str(lab_active));
+    v.set("lab.walking", bool_str(lab.walking));
+    if lab_active {
+        let current = unit.map(|u| u.model.clone()).unwrap_or_default();
+        v.set("lab.model", &current);
+        v.lists.insert(
+            "models".into(),
+            library
+                .ids()
+                .into_iter()
+                .map(|id| {
+                    let source = library.get(&id).map_or(String::new(), |m| m.source.clone());
+                    let st = if id == current { "current" } else { "" };
+                    item(&[("id", id.clone()), ("source", source), ("state", st.into())])
+                })
+                .collect(),
+        );
+        v.lists.insert(
+            "anim_slots".into(),
+            library.slots(&current).into_iter().map(|(slot, source)| item(&[("slot", slot), ("source", source)])).collect(),
+        );
+    }
 
     // Layout flags (toggle:<name>).
     for (name, on) in &flags.0 {

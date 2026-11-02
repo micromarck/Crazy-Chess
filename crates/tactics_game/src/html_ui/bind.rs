@@ -92,9 +92,15 @@ pub fn truthy(value: &str) -> bool {
     !matches!(value.trim(), "" | "0" | "false" | "no" | "off")
 }
 
-/// Evaluates a `data-if` expression: `path`, `!path`, `path == value` or
-/// `path != value`.
+/// Evaluates a `data-if` expression: `path`, `!path`, `path == value`,
+/// `path != value`, combined with `&&` and `||` (`&&` binds tighter; write
+/// `&amp;&amp;` inside HTML attributes, or use the word forms `and` / `or`).
 pub fn condition(expr: &str, scope: &Scope, globals: &UiValues) -> bool {
+    let expr = expr.replace(" or ", " || ").replace(" and ", " && ");
+    expr.split("||").any(|any| any.split("&&").all(|term| simple_condition(term, scope, globals)))
+}
+
+fn simple_condition(expr: &str, scope: &Scope, globals: &UiValues) -> bool {
     let expr = expr.trim();
     for (op, negate) in [("!=", true), ("==", false)] {
         if let Some((l, r)) = expr.split_once(op) {
@@ -145,6 +151,10 @@ mod tests {
         assert!(condition("turn.team == XCOM", &scope, &g));
         assert!(condition("turn.team != 'ALIEN'", &scope, &g));
         assert!(condition("ability.name == Shoot", &scope, &g));
+        assert!(condition("unit.hp && !battle.over", &scope, &g));
+        assert!(!condition("unit.hp && battle.over", &scope, &g));
+        assert!(condition("battle.over || turn.team == XCOM", &scope, &g));
+        assert!(condition("battle.over or unit.hp and turn.team == XCOM", &scope, &g));
         assert_eq!(parse_for("a in abilities"), Some(("a".into(), "abilities".into())));
     }
 }

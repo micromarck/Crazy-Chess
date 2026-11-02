@@ -166,12 +166,16 @@ fn rebuild_layout(
 /// | `toggle:<name>` | flip the layout flag `ui.<name>` (show/hide panels) |
 /// | `mission:<id>` | start a mission from `assets/missions/` |
 /// | `skirmish` | start a procedural skirmish |
+/// | `model:<id>` | Character Lab: show this model on the selected unit |
+/// | `anim:<slot>` | Character Lab: play this animation slot |
+/// | `lab_walk` | Character Lab: toggle the walk loop |
 /// | `log:<text>` | print a message (handy while designing layouts) |
 #[allow(clippy::too_many_arguments)]
 pub fn run_ui_commands(
     mut commands: MessageReader<UiCommand>,
     mut player: MessageWriter<PlayerCommand>,
     mut editor: MessageWriter<EditorCommand>,
+    mut lab: MessageWriter<crate::lab::LabCommand>,
     mut director: ResMut<CameraDirector>,
     mut layout: ResMut<HtmlLayout>,
     mut selection: ResMut<Selection>,
@@ -223,6 +227,15 @@ pub fn run_ui_commands(
             }
             "skirmish" => {
                 player.write(PlayerCommand::Skirmish);
+            }
+            "model" => {
+                lab.write(crate::lab::LabCommand::SetModel(arg.trim().to_string()));
+            }
+            "anim" => {
+                lab.write(crate::lab::LabCommand::Play(arg.trim().to_string()));
+            }
+            "lab_walk" => {
+                lab.write(crate::lab::LabCommand::ToggleWalk);
             }
             "log" => log.push(arg.to_string()),
             other => log.push(format!("UI: unknown command '{other}'")),

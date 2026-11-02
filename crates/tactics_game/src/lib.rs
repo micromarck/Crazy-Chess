@@ -29,6 +29,7 @@ pub mod animation;
 pub mod board;
 pub mod camera;
 pub mod camera_director;
+pub mod characters;
 pub mod content;
 pub mod coords;
 pub mod editor;
@@ -36,6 +37,7 @@ pub mod enemy_turn;
 pub mod html_ui;
 pub mod hud;
 pub mod input;
+pub mod lab;
 pub mod missions;
 pub mod models;
 pub mod overlay;
@@ -87,7 +89,8 @@ impl Plugin for TacticsPlugin {
             missions::MissionsPlugin,
             html_ui::HtmlUiPlugin,
             editor::EditorPlugin,
-        ));
+        ))
+        .add_plugins((characters::CharactersPlugin, lab::LabPlugin));
     }
 }
 

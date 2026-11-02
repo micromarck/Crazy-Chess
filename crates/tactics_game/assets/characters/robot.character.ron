@@ -1,0 +1,22 @@
+// Optional settings for robot.gltf (same name + .character.ron).
+// Every field is optional; delete this file and the robot still works.
+(
+    name: "Test Robot",
+
+    // Size: leave `scale` out to auto-fit the model to `height` metres with
+    // its feet on the ground. Set `scale: 0.01` etc. to use a fixed scale.
+    height: 1.35,
+
+    // glTF characters face +Z; the game faces -Z, so the default is 180.
+    yaw_degrees: 180.0,
+
+    // Clip name -> slot, when the automatic name matching guesses wrong.
+    // slots: { "mixamo.com": "idle" },
+
+    // Extra looping slots (idle, walk and hunker always loop).
+    looping: ["wave"],
+
+    // Put this character in battle by replacing existing models, e.g.
+    // replace: ["soldier"]  (every soldier becomes a robot)
+    replace: [],
+)

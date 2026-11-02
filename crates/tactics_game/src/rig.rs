@@ -225,10 +225,11 @@ mod tests {
     fn additive_overlay_adds_and_weight_scales() {
         let def = rig();
         let base = def.pose(("idle", 0.0), None, None);
-        let half = def.pose(("idle", 0.0), None, Some(("hit", 0.08, 0.5)));
+        // The standard hit peaks at 0.06 s with chest X -22 degrees.
+        let half = def.pose(("idle", 0.0), None, Some(("hit", 0.06, 0.5)));
         let chest_base = rot(&def, &base, "chest")[0];
         let chest_hit = rot(&def, &half, "chest")[0];
-        assert!((chest_hit - (chest_base - 9.0)).abs() < 0.01, "half of the -18 flinch added: {chest_hit}");
+        assert!((chest_hit - (chest_base - 11.0)).abs() < 0.01, "half of the -22 flinch added: {chest_hit}");
     }
 
     #[test]

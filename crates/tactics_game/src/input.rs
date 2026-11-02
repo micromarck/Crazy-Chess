@@ -4,7 +4,8 @@
 //! The pointer (mouse cursor or a finger) is turned into a ray from the camera,
 //! intersected with the ground plane, and converted into a [`GridPos`].
 //!
-//! A click/tap means, in priority order:
+//! A click/tap (or releasing a drag that started on the selected soldier,
+//! see [`MouseDrag`](crate::camera::MouseDrag)) means, in priority order:
 //! 1. **targeting mode** (an ability is pending) → use it on the clicked
 //!    unit/tile;
 //! 2. on a friendly unit → select it;
@@ -122,7 +123,7 @@ pub fn target_for(battle: &Battle, def: &AbilityDef, tile: GridPos) -> Option<Ta
 /// Resolves a left click / tap on the board.
 #[allow(clippy::too_many_arguments)]
 fn board_click(
-    buttons: Res<ButtonInput<MouseButton>>,
+    drag: Res<crate::camera::MouseDrag>,
     touches: Res<Touches>,
     gesture: Res<TouchGesture>,
     hover_map: Res<HoverMap>,
@@ -133,8 +134,10 @@ fn board_click(
     mut log: ResMut<LogMessages>,
     mut rig: Single<&mut CameraRig>,
 ) {
+    // A click (press + release without dragging), a tap, or releasing an
+    // order-drag that started on the selected soldier.
     let tapped = touches.any_just_released() && !gesture.dragged;
-    if !(buttons.just_pressed(MouseButton::Left) || tapped) || pointer_over_ui(&hover_map, &ui_nodes) {
+    if !(drag.clicked || drag.order_released || tapped) || pointer_over_ui(&hover_map, &ui_nodes) {
         return;
     }
     let Some(tile) = selection.hovered else { return };
@@ -155,8 +158,8 @@ fn board_click(
         return;
     }
 
-    // 2. Select a friendly unit.
-    if let Some(unit) = battle.unit_at(tile).filter(|u| u.team == Team::Player) {
+    // 2. Select a friendly unit (not when finishing an order-drag on one).
+    if let Some(unit) = battle.unit_at(tile).filter(|u| u.team == Team::Player && !drag.order_released) {
         selection.select(Some(unit.id));
         rig.focus_at(crate::coords::tile_top(state.battle.map(), tile));
         return;
