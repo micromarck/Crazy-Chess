@@ -26,6 +26,9 @@ use crate::unit::Unit;
 
 /// Effective radius of a unit as a target, in tiles (for bullet geometry).
 pub const TARGET_RADIUS: f32 = 0.3;
+/// Heights of low (half) and high (full) cover, metres.
+pub const LOW_COVER_M: f32 = 0.6;
+pub const HIGH_COVER_M: f32 = 1.8;
 
 /// Probability that a projectile with angular error `sigma` (radians, per
 /// axis) lands within a target of angular radius `theta` (Rayleigh).
@@ -99,7 +102,16 @@ pub fn preview_attack(
     target: &Unit,
     profile: &AttackProfile,
 ) -> ShotPreview {
-    let cover = cover_against(map, target.pos, origin);
+    let mut cover = cover_against(map, target.pos, origin);
+    // A hovering unit is above cover lower than its hitbox.
+    let cover_height = match cover.level {
+        CoverLevel::Half => LOW_COVER_M,
+        CoverLevel::Full => HIGH_COVER_M,
+        CoverLevel::None => 0.0,
+    };
+    if cover.level != CoverLevel::None && target.body.above(cover_height) {
+        cover.level = CoverLevel::None;
+    }
     let distance = origin.distance(target.pos);
     let weapon = &attacker.weapon;
     let mut breakdown: Vec<(String, i32)> = Vec::new();
@@ -222,6 +234,7 @@ mod tests {
             ai: Default::default(),
             fear: 0,
             fearless: false,
+            body: Default::default(),
             gear: Default::default(),
             appearance: None,
             model: String::new(),

@@ -270,6 +270,8 @@ fn draw_health_bars(
                 Color::srgba(1.0, 0.3, 0.2, 0.55),
             );
         }
+        // Top of the unit (flyers hover higher).
+        let head = theme::UNIT_HEIGHT.max(unit.body.span().1);
         // Fear: a yellow (shaken) or violet (panicked) ring above the head.
         if !unit.fearless {
             let morale = &state.battle.rules().combat.morale;
@@ -279,19 +281,19 @@ fn draw_health_bars(
                 tactics_core::content::FearLevel::Panicked => Some(theme::BEAM),
             };
             if let Some(color) = ring {
-                let top = tr.translation + Vec3::Y * (theme::UNIT_HEIGHT + 0.55);
+                let top = tr.translation + Vec3::Y * (head + 0.55);
                 gizmos.circle(Isometry3d::new(top, Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)), 0.22, color);
                 gizmos.circle(Isometry3d::new(top, Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)), 0.18, color);
             }
         }
         if unit.ai.dormant && unit.team == Team::Enemy {
             gizmos.circle(
-                Isometry3d::new(tr.translation + Vec3::Y * (theme::UNIT_HEIGHT + 0.65), Quat::IDENTITY),
+                Isometry3d::new(tr.translation + Vec3::Y * (head + 0.65), Quat::IDENTITY),
                 0.06,
                 theme::UI_DIM,
             );
         }
-        let base = tr.translation + Vec3::Y * (theme::UNIT_HEIGHT + 0.35);
+        let base = tr.translation + Vec3::Y * (head + 0.35);
         let max = unit.stats.max_hp.max(1);
         let pip = 0.09;
         let start = base - right * (pip * max as f32 / 2.0);

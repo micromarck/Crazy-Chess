@@ -202,6 +202,7 @@ impl Battle {
             ai: Default::default(),
             fear: 0,
             fearless: class.fearless,
+            body: class.body,
             gear: Loadout { weapon: Some(weapon_id), ..gear },
             appearance: None,
         };

@@ -34,15 +34,9 @@ use crate::unit::{Team, UnitId};
 
 /// Metres per height level.
 pub const LEVEL_M: f32 = 0.5;
-/// Muzzle height above the shooter's ground, metres.
-pub const MUZZLE_M: f32 = 0.9;
-/// Aim point (centre of mass) above the target's ground, metres.
-pub const CHEST_M: f32 = 0.7;
-/// A unit's body height, metres.
-pub const BODY_M: f32 = 1.25;
-/// Heights of cover, metres.
-pub const LOW_COVER_M: f32 = 0.6;
-pub const HIGH_COVER_M: f32 = 1.8;
+/// Heights of cover, metres. Unit heights (muzzle, aim point, hitbox) come
+/// from each unit's [`Body`](crate::unit::Body).
+pub use crate::combat::{HIGH_COVER_M, LOW_COVER_M};
 /// Ray-march step, tiles.
 const STEP: f32 = 0.05;
 
@@ -88,8 +82,8 @@ impl Battle {
         let rounds = (preview.rounds / per_round).max(1);
         let rounds = rounds_cap.map_or(rounds, |cap| rounds.min(cap)).max(1);
 
-        let origin = [shooter.pos.x as f32, shooter.pos.y as f32, self.map.elevation(shooter.pos) as f32 * LEVEL_M + MUZZLE_M];
-        let aim = [aimed.pos.x as f32, aimed.pos.y as f32, self.map.elevation(aimed.pos) as f32 * LEVEL_M + CHEST_M];
+        let origin = [shooter.pos.x as f32, shooter.pos.y as f32, self.map.elevation(shooter.pos) as f32 * LEVEL_M + shooter.body.muzzle()];
+        let aim = [aimed.pos.x as f32, aimed.pos.y as f32, self.map.elevation(aimed.pos) as f32 * LEVEL_M + aimed.body.aim_point()];
         let max_range = shooter.weapon.max_range.max(preview.distance) * 1.4 + 2.0;
         let block = preview.cover_block as f32 / 100.0;
 
@@ -188,12 +182,17 @@ impl Battle {
         let shooter_pos = self.units[shooter.0 as usize].pos;
         let target_pos = self.units[target.0 as usize].pos;
         // Candidate units near the line (cheap pre-filter).
-        let candidates: Vec<(UnitId, f32, f32, f32)> = self
+        // (id, x, y, hitbox bottom, hitbox top)
+        let candidates: Vec<(UnitId, f32, f32, f32, f32)> = self
             .units
             .iter()
             .filter(|u| u.id != shooter && hp[u.id.0 as usize] > 0)
-            .map(|u| (u.id, u.pos.x as f32, u.pos.y as f32, self.map.elevation(u.pos) as f32 * LEVEL_M))
-            .filter(|(_, x, y, _)| {
+            .map(|u| {
+                let ground = self.map.elevation(u.pos) as f32 * LEVEL_M;
+                let (lo, hi) = u.body.span();
+                (u.id, u.pos.x as f32, u.pos.y as f32, ground + lo, ground + hi)
+            })
+            .filter(|(_, x, y, _, _)| {
                 // Distance from the infinite line in the horizontal plane.
                 let (rx, ry) = (x - origin[0], y - origin[1]);
                 let along = rx * dir[0] + ry * dir[1];
@@ -210,12 +209,12 @@ impl Battle {
                 return (Stop::Away, p, passed);
             }
             // Units.
-            for &(id, ux, uy, ground) in &candidates {
+            for &(id, ux, uy, bottom, top) in &candidates {
                 let d = ((p[0] - ux).powi(2) + (p[1] - uy).powi(2)).sqrt();
                 if d < 1.0 && !passed.contains(&id) && id != target {
                     passed.push(id);
                 }
-                if d <= TARGET_RADIUS && p[2] >= ground && p[2] <= ground + BODY_M {
+                if d <= TARGET_RADIUS && p[2] >= bottom && p[2] <= top {
                     if id == target && block > 0.0 && self.rng.roll_percent((block * 100.0).round() as i32) {
                         // Stopped by the target's cover, just in front of it.
                         let back = [p[0] - dir[0] * 0.35, p[1] - dir[1] * 0.35, p[2] - dir[2] * 0.35];
@@ -244,18 +243,30 @@ impl Battle {
         (Stop::Away, p, passed)
     }
 
-    /// Unit of `team` that would be hit standing between `from` and `to`
-    /// (for the AI's friendly-fire check): any within ~0.6 tiles of the line.
+    /// Units of `team` that would be hit standing between `from` and `to`
+    /// (for the AI's friendly-fire check): any within ~0.6 tiles of the line
+    /// whose hitbox the shot passes through, so a drone firing over an
+    /// ally's head (or at a drone above it) does not count it.
     pub fn units_in_line_of_fire(&self, from: GridPos, to: GridPos, team: Team) -> Vec<UnitId> {
         let (ax, ay, bx, by) = (from.x as f32, from.y as f32, to.x as f32, to.y as f32);
         let (dx, dy) = (bx - ax, by - ay);
         let len2 = (dx * dx + dy * dy).max(1e-4);
+        let ground = |p: GridPos| self.map.elevation(p) as f32 * LEVEL_M;
+        let body_at = |p: GridPos| self.unit_at(p).map(|u| u.body).unwrap_or_default();
+        let h0 = ground(from) + body_at(from).muzzle();
+        let h1 = ground(to) + body_at(to).aim_point();
         self.living(team)
             .filter(|u| u.pos != from && u.pos != to)
             .filter(|u| {
                 let (px, py) = (u.pos.x as f32 - ax, u.pos.y as f32 - ay);
                 let t = (px * dx + py * dy) / len2;
-                t > 0.0 && t < 1.0 && ((px - dx * t).powi(2) + (py - dy * t).powi(2)).sqrt() < 0.6
+                if !(t > 0.0 && t < 1.0 && ((px - dx * t).powi(2) + (py - dy * t).powi(2)).sqrt() < 0.6) {
+                    return false;
+                }
+                let h = h0 + (h1 - h0) * t;
+                let (lo, hi) = u.body.span();
+                let g = ground(u.pos);
+                h >= g + lo - 0.15 && h <= g + hi + 0.15
             })
             .map(|u| u.id)
             .collect()
@@ -306,6 +317,58 @@ mod tests {
             ally_hits += bullets(&ev).iter().filter(|x| x.hit == Some(ally)).count();
         }
         assert!(ally_hits > 20, "standing in the line of fire is dangerous ({ally_hits} hits)");
+    }
+
+    /// The standard rules plus a hovering "flyer" class (like the drone).
+    fn rules_with_flyer() -> Ruleset {
+        let mut r = rules();
+        let mut flyer = r.class("rifleman").unwrap().clone();
+        flyer.id = "flyer".into();
+        flyer.body = crate::unit::Body { hover: 1.6, height: 0.55, muzzle: Some(1.65) };
+        r.add_class(flyer);
+        r
+    }
+
+    #[test]
+    fn flyers_shoot_over_heads_and_are_aimed_at_high() {
+        let (mut over, mut low) = (0, 0);
+        for seed in 0..40 {
+            // A flyer and a soldier both fire past an ally at a target.
+            let mut b = Battle::new(Map::from_ascii("..........\n..........\n.........."), rules_with_flyer(), seed);
+            let flyer = b.spawn("flyer", "F", Team::Player, GridPos::new(0, 0)).unwrap();
+            let soldier = b.spawn("rifleman", "S", Team::Player, GridPos::new(0, 2)).unwrap();
+            let ally_a = b.spawn("rifleman", "Ally A", Team::Player, GridPos::new(2, 0)).unwrap();
+            let ally_b = b.spawn("rifleman", "Ally B", Team::Player, GridPos::new(2, 2)).unwrap();
+            let e1 = b.spawn("sectoid", "E1", Team::Enemy, GridPos::new(8, 0)).unwrap();
+            let e2 = b.spawn("sectoid", "E2", Team::Enemy, GridPos::new(8, 2)).unwrap();
+            over += bullets(&shoot(&mut b, flyer, e1)).iter().filter(|x| x.hit == Some(ally_a)).count();
+            low += bullets(&shoot(&mut b, soldier, e2)).iter().filter(|x| x.hit == Some(ally_b)).count();
+        }
+        assert!(low > 20, "a standing shooter hits the ally in the way ({low})");
+        assert!(over * 4 < low, "a flyer fires over its ally's head ({over} vs {low})");
+
+        // The AI's friendly-fire check knows it too.
+        let mut b = Battle::new(Map::from_ascii("........."), rules_with_flyer(), 1);
+        b.spawn("flyer", "F", Team::Player, GridPos::new(0, 0)).unwrap();
+        b.spawn("rifleman", "Ally", Team::Player, GridPos::new(2, 0)).unwrap();
+        b.spawn("sectoid", "E", Team::Enemy, GridPos::new(8, 0)).unwrap();
+        assert!(b.units_in_line_of_fire(GridPos::new(0, 0), GridPos::new(8, 0), Team::Player).is_empty());
+    }
+
+    #[test]
+    fn flyers_float_above_half_cover_but_not_full() {
+        let rules = rules_with_flyer();
+        let preview = |map: &str, class: &str| {
+            let mut b = Battle::new(Map::from_ascii(map), rules.clone(), 1);
+            let a = b.spawn("rifleman", "A", Team::Player, GridPos::new(0, 0)).unwrap();
+            let t = b.spawn(class, "T", Team::Enemy, GridPos::new(6, 0)).unwrap();
+            let (a, t) = (b.unit(a).unwrap(), b.unit(t).unwrap());
+            let profile = b.rules().ability(&"shoot".into()).unwrap().effect.attack_profile().unwrap().clone();
+            crate::combat::preview_attack(&b.rules().combat, b.map(), a.pos, a, t, &profile).cover_block
+        };
+        assert!(preview(".....h.", "rifleman") > 0, "half cover protects a soldier");
+        assert_eq!(preview(".....h.", "flyer"), 0, "but not a flyer above it");
+        assert!(preview(".....H.", "flyer") > 0, "full cover still hides a flyer");
     }
 
     #[test]
