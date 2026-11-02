@@ -74,8 +74,11 @@ pub struct ModelDef {
     /// glTF scene path relative to the `assets/` folder, e.g.
     /// `"models/drone.gltf#Scene0"`. `None` = use [`ModelDef::fallback`].
     pub scene: Option<String>,
-    /// Primitive used when there is no scene.
+    /// Primitive used when there is no scene and no skeleton.
     pub fallback: PrimitiveShape,
+    /// Skeleton id: the model is drawn as an animated rig of simple shapes on
+    /// this skeleton (when there's no glTF scene, or while it loads).
+    pub skeleton: Option<String>,
     /// Uniform scale applied to the scene.
     pub scale: f32,
     /// Offset of the scene from the tile centre (x, y up, z).
@@ -92,6 +95,7 @@ impl Default for ModelDef {
             id: String::new(),
             scene: None,
             fallback: PrimitiveShape::Soldier,
+            skeleton: None,
             scale: 1.0,
             offset: [0.0; 3],
             yaw_degrees: 0.0,
@@ -104,6 +108,11 @@ impl ModelDef {
     /// A model drawn with a primitive shape only.
     pub fn primitive(id: impl Into<String>, shape: PrimitiveShape) -> Self {
         Self { id: id.into(), fallback: shape, ..Default::default() }
+    }
+
+    /// A model drawn as an animated rig on `skeleton`.
+    pub fn rigged(id: impl Into<String>, skeleton: impl Into<String>, fallback: PrimitiveShape) -> Self {
+        Self { id: id.into(), fallback, skeleton: Some(skeleton.into()), ..Default::default() }
     }
 }
 

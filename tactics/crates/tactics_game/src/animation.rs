@@ -11,10 +11,14 @@
 //! 4. a **stance** loop from the battle state (`hunker` while defending),
 //! 5. `idle`.
 //!
-//! If the unit's model has a glTF clip for that slot it is cross-faded in via
-//! `AnimationTransitions`. Otherwise [`procedural_pose`] animates the unit's
-//! pivot entity (bob, recoil, flinch, crouch...), so primitive models and
-//! partially animated glTF models both stay expressive.
+//! Three ways to show it, per model:
+//! * **glTF clip** for that slot: cross-faded in via `AnimationTransitions`.
+//! * **Skeleton rig** (models with a `skeleton`): keyframe animations with a
+//!   base layer (idle/walk/hunker, cross-faded) and a one-shot overlay layer
+//!   (masked or additive); see [`crate::rig`].
+//! * Otherwise [`procedural_pose`] animates the unit's pivot entity (bob,
+//!   recoil, flinch, crouch...), so any model stays expressive, including
+//!   for custom slots a skeleton doesn't define.
 //!
 //! Other systems request animations with the [`AnimCommand`] message.
 //!
@@ -73,6 +77,12 @@ pub struct UnitAnimator {
     player: Option<Entity>,
     /// Slot currently playing on the glTF player.
     playing_clip: Option<String>,
+    /// Rig base layer: (slot, time in it).
+    base: (String, f32),
+    /// Rig base layer being faded out: (slot, time, fade remaining 1 → 0).
+    base_prev: Option<(String, f32, f32)>,
+    /// Seconds since death (rig death pose is held).
+    death_time: f32,
 }
 
 impl UnitAnimator {
@@ -86,6 +96,9 @@ impl UnitAnimator {
             shown: "idle".into(),
             player: None,
             playing_clip: None,
+            base: ("idle".into(), 0.0),
+            base_prev: None,
+            death_time: 0.0,
         }
     }
 
@@ -118,11 +131,8 @@ fn apply_commands(
         let Some(mut a) = entities.0.get(&unit).and_then(|e| animators.get_mut(*e).ok()) else { continue };
         match command {
             AnimCommand::OneShot { slot, .. } => {
-                // Length: the glTF clip's duration if known, else a default.
-                let length = library
-                    .clip(&a.model, slot)
-                    .and_then(|c| clips.get(&c.clip).map(|clip| clip.duration() / c.speed.max(0.01)))
-                    .unwrap_or(PROCEDURAL_ONE_SHOT);
+                // Length: the glTF clip or skeleton animation, else a default.
+                let length = library.animation_length(&a.model, slot, &clips).unwrap_or(PROCEDURAL_ONE_SHOT);
                 a.one_shot = Some((slot.clone(), 0.0, length));
             }
             AnimCommand::Walking { on, .. } => a.walking = *on,
@@ -136,12 +146,16 @@ fn drive_animators(
     time: Res<Time>,
     state: Res<BattleState>,
     library: Res<ModelLibrary>,
-    mut animators: Query<(&mut UnitAnimator, &crate::units::UnitVisual, &Children)>,
-    mut pivots: Query<&mut Transform, With<UnitPivot>>,
+    mut animators: Query<(Entity, &mut UnitAnimator, &crate::units::UnitVisual, &Children)>,
+    mut pivots: Query<&mut Transform, (With<UnitPivot>, Without<crate::rig::Rig>)>,
     mut players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
+    rigs: Query<(Entity, &crate::rig::Rig)>,
+    mut bones: Query<&mut Transform, (Without<UnitPivot>, Without<crate::rig::Rig>)>,
 ) {
     let dt = time.delta_secs();
-    for (mut a, visual, children) in &mut animators {
+    // Rig root per unit root.
+    let rig_of: std::collections::HashMap<Entity, Entity> = rigs.iter().map(|(e, r)| (r.owner, e)).collect();
+    for (unit_entity, mut a, visual, children) in &mut animators {
         // Advance a running one-shot.
         if let Some((_, elapsed, length)) = a.one_shot.as_mut() {
             *elapsed += dt;
@@ -190,7 +204,48 @@ fn drive_animators(
                 }
         }
 
-        let pose = if clip.is_some() {
+        // Skeleton rig: base layer + overlay layer.
+        let rig = rig_of.get(&unit_entity).and_then(|e| rigs.get(*e).ok());
+        if let Some((_, rig)) = rig {
+            let def = &rig.def;
+            // Base: walk / hunker / idle, cross-faded when it changes.
+            let base_slot = if a.walking { "walk" } else { stance.unwrap_or("idle") };
+            if a.base.0 != base_slot {
+                let old = std::mem::replace(&mut a.base, (base_slot.to_string(), 0.0));
+                a.base_prev = Some((old.0, old.1, 1.0));
+            } else {
+                a.base.1 += dt;
+            }
+            if let Some(prev) = a.base_prev.as_mut() {
+                prev.1 += dt;
+                prev.2 -= dt / crate::rig::BASE_FADE;
+            }
+            if a.base_prev.as_ref().is_some_and(|p| p.2 <= 0.0) {
+                a.base_prev = None;
+            }
+            // Overlay: death (held) or the running one-shot.
+            if a.dead {
+                a.death_time += dt;
+            }
+            let overlay = if a.dead {
+                def.has("death").then(|| ("death", a.death_time, crate::rig::overlay_weight(a.death_time, 1.0, true)))
+            } else {
+                a.one_shot
+                    .as_ref()
+                    .filter(|(s, _, _)| def.has(s))
+                    .map(|(s, e, l)| (s.as_str(), *e, crate::rig::overlay_weight(*e, *l, false)))
+            };
+            let prev = a.base_prev.as_ref().map(|(s, t, w)| (s.as_str(), *t, *w));
+            let pose = def.pose((a.base.0.as_str(), a.base.1), prev, overlay);
+            for (i, bone) in rig.bones.iter().enumerate() {
+                if let Ok(mut t) = bones.get_mut(*bone) {
+                    *t = def.bone_transform(i, pose[i]);
+                }
+            }
+        }
+        let rig_has_slot = rig.is_some_and(|(_, r)| r.def.has(&slot));
+
+        let pose = if clip.is_some() || rig_has_slot {
             Transform::IDENTITY
         } else {
             let progress = a.one_shot.as_ref().map_or(0.0, |(_, e, l)| (e / l).clamp(0.0, 1.0));

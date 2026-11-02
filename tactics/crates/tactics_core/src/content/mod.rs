@@ -59,17 +59,21 @@
 //! | Ability visuals (animation, camera, projectile) | [`AbilityPresentation`] | ✅ |
 //! | Camera scripts | [`CameraScriptDef`] | ✅ |
 //! | HTML/CSS UI layouts | [`UiLayoutDef`] | ✅ |
+//! | Skeletons (bone rigs, can extend each other) | [`SkeletonDef`] | ✅ |
+//! | Keyframe animations per skeleton + slot | [`AnimationDef`] | ✅ |
 //! | Status effects, terrain types, items, objectives, campaign… | — | planned, see `MODULES.md` |
 
 pub mod ability;
 #[cfg(feature = "data")]
 pub mod data;
 pub mod presentation;
+pub mod skeleton;
 
 use std::collections::BTreeMap;
 
 pub use ability::*;
 pub use presentation::*;
+pub use skeleton::*;
 
 use crate::ai::AiConfig;
 pub use crate::unit::{UnitClass, UnitStats, Weapon};
@@ -208,6 +212,9 @@ pub struct Ruleset {
     ability_presentations: BTreeMap<AbilityId, AbilityPresentation>,
     camera_scripts: BTreeMap<String, CameraScriptDef>,
     ui_layouts: BTreeMap<String, UiLayoutDef>,
+    skeletons: BTreeMap<String, SkeletonDef>,
+    /// Keyed by (skeleton, slot).
+    animations: BTreeMap<(String, String), AnimationDef>,
     modules: Vec<ModuleInfo>,
     // FUTURE module types slot in here as additional maps, e.g.
     //   status_effects: BTreeMap<String, StatusEffectDef>,
@@ -277,6 +284,17 @@ impl Ruleset {
 
     pub fn add_camera_script(&mut self, script: CameraScriptDef) {
         self.camera_scripts.insert(script.id.clone(), script);
+    }
+
+    /// Adds or replaces a skeleton. To change only some bones of an existing
+    /// skeleton, define a new one that `extends` it.
+    pub fn add_skeleton(&mut self, skeleton: SkeletonDef) {
+        self.skeletons.insert(skeleton.id.clone(), skeleton);
+    }
+
+    /// Adds or replaces the animation for `(anim.skeleton, anim.slot)`.
+    pub fn add_animation(&mut self, anim: AnimationDef) {
+        self.animations.insert((anim.skeleton.clone(), anim.slot.clone()), anim);
     }
 
     pub fn add_ui_layout(&mut self, layout: UiLayoutDef) {
@@ -374,6 +392,20 @@ impl Ruleset {
         self.camera_scripts.values()
     }
 
+    pub fn skeleton(&self, id: &str) -> Option<&SkeletonDef> {
+        self.skeletons.get(id)
+    }
+
+    pub fn skeletons(&self) -> impl Iterator<Item = &SkeletonDef> {
+        self.skeletons.values()
+    }
+
+    /// Animations defined directly for `skeleton` (not inherited ones; see
+    /// [`Ruleset::skeleton_animations`]).
+    pub fn animations_of<'a>(&'a self, skeleton: &'a str) -> impl Iterator<Item = &'a AnimationDef> + 'a {
+        self.animations.iter().filter(move |((sk, _), _)| sk == skeleton).map(|(_, a)| a)
+    }
+
     /// An HTML UI layout by id (`"hud"`...).
     pub fn ui_layout(&self, id: &str) -> Option<&UiLayoutDef> {
         self.ui_layouts.get(id)
@@ -411,6 +443,32 @@ impl Ruleset {
             && !self.camera_scripts.contains_key(cam) {
                 problems.push(format!("kill camera uses unknown camera script '{cam}'"));
             }
+        for model in self.models.values() {
+            if let Some(sk) = &model.skeleton
+                && let Err(e) = self.resolve_skeleton(sk) {
+                    problems.push(format!("model '{}': {e}", model.id));
+                }
+        }
+        for sk in self.skeletons.keys() {
+            match self.resolve_skeleton(sk) {
+                Err(e) => problems.push(e),
+                Ok(resolved) => {
+                    for anim in self.animations_of(sk) {
+                        let bones = anim.rotations.keys().chain(anim.translations.keys()).chain(anim.mask.iter().flatten());
+                        for b in bones {
+                            if resolved.index_of(b).is_none() {
+                                problems.push(format!("animation '{sk}/{}' uses unknown bone '{b}'", anim.slot));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (sk, slot) in self.animations.keys() {
+            if !self.skeletons.contains_key(sk) {
+                problems.push(format!("animation '{sk}/{slot}' is for unknown skeleton '{sk}'"));
+            }
+        }
         for squad in self.squads.values() {
             for m in &squad.members {
                 if !self.classes.contains_key(&m.class) {

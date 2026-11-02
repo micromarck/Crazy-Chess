@@ -394,10 +394,9 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             // The model's death clip if it has one, else the procedural topple.
             p.anim.write(AnimCommand::Died { unit: *unit });
             let model = battle.unit(*unit).map(|u| u.model.clone()).unwrap_or_default();
-            let clip_len = p
-                .library
-                .clip(&model, "death")
-                .map(|c| p.clips.get(&c.clip).map_or(1.0, |clip| clip.duration() / c.speed.max(0.01)));
+            // The model's death animation (glTF clip or skeleton) if it has
+            // one, else the procedural topple.
+            let clip_len = p.library.animation_length(&model, "death", &p.clips);
             vec![match clip_len {
                 Some(len) => Anim::Death { entity, t: 0.0, duration: len + 0.4, topple: false },
                 None => Anim::Death { entity, t: 0.0, duration: DEATH_TIME, topple: true },

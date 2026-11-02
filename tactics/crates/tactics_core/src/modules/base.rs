@@ -42,10 +42,14 @@ fn register_presentation(rules: &mut Ruleset) {
     use CameraAnchor::*;
     use CameraStep::*;
 
-    // Primitive models (no assets needed). Replace with glTF scenes by
-    // registering a ModelDef with the same id and a `scene` path.
-    rules.add_model(ModelDef::primitive("soldier", PrimitiveShape::Soldier));
-    rules.add_model(ModelDef::primitive("alien", PrimitiveShape::Alien));
+    // The standard skeleton and its basic movements (idle, walk, shoot...).
+    super::humanoid::register(rules);
+
+    // Models: animated rigs on the standard skeleton (no assets needed).
+    // Modules can override these ids with glTF scenes or custom skeletons
+    // (see assets/modules/creatures.ron).
+    rules.add_model(ModelDef::rigged("soldier", super::humanoid::HUMANOID, PrimitiveShape::Soldier));
+    rules.add_model(ModelDef::rigged("alien", super::humanoid::HUMANOID, PrimitiveShape::Alien));
 
     // XCOM-style over-the-shoulder shot.
     rules.add_camera_script(CameraScriptDef {

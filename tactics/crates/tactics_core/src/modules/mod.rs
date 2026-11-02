@@ -2,6 +2,8 @@
 //!
 //! * [`BaseModule`] — the core game: shoot, overwatch, hunker, reload, four
 //!   weapons, four classes, default squads, the demo map and AI profiles.
+//! * [`humanoid`] — the standard skeleton + basic movement animations
+//!   (registered by the base module).
 //! * [`GrenadierModule`] — an **example** of an add-on module written in Rust:
 //!   a new class with an area-of-effect grenade and a medkit, and a rebalanced
 //!   player squad. Copy it as a template for your own modules.
@@ -13,6 +15,7 @@
 
 mod base;
 mod grenadier;
+pub mod humanoid;
 
 pub use base::BaseModule;
 pub use grenadier::GrenadierModule;

@@ -55,11 +55,27 @@ pub struct LoadedModel {
 #[derive(Resource, Default)]
 pub struct ModelLibrary {
     models: HashMap<String, LoadedModel>,
+    /// Skeletal rigs for models with a `skeleton`.
+    rigs: HashMap<String, std::sync::Arc<crate::rig::RigDef>>,
 }
 
 impl ModelLibrary {
     pub fn get(&self, id: &str) -> Option<&LoadedModel> {
         self.models.get(id)
+    }
+
+    /// The rig of a model drawn on a skeleton.
+    pub fn rig(&self, id: &str) -> Option<&std::sync::Arc<crate::rig::RigDef>> {
+        self.rigs.get(id)
+    }
+
+    /// Length of `slot` for model `id`: its glTF clip (once loaded) or its
+    /// skeleton animation. `None` = the model has no such animation.
+    pub fn animation_length(&self, id: &str, slot: &str, clips: &Assets<AnimationClip>) -> Option<f32> {
+        if let Some(c) = self.clip(id, slot) {
+            return Some(clips.get(&c.clip).map_or(1.0, |clip| clip.duration() / c.speed.max(0.01)));
+        }
+        self.rig(id).and_then(|r| r.animations.get(slot)).map(|a| a.duration)
     }
 
     /// The clip for `slot` of model `id`, if the model provides one.
@@ -73,9 +89,18 @@ fn build_library(
     state: Res<BattleState>,
     assets: Res<AssetServer>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
+    mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let mut library = ModelLibrary::default();
     for def in state.battle.rules().models() {
+        if let Some(sk) = &def.skeleton {
+            match crate::rig::RigDef::build(state.battle.rules(), sk, &mut meshes) {
+                Ok(rig) => {
+                    library.rigs.insert(def.id.clone(), std::sync::Arc::new(rig));
+                }
+                Err(e) => warn!("model '{}': {e} (using the primitive fallback)", def.id),
+            }
+        }
         let scene = def.scene.as_ref().map(|path| assets.load::<WorldAsset>(path.clone()));
         let (graph, clips) = if def.animations.is_empty() {
             (None, HashMap::new())
@@ -119,6 +144,7 @@ pub struct PrimitiveAssets {
     player: Handle<StandardMaterial>,
     enemy: Handle<StandardMaterial>,
     dark: Handle<StandardMaterial>,
+    light: Handle<StandardMaterial>,
     eye: Handle<StandardMaterial>,
 }
 
@@ -141,6 +167,7 @@ fn setup_primitives(
         player: mat(&mut materials, theme::PLAYER, 0.5),
         enemy: mat(&mut materials, theme::ENEMY, 0.4),
         dark: mat(&mut materials, Color::srgb(0.1, 0.1, 0.12), 0.6),
+        light: mat(&mut materials, Color::srgb(0.82, 0.8, 0.74), 0.7),
         eye: materials.add(StandardMaterial {
             base_color: Color::srgb(1.0, 0.2, 0.1),
             emissive: LinearRgba::rgb(4.0, 0.5, 0.2),
@@ -203,7 +230,26 @@ pub fn spawn_model(
         spawn_primitive(commands, primitives, PrimitiveShape::Soldier, team, pivot);
         return;
     };
-    spawn_primitive(commands, primitives, model.def.fallback, team, pivot);
+    // Skeleton rig if the model has one, else the primitive shape. Either is
+    // replaced by the glTF scene once that has loaded.
+    match library.rig(model_id) {
+        Some(rig) => {
+            let materials = crate::rig::RigMaterials {
+                team: match team {
+                    Team::Player => primitives.player.clone(),
+                    Team::Enemy => primitives.enemy.clone(),
+                },
+                dark: primitives.dark.clone(),
+                light: primitives.light.clone(),
+                accent: primitives.eye.clone(),
+            };
+            let root = crate::rig::spawn_rig(commands, rig, &materials, unit_root, pivot);
+            if model.scene.is_some() {
+                commands.entity(root).insert(FallbackModel);
+            }
+        }
+        None => spawn_primitive(commands, primitives, model.def.fallback, team, pivot),
+    }
 
     if let Some(scene) = &model.scene {
         let [x, y, z] = model.def.offset;

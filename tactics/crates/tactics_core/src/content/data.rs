@@ -27,7 +27,7 @@
 
 use super::{
     AbilityDef, AbilityPresentation, AiProfile, CameraScriptDef, CombatRules, GameModule, MapDef, ModelDef,
-    ModuleInfo, PresentationSettings, Ruleset, SquadDef, UiLayoutDef, UnitClass, Weapon,
+    ModuleInfo, PresentationSettings, Ruleset, SkeletonDef, AnimationDef as SkeletalAnimation, SquadDef, UiLayoutDef, UnitClass, Weapon,
 };
 
 /// "Give this existing class this ability" — lets data modules extend classes
@@ -62,6 +62,10 @@ pub struct DataModule {
     pub presentation_settings: Option<PresentationSettings>,
     /// HTML/CSS UI layouts (id `"hud"` replaces the battle HUD).
     pub ui_layouts: Vec<UiLayoutDef>,
+    /// Bone rigs (may `extends` other skeletons).
+    pub skeletons: Vec<SkeletonDef>,
+    /// Keyframe animations, keyed by (skeleton, slot).
+    pub animations: Vec<SkeletalAnimation>,
 }
 
 /// RON extensions we enable for every file, so authors can skip the
@@ -146,6 +150,12 @@ impl GameModule for DataModule {
         }
         for c in &self.camera_scripts {
             rules.add_camera_script(c.clone());
+        }
+        for sk in &self.skeletons {
+            rules.add_skeleton(sk.clone());
+        }
+        for a in &self.animations {
+            rules.add_animation(a.clone());
         }
         for l in &self.ui_layouts {
             rules.add_ui_layout(l.clone());

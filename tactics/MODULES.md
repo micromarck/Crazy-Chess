@@ -134,6 +134,7 @@ models: [
     (
         id: "drone",                              // referenced by a class's `model`
         scene: "models/drone.gltf#Scene0",        // glTF/GLB path under assets/, with label
+        skeleton: None,                           // or a skeleton id: drawn as an animated rig (ANIMATION.md)
         fallback: Drone,                          // Soldier | Alien | Drone: shown while loading / if missing
         scale: 1.0,
         offset: (0.0, 0.0, 0.0),                  // from the tile centre, y up
@@ -321,6 +322,8 @@ crit = weapon crit (weapon damage only) + crit_bonus + flank_crit_bonus (if flan
 | `presentations` | `AbilityPresentation` | `ability, animation, camera, camera_chance, projectile, windup` |
 | `camera_scripts` | `CameraScriptDef` | `id, steps` |
 | `presentation_settings` | `PresentationSettings` | `kill_camera, kill_camera_chance` |
+| `skeletons` | `SkeletonDef` | `id, extends, bones`; see [ANIMATION.md](ANIMATION.md) |
+| `animations` | `AnimationDef` | `skeleton, slot, duration, looping, mask, additive, rotations, translations`; see ANIMATION.md |
 | `ui_layouts` | `UiLayoutDef` | `id` (`"hud"` replaces the HUD), `html`; see [UI.md](UI.md) |
 
 A class's `model` is the id of a `ModelDef` (base game: `"soldier"`, `"alien"`).

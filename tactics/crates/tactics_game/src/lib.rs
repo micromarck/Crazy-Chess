@@ -40,6 +40,7 @@ pub mod missions;
 pub mod models;
 pub mod overlay;
 pub mod playback;
+pub mod rig;
 pub mod state;
 pub mod theme;
 pub mod units;

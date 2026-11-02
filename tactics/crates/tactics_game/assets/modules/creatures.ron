@@ -1,0 +1,102 @@
+// Example module: a CUSTOM SKELETON built on top of the standard "humanoid",
+// with CUSTOM ANIMATIONS, written purely as data.
+//
+// How "on top" works:
+//   * `extends: "humanoid"` inherits all 18 bones and every humanoid animation
+//     (walk, shoot, throw, death...).
+//   * Bones listed here with an existing name REPLACE that bone (proportions,
+//     shape, colour). New names ADD bones (antennae, eyes).
+//   * Animations listed here for (skeleton: "sectoid", slot) REPLACE the
+//     inherited one for that slot only. Everything else keeps working.
+//
+// Units: metres, Y up, the model faces -Z. Rotations: degrees (X, Y, Z).
+// Keyframes: (time in seconds, (x, y, z)).
+(
+    info: (
+        id: "creatures",
+        name: "Creature Pack",
+        version: "1.0",
+        description: "Sectoid skeleton on top of the standard humanoid, with its own idle and cast.",
+    ),
+
+    skeletons: [
+        (
+            id: "sectoid",
+            extends: "humanoid",
+            bones: [
+                // Overrides: big pale head on a long neck, long thin arms.
+                (name: "neck", parent: "chest", offset: (0.0, 0.17, 0.0)),
+                (name: "head", parent: "neck", offset: (0.0, 0.07, 0.0),
+                 shape: Sphere(radius: 0.2), shape_offset: (0.0, 0.16, 0.0), color: Light),
+                (name: "chest", parent: "spine", offset: (0.0, 0.2, 0.0),
+                 shape: Box(size: (0.3, 0.18, 0.18)), shape_offset: (0.0, 0.08, 0.0), color: Team),
+                (name: "forearm_l", parent: "upper_arm_l", offset: (0.0, -0.26, 0.0),
+                 shape: Capsule(radius: 0.035, length: 0.22), shape_offset: (0.0, -0.16, 0.0), color: Light),
+                (name: "forearm_r", parent: "upper_arm_r", offset: (0.0, -0.26, 0.0),
+                 shape: Capsule(radius: 0.035, length: 0.22), shape_offset: (0.0, -0.16, 0.0), color: Light),
+                (name: "hand_l", parent: "forearm_l", offset: (0.0, -0.32, 0.0),
+                 shape: Box(size: (0.06, 0.1, 0.05)), shape_offset: (0.0, -0.04, 0.0), color: Light),
+                (name: "hand_r", parent: "forearm_r", offset: (0.0, -0.32, 0.0),
+                 shape: Box(size: (0.06, 0.1, 0.05)), shape_offset: (0.0, -0.04, 0.0), color: Light),
+
+                // Additions: antennae and glowing eyes.
+                (name: "antenna_l", parent: "head", offset: (-0.08, 0.3, 0.0), rotation: (0.0, 0.0, 25.0),
+                 shape: Capsule(radius: 0.015, length: 0.16), shape_offset: (0.0, 0.1, 0.0), color: Accent),
+                (name: "antenna_r", parent: "head", offset: (0.08, 0.3, 0.0), rotation: (0.0, 0.0, -25.0),
+                 shape: Capsule(radius: 0.015, length: 0.16), shape_offset: (0.0, 0.1, 0.0), color: Accent),
+                (name: "eyes", parent: "head", offset: (0.0, 0.17, -0.17),
+                 shape: Box(size: (0.22, 0.05, 0.03)), color: Accent),
+            ],
+        ),
+    ],
+
+    animations: [
+        // Replaces the humanoid idle: swaying head, twitching antennae.
+        (
+            skeleton: "sectoid",
+            slot: "idle",
+            duration: 2.0,
+            looping: true,
+            rotations: {
+                "head":      [(0.0, (0.0, 0.0, 0.0)), (0.5, (5.0, 10.0, 4.0)), (1.5, (5.0, -10.0, -4.0)), (2.0, (0.0, 0.0, 0.0))],
+                "antenna_l": [(0.0, (0.0, 0.0, 0.0)), (0.3, (15.0, 0.0, 10.0)), (0.6, (0.0, 0.0, 0.0)), (2.0, (0.0, 0.0, 0.0))],
+                "antenna_r": [(0.0, (0.0, 0.0, 0.0)), (1.1, (0.0, 0.0, 0.0)), (1.4, (15.0, 0.0, -10.0)), (2.0, (0.0, 0.0, 0.0))],
+                // Arms hang loose instead of carrying a rifle.
+                "upper_arm_l": [(0.0, (10.0, 0.0, -8.0))],
+                "upper_arm_r": [(0.0, (25.0, 0.0, 8.0))],
+                "forearm_r":   [(0.0, (40.0, 0.0, 0.0))],
+            },
+        ),
+        // Replaces the humanoid cast (used by Psi Bolt): arms spread wide,
+        // antennae flare. Upper body only, so it works while walking.
+        (
+            skeleton: "sectoid",
+            slot: "cast",
+            duration: 1.0,
+            mask: ["spine"],
+            rotations: {
+                "upper_arm_l": [(0.0, (10.0, 0.0, -8.0)), (0.3, (60.0, 0.0, -85.0)), (0.7, (60.0, 0.0, -85.0)), (1.0, (10.0, 0.0, -8.0))],
+                "upper_arm_r": [(0.0, (25.0, 0.0, 8.0)), (0.3, (60.0, 0.0, 85.0)), (0.7, (60.0, 0.0, 85.0)), (1.0, (25.0, 0.0, 8.0))],
+                "head":        [(0.0, (0.0, 0.0, 0.0)), (0.3, (-25.0, 0.0, 0.0)), (0.7, (-25.0, 0.0, 0.0)), (1.0, (0.0, 0.0, 0.0))],
+                "antenna_l":   [(0.0, (0.0, 0.0, 0.0)), (0.3, (0.0, 0.0, 40.0)), (0.7, (0.0, 0.0, 40.0)), (1.0, (0.0, 0.0, 0.0))],
+                "antenna_r":   [(0.0, (0.0, 0.0, 0.0)), (0.3, (0.0, 0.0, -40.0)), (0.7, (0.0, 0.0, -40.0)), (1.0, (0.0, 0.0, 0.0))],
+            },
+        ),
+        // A brand-new slot any ability could use: `animation: "taunt"`.
+        (
+            skeleton: "sectoid",
+            slot: "taunt",
+            duration: 1.2,
+            mask: ["spine"],
+            rotations: {
+                "upper_arm_r": [(0.0, (25.0, 0.0, 8.0)), (0.3, (170.0, 0.0, 10.0)), (0.5, (150.0, 0.0, 25.0)), (0.7, (170.0, 0.0, 10.0)), (1.2, (25.0, 0.0, 8.0))],
+                "chest":       [(0.0, (0.0, 0.0, 0.0)), (0.3, (-10.0, 15.0, 0.0)), (1.2, (0.0, 0.0, 0.0))],
+            },
+        ),
+    ],
+
+    // Sectoids now use the new skeleton (overrides the base "alien" model).
+    models: [
+        (id: "alien", skeleton: "sectoid", fallback: Alien),
+    ],
+)

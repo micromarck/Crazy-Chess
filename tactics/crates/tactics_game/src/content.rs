@@ -25,6 +25,7 @@ fn rust_modules() -> Vec<Box<dyn GameModule>> {
 pub const BUNDLED_DATA_MODULES: &[(&str, &str)] = &[
     ("marksman.ron", include_str!("../assets/modules/marksman.ron")),
     ("drones.ron", include_str!("../assets/modules/drones.ron")),
+    ("creatures.ron", include_str!("../assets/modules/creatures.ron")),
 ];
 
 /// Folder (relative to the working directory) scanned for user modules on desktop.
@@ -120,5 +121,12 @@ mod tests {
         assert!(rules.class("sectoid").unwrap().abilities.contains(&"psi_bolt".into()));
         assert_eq!(rules.class("drone").unwrap().model, "drone");
         assert!(rules.model("drone").unwrap().animations.contains_key("death"));
+        // The sectoid skeleton sits on top of the humanoid.
+        let sk = rules.resolve_skeleton("sectoid").unwrap();
+        assert!(sk.index_of("antenna_l").is_some() && sk.index_of("thigh_l").is_some());
+        let anims = rules.skeleton_animations("sectoid");
+        assert_eq!(anims["cast"].skeleton, "sectoid");
+        assert_eq!(anims["walk"].skeleton, "humanoid");
+        assert_eq!(rules.model("alien").unwrap().skeleton.as_deref(), Some("sectoid"));
     }
 }
