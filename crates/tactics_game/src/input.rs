@@ -113,6 +113,16 @@ fn keyboard_shortcuts(
         *f = !*f;
     }
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    // Esc closes open panels first; only then does it cancel targeting.
+    let mut esc_used = false;
+    if keys.just_pressed(KeyCode::Escape) {
+        for panel in ["help", "settings", "missions", "loadout"] {
+            if let Some(f) = flags.0.get_mut(panel).filter(|f| **f) {
+                *f = false;
+                esc_used = true;
+            }
+        }
+    }
     let bindings = [
         (KeyCode::Tab, if shift { PlayerCommand::PreviousUnit } else { PlayerCommand::NextUnit }),
         (KeyCode::Escape, PlayerCommand::CancelTargeting),
@@ -133,6 +143,9 @@ fn keyboard_shortcuts(
         }
     }
     for (key, command) in bindings {
+        if key == KeyCode::Escape && esc_used {
+            continue;
+        }
         if keys.just_pressed(key) {
             commands.write(command);
         }
@@ -305,6 +318,15 @@ fn handle_commands(
                 selection.select(next);
                 if let Some(u) = next.and_then(|id| state.battle.unit(id)) {
                     rig.focus_at(crate::coords::tile_top(state.battle.map(), u.pos));
+                }
+                continue;
+            }
+            PlayerCommand::Select(id) => {
+                if state.battle.unit(*id).is_some_and(|u| u.team == Team::Player && u.is_alive()) {
+                    selection.select(Some(*id));
+                    if let Some(u) = state.battle.unit(*id) {
+                        rig.focus_at(crate::coords::tile_top(state.battle.map(), u.pos));
+                    }
                 }
                 continue;
             }

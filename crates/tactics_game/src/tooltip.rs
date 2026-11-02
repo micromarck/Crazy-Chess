@@ -345,16 +345,18 @@ fn zone_labels(
         let screen = cam.world_to_viewport(cam_tr, world).ok();
         let to_point = world - cam_tr.translation();
         let behind = to_point.dot(*cam_tr.forward()) < 0.0;
-        let margin = 70.0;
+        // Area free of HUD panels (roster left, log/minimap right, bars
+        // top and bottom) where edge labels may sit.
+        let safe = Rect::new(260.0, 150.0, (w - 230.0).max(300.0), (h - 170.0).max(200.0));
         let label = match screen.filter(|_| !behind) {
-            Some(p) if p.x > margin && p.x < w - margin && p.y > 40.0 && p.y < h - 120.0 => {
+            Some(p) if p.x > 60.0 && p.x < w - 60.0 && p.y > 40.0 && p.y < h - 110.0 => {
                 node.left = px(p.x - 40.0);
                 node.top = px(p.y - 12.0);
                 z.label.clone()
             }
             other => {
                 // Direction on screen (flip when behind).
-                let centre = Vec2::new(w / 2.0, h / 2.0);
+                let centre = safe.center();
                 let raw = other.unwrap_or_else(|| {
                     let right = cam_tr.right().dot(to_point);
                     let up = cam_tr.up().dot(to_point);
@@ -365,7 +367,8 @@ fn zone_labels(
                     d = -d;
                 }
                 let d = if d.length() < 1.0 { Vec2::Y } else { d };
-                let k = ((w / 2.0 - margin) / d.x.abs().max(1e-3)).min((h / 2.0 - 120.0) / d.y.abs().max(1e-3));
+                let half = safe.half_size();
+                let k = (half.x / d.x.abs().max(1e-3)).min(half.y / d.y.abs().max(1e-3));
                 let at = centre + d * k;
                 node.left = px(at.x - 40.0);
                 node.top = px(at.y - 12.0);

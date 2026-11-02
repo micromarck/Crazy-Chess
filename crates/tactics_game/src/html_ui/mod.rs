@@ -38,7 +38,7 @@ use crate::FrameSet;
 use crate::camera_director::CameraDirector;
 use crate::editor::EditorCommand;
 use crate::hud::LogMessages;
-use crate::state::{BattleState, PlayerCommand, Selection};
+use crate::state::{BattleState, PlayerCommand};
 use build::{BuildCtx, HtmlRoot, UiCommand};
 
 pub struct HtmlUiPlugin;
@@ -181,7 +181,6 @@ pub fn run_ui_commands(
     mut lab: MessageWriter<crate::lab::LabCommand>,
     mut director: ResMut<CameraDirector>,
     mut layout: ResMut<HtmlLayout>,
-    mut selection: ResMut<Selection>,
     mut flags: ResMut<UiFlags>,
     mut state: ResMut<BattleState>,
     mut log: ResMut<LogMessages>,
@@ -216,8 +215,8 @@ pub fn run_ui_commands(
                 let ok = id.and_then(|id| state.battle.unit(id)).is_some_and(|u| {
                     u.team == tactics_core::unit::Team::Player && u.is_alive() && state.battle.active_team() == u.team
                 });
-                if ok {
-                    selection.select(id);
+                if let (true, Some(id)) = (ok, id) {
+                    player.write(PlayerCommand::Select(id));
                 }
             }
             "editor" => {

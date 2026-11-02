@@ -183,6 +183,8 @@ impl Selection {
 pub enum PlayerCommand {
     NextUnit,
     PreviousUnit,
+    /// Select this soldier (roster click) and bring the camera to them.
+    Select(UnitId),
     /// Centre the camera on the selected unit.
     FocusSelected,
     /// Fire the aimed ability.
