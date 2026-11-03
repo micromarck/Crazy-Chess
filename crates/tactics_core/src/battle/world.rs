@@ -320,6 +320,18 @@ impl Battle {
             props: self.props.iter().map(|p| WorldProp { tag: p.tag.clone(), pos: p.pos, hp: p.hp, alive: p.alive }).collect(),
             map: Some(self.map.clone()),
             flags: self.flags.clone(),
+            zones: {
+                // Marked zones, plus unmarked ones that carry scripts.
+                let mut zones: Vec<(String, GridPos, GridPos)> = self.zones.iter().map(|z| (z.tag.clone(), z.min, z.max)).collect();
+                for h in &self.hooks {
+                    if let HookOwner::Zone(z) = &h.owner
+                        && !zones.iter().any(|(t, ..)| *t == z.tag)
+                    {
+                        zones.push((z.tag.clone(), z.min, z.max));
+                    }
+                }
+                zones
+            },
             seed: 0,
             alarm: self.stealth.alarm,
             concealed: self.stealth.concealed,
