@@ -236,7 +236,10 @@ fn run_playback(
             } else {
                 1.0
             };
-            *t += dt * MOVE_SPEED * ease * if hidden { 6.0 } else { 1.0 } / seg(*from, *index);
+            // Slow units (zombies) walk slower; moves in the fog are near-instant
+            // so a big horde shuffling around out of sight doesn't stall the turn.
+            let pace = b.unit(*unit).map_or(1.0, |u| (u.stats.mobility as f32 / 12.0).clamp(0.45, 1.3));
+            *t += dt * MOVE_SPEED * ease * if hidden { 40.0 } else { pace } / seg(*from, *index);
             while *t >= 1.0 && *index < points.len() {
                 let leftover = (*t - 1.0) * seg(*from, *index);
                 *from = points[*index];
@@ -617,12 +620,20 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             if let Some(pr) = battle.prop(*prop) {
                 p.log.push(format!("  {} destroyed", pr.kind));
             }
-            p.board.write(crate::board::BoardDirty);
+            p.board.write(crate::board::BoardDirty(battle.prop(*prop).map(|pr| pr.pos)));
             vec![Anim::Wait { remaining: 0.2 }]
         }
-        GameEvent::TerrainChanged { .. } => {
-            p.board.write(crate::board::BoardDirty);
+        GameEvent::TerrainChanged { pos } => {
+            p.board.write(crate::board::BoardDirty(Some(*pos)));
             vec![]
+        }
+        GameEvent::SupplyFound { unit, prop, text } => {
+            p.log.push(format!("  {} picks up supplies: {text}", name(*unit)));
+            if let Some(pos) = pos_of(*unit) {
+                FloatingText::spawn(&mut p.commands, pos + Vec3::Y * 1.9, text.to_uppercase(), theme::HEAL);
+            }
+            p.board.write(crate::board::BoardDirty(battle.prop(*prop).map(|pr| pr.pos)));
+            vec![Anim::Wait { remaining: 0.3 }]
         }
 
         // --- mission mechanics ---------------------------------------------
@@ -663,7 +674,7 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
                 let at = tile_top(battle.map(), pr.pos) + Vec3::Y * 2.0;
                 FloatingText::spawn(&mut p.commands, at, "door opens".into(), theme::UI_DIM);
             }
-            p.board.write(crate::board::BoardDirty);
+            p.board.write(crate::board::BoardDirty(battle.prop(*prop).map(|pr| pr.pos)));
             vec![Anim::Wait { remaining: 0.15 }]
         }
         GameEvent::MoraleChanged { unit, level, .. } => {
@@ -693,7 +704,15 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
                 FloatingText::spawn(&mut p.commands, at + Vec3::Y * 2.0, z.label.clone(), theme::ZONE_EVAC);
                 look_at(&p.director, &mut p.rig, at);
             }
-            p.board.write(crate::board::BoardDirty);
+            // Redraw the chunks the zone covers.
+            if let Some(z) = battle.zones().iter().find(|z| &z.tag == tag) {
+                let step = crate::board::CHUNK as usize;
+                for y in (z.min.y..=z.max.y).step_by(step).chain([z.max.y]) {
+                    for x in (z.min.x..=z.max.x).step_by(step).chain([z.max.x]) {
+                        p.board.write(crate::board::BoardDirty(Some(GridPos::new(x, y))));
+                    }
+                }
+            }
             vec![Anim::Wait { remaining: 0.3 }]
         }
         GameEvent::ObjectiveChanged { text } => {

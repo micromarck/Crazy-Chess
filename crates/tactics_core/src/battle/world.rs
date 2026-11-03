@@ -519,9 +519,52 @@ impl Battle {
 
     /// A unit arrived on `pos` (each step of a move).
     pub(super) fn on_enter(&mut self, unit: UnitId, pos: GridPos, events: &mut Vec<GameEvent>) {
+        self.pick_up_supplies(unit, pos, events);
         self.fire(Trigger { unit: Some(unit), pos: Some(pos), ..Trigger::new(HookEvent::Enter) }, events);
         self.open_doors_near(pos, events);
         self.check_spotted(events);
+    }
+
+    /// A squad member stepping on a supply cache (`supply_ammo`,
+    /// `supply_medkit`, `supply_grenade` props) takes it.
+    fn pick_up_supplies(&mut self, unit: UnitId, pos: GridPos, events: &mut Vec<GameEvent>) {
+        if self.units[unit.0 as usize].team != Team::Player {
+            return;
+        }
+        let Some(i) = self.props.iter().position(|p| p.alive && p.pos == pos && p.kind.starts_with("supply")) else { return };
+        let kind = self.props[i].kind.clone();
+        let rules = &self.rules;
+        let u = &mut self.units[unit.0 as usize];
+        let text = match kind.as_str() {
+            "supply_medkit" => {
+                let healed = 4.min(u.stats.max_hp - u.hp).max(0);
+                u.hp += healed;
+                if healed > 0 { format!("+{healed} HP") } else { "medkit (full health)".into() }
+            }
+            "supply_grenade" => {
+                // A charge for the first limited-use ability (grenades), else ammo.
+                let limited = u.abilities.iter().find(|a| rules.ability(a).is_some_and(|d| d.charges.is_some())).cloned();
+                match limited {
+                    Some(a) => {
+                        *u.charges.entry(a.clone()).or_insert(0) += 1;
+                        let name = rules.ability(&a).map_or("grenade".to_string(), |d| d.name.to_lowercase());
+                        format!("+1 {name}")
+                    }
+                    None => {
+                        u.weapon.spare += 1;
+                        "+1 magazine".into()
+                    }
+                }
+            }
+            _ => {
+                u.weapon.spare += 1;
+                u.weapon.ammo = u.weapon.clip_size.max(u.weapon.ammo);
+                "+1 magazine, reloaded".into()
+            }
+        };
+        self.props[i].alive = false;
+        let prop = self.props[i].id;
+        events.push(GameEvent::SupplyFound { unit, prop, text });
     }
 
     /// Turn-start hooks (mission + units of the new active team).

@@ -1,0 +1,126 @@
+// The look of the zombies from the built-in Zombie Pack (the class, its
+// claws and the `bite` attack are in tactics_core/src/modules/zombies.rs).
+//
+// A hunched skeleton on top of the standard humanoid, with its own shambling
+// walk (one leg dragging), a swaying idle with the arms reaching forward and
+// a lunging bite. Hit and death are inherited from the humanoid.
+//
+// Units: metres, Y up, the model faces -Z. Rotations: degrees (X, Y, Z);
+// +X leans the chest forward and swings the arms and legs forward.
+(
+    info: (
+        id: "zombies_look",
+        name: "Zombie Look",
+        version: "1.0",
+        description: "Skeleton and animations for the zombies.",
+    ),
+
+    skeletons: [
+        (
+            id: "zombie",
+            extends: "humanoid",
+            bones: [
+                // Pale, bare arms and a lolling head; ragged team-coloured clothes.
+                (name: "head", parent: "neck", offset: (0.0, 0.03, 0.0),
+                 shape: Sphere(radius: 0.125), shape_offset: (0.0, 0.12, 0.0), color: Light),
+                (name: "forearm_l", parent: "upper_arm_l", offset: (0.0, -0.26, 0.0),
+                 shape: Capsule(radius: 0.04, length: 0.16), shape_offset: (0.0, -0.12, 0.0), color: Light),
+                (name: "forearm_r", parent: "upper_arm_r", offset: (0.0, -0.26, 0.0),
+                 shape: Capsule(radius: 0.04, length: 0.16), shape_offset: (0.0, -0.12, 0.0), color: Light),
+                (name: "hand_l", parent: "forearm_l", offset: (0.0, -0.24, 0.0),
+                 shape: Box(size: (0.07, 0.11, 0.06)), shape_offset: (0.0, -0.05, 0.0), color: Light),
+                (name: "hand_r", parent: "forearm_r", offset: (0.0, -0.24, 0.0),
+                 shape: Box(size: (0.07, 0.11, 0.06)), shape_offset: (0.0, -0.05, 0.0), color: Light),
+                // Additions: hollow glowing eyes and a gaping jaw.
+                (name: "eyes", parent: "head", offset: (0.0, 0.14, -0.11),
+                 shape: Box(size: (0.15, 0.03, 0.03)), color: Accent),
+                (name: "jaw", parent: "head", offset: (0.0, 0.03, -0.06), rotation: (20.0, 0.0, 0.0),
+                 shape: Box(size: (0.12, 0.04, 0.1)), shape_offset: (0.0, -0.02, -0.03), color: Dark),
+            ],
+        ),
+    ],
+
+    animations: [
+        // Swaying on the spot, hunched, arms reaching, head lolling.
+        (
+            skeleton: "zombie",
+            slot: "idle",
+            duration: 3.0,
+            looping: true,
+            rotations: {
+                "hips":        [(0.0, (0.0, 0.0, -4.0)), (1.5, (0.0, 0.0, 4.0)), (3.0, (0.0, 0.0, -4.0))],
+                "spine":       [(0.0, (12.0, 0.0, 3.0)), (1.5, (14.0, 0.0, -3.0)), (3.0, (12.0, 0.0, 3.0))],
+                "chest":       [(0.0, (18.0, 0.0, 0.0)), (1.5, (22.0, 5.0, 0.0)), (3.0, (18.0, 0.0, 0.0))],
+                "head":        [(0.0, (-15.0, 0.0, 22.0)), (1.2, (-10.0, 10.0, 28.0)), (2.2, (-18.0, -6.0, 15.0)), (3.0, (-15.0, 0.0, 22.0))],
+                "jaw":         [(0.0, (20.0, 0.0, 0.0)), (1.0, (35.0, 0.0, 0.0)), (1.4, (15.0, 0.0, 0.0)), (3.0, (20.0, 0.0, 0.0))],
+                "upper_arm_l": [(0.0, (70.0, 0.0, -6.0)), (1.5, (78.0, 0.0, -2.0)), (3.0, (70.0, 0.0, -6.0))],
+                "upper_arm_r": [(0.0, (80.0, 0.0, 6.0)), (1.5, (68.0, 0.0, 10.0)), (3.0, (80.0, 0.0, 6.0))],
+                "forearm_l":   [(0.0, (15.0, 0.0, 0.0))],
+                "forearm_r":   [(0.0, (25.0, 0.0, 0.0))],
+                "hand_l":      [(0.0, (10.0, 0.0, 0.0))],
+                "hand_r":      [(0.0, (10.0, 0.0, 0.0))],
+                "thigh_l":     [(0.0, (8.0, 0.0, -4.0))],
+                "thigh_r":     [(0.0, (-4.0, 0.0, 5.0))],
+                "shin_l":      [(0.0, (-14.0, 0.0, 0.0))],
+                "shin_r":      [(0.0, (-6.0, 0.0, 0.0))],
+            },
+        ),
+        // The shamble: a long stride on the left, the right foot dragged
+        // behind, the body lurching from side to side.
+        (
+            skeleton: "zombie",
+            slot: "walk",
+            duration: 1.2,
+            looping: true,
+            translations: {
+                "hips": [(0.0, (0.0, 0.0, 0.0)), (0.3, (0.03, -0.05, 0.0)), (0.6, (0.0, -0.02, 0.0)), (0.9, (-0.03, -0.06, 0.0)), (1.2, (0.0, 0.0, 0.0))],
+            },
+            rotations: {
+                "hips":        [(0.0, (0.0, -10.0, -6.0)), (0.6, (0.0, 10.0, 6.0)), (1.2, (0.0, -10.0, -6.0))],
+                "spine":       [(0.0, (14.0, 6.0, 4.0)), (0.6, (14.0, -6.0, -4.0)), (1.2, (14.0, 6.0, 4.0))],
+                "chest":       [(0.0, (20.0, 0.0, 0.0)), (0.3, (26.0, 0.0, 0.0)), (0.6, (20.0, 0.0, 0.0)), (0.9, (26.0, 0.0, 0.0)), (1.2, (20.0, 0.0, 0.0))],
+                "head":        [(0.0, (-18.0, 0.0, 18.0)), (0.6, (-12.0, 0.0, 26.0)), (1.2, (-18.0, 0.0, 18.0))],
+                "jaw":         [(0.0, (25.0, 0.0, 0.0)), (0.6, (35.0, 0.0, 0.0)), (1.2, (25.0, 0.0, 0.0))],
+                "thigh_l":     [(0.0, (35.0, 0.0, -3.0)), (0.3, (5.0, 0.0, -3.0)), (0.6, (-25.0, 0.0, -3.0)), (0.9, (10.0, 0.0, -3.0)), (1.2, (35.0, 0.0, -3.0))],
+                "shin_l":      [(0.0, (-8.0, 0.0, 0.0)), (0.3, (-20.0, 0.0, 0.0)), (0.6, (-25.0, 0.0, 0.0)), (0.9, (-70.0, 0.0, 0.0)), (1.2, (-8.0, 0.0, 0.0))],
+                "foot_l":      [(0.0, (10.0, 0.0, 0.0)), (0.6, (-20.0, 0.0, 0.0)), (1.2, (10.0, 0.0, 0.0))],
+                // The dragged leg barely lifts.
+                "thigh_r":     [(0.0, (-20.0, 0.0, 6.0)), (0.6, (12.0, 0.0, 6.0)), (1.2, (-20.0, 0.0, 6.0))],
+                "shin_r":      [(0.0, (-12.0, 0.0, 0.0)), (0.6, (-18.0, 0.0, 0.0)), (1.2, (-12.0, 0.0, 0.0))],
+                "foot_r":      [(0.0, (-25.0, 0.0, 10.0)), (0.6, (0.0, 0.0, 10.0)), (1.2, (-25.0, 0.0, 10.0))],
+                "upper_arm_l": [(0.0, (75.0, 0.0, -8.0)), (0.3, (68.0, 0.0, -8.0)), (0.6, (80.0, 0.0, -4.0)), (0.9, (70.0, 0.0, -8.0)), (1.2, (75.0, 0.0, -8.0))],
+                "upper_arm_r": [(0.0, (65.0, 0.0, 8.0)), (0.3, (78.0, 0.0, 6.0)), (0.6, (68.0, 0.0, 10.0)), (0.9, (80.0, 0.0, 6.0)), (1.2, (65.0, 0.0, 8.0))],
+                "forearm_l":   [(0.0, (15.0, 0.0, 0.0))],
+                "forearm_r":   [(0.0, (22.0, 0.0, 0.0))],
+            },
+        ),
+        // The bite: rear back, lunge with both arms grabbing, snap the jaw.
+        (
+            skeleton: "zombie",
+            slot: "bite",
+            duration: 0.8,
+            translations: {
+                "hips": [(0.0, (0.0, 0.0, 0.0)), (0.2, (0.0, 0.0, 0.08)), (0.4, (0.0, -0.06, -0.22)), (0.8, (0.0, 0.0, 0.0))],
+            },
+            rotations: {
+                "chest":       [(0.0, (20.0, 0.0, 0.0)), (0.2, (5.0, 0.0, 0.0)), (0.4, (45.0, 0.0, 0.0)), (0.6, (40.0, 0.0, 0.0)), (0.8, (20.0, 0.0, 0.0))],
+                "head":        [(0.0, (-15.0, 0.0, 15.0)), (0.2, (-25.0, 0.0, 0.0)), (0.4, (-30.0, 0.0, 0.0)), (0.8, (-15.0, 0.0, 15.0))],
+                "jaw":         [(0.0, (25.0, 0.0, 0.0)), (0.3, (55.0, 0.0, 0.0)), (0.45, (0.0, 0.0, 0.0)), (0.55, (40.0, 0.0, 0.0)), (0.8, (25.0, 0.0, 0.0))],
+                "upper_arm_l": [(0.0, (70.0, 0.0, -6.0)), (0.2, (120.0, 0.0, -25.0)), (0.4, (85.0, 0.0, 10.0)), (0.8, (70.0, 0.0, -6.0))],
+                "upper_arm_r": [(0.0, (80.0, 0.0, 6.0)), (0.2, (120.0, 0.0, 25.0)), (0.4, (85.0, 0.0, -10.0)), (0.8, (80.0, 0.0, 6.0))],
+                "forearm_l":   [(0.0, (15.0, 0.0, 0.0)), (0.2, (40.0, 0.0, 0.0)), (0.4, (5.0, 0.0, 0.0)), (0.8, (15.0, 0.0, 0.0))],
+                "forearm_r":   [(0.0, (25.0, 0.0, 0.0)), (0.2, (40.0, 0.0, 0.0)), (0.4, (5.0, 0.0, 0.0)), (0.8, (25.0, 0.0, 0.0))],
+                "thigh_l":     [(0.0, (8.0, 0.0, 0.0)), (0.4, (35.0, 0.0, 0.0)), (0.8, (8.0, 0.0, 0.0))],
+                "shin_l":      [(0.0, (-14.0, 0.0, 0.0)), (0.4, (-40.0, 0.0, 0.0)), (0.8, (-14.0, 0.0, 0.0))],
+            },
+        ),
+    ],
+
+    models: [
+        (id: "zombie", skeleton: "zombie", fallback: Alien),
+    ],
+
+    presentations: [
+        (ability: "bite", animation: "bite", projectile: None, windup: 0.35),
+    ],
+)

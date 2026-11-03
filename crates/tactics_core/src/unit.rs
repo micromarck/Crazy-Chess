@@ -212,6 +212,11 @@ pub struct UnitClass {
     pub model: String,
     /// Never afraid (robots, drones, constructs): fear stays at 0.
     pub fearless: bool,
+    /// Mindless swarm (zombies): the AI skips tactics and simply closes in
+    /// on the nearest enemy and strikes. Cheap enough for hundreds of units.
+    pub horde: bool,
+    /// While dormant, gunfire within this many tiles wakes it (0 = deaf).
+    pub hearing: f32,
     /// Hitbox and hover height (see [`Body`]); e.g. drones
     /// `body: (hover: 0.8, height: 0.6)`.
     pub body: Body,
@@ -233,7 +238,7 @@ pub struct UnitStatus {
 }
 
 /// Behaviour state of an AI-controlled unit (mission mechanics).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct UnitAi {
     /// Not yet active: holds position (or walks its patrol) until woken by
     /// being spotted, being hurt, its pod waking, or the alarm.
@@ -244,6 +249,10 @@ pub struct UnitAi {
     pub patrol: Vec<GridPos>,
     /// Index of the next patrol waypoint.
     pub patrol_index: usize,
+    /// Copied from the class: mindless swarm behaviour (see [`UnitClass::horde`]).
+    pub horde: bool,
+    /// Copied from the class: gunfire within this many tiles wakes it.
+    pub hearing: f32,
 }
 
 /// A single combatant on the battlefield.

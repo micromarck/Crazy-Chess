@@ -53,7 +53,27 @@ fn enemy_think(
     // Modules can retune the AI by registering an AI profile called "default".
     let config = state.battle.rules().ai_profile("default").map_or(brain.config, |p| p.config);
     let config = settings.ai_config(config);
-    let action = ai::next_team_action(&state.battle, &config);
+    // Quiet actions (units waiting, or acting unseen in the fog) resolve
+    // back to back within a few milliseconds per frame: a city full of
+    // dormant zombies passes its turn at once.
+    let started = bevy::platform::time::Instant::now();
+    let mut action = ai::next_team_action(&state.battle, &config);
+    loop {
+        let actor = action.actor().and_then(|id| state.battle.unit(id));
+        let seen = actor.is_some_and(|u| state.battle.is_revealed(u.id));
+        let quiet = !seen || matches!(action, Action::Wait { .. });
+        if !quiet || matches!(action, Action::EndTurn) || started.elapsed().as_secs_f32() > 0.012 {
+            break;
+        }
+        if state.apply(action, &mut playback).is_err() {
+            let _ = state.apply(Action::EndTurn, &mut playback);
+            return;
+        }
+        if playback.is_busy() || state.battle.is_over() || state.battle.active_team() != Team::Enemy {
+            return;
+        }
+        action = ai::next_team_action(&state.battle, &config);
+    }
     let actor = action.actor().and_then(|id| state.battle.unit(id));
     let seen = actor.is_some_and(|u| state.battle.is_revealed(u.id));
     let quiet = !seen || matches!(action, Action::Wait { .. } | Action::EndTurn);
@@ -76,3 +96,4 @@ fn enemy_think(
         let _ = state.apply(Action::EndTurn, &mut playback);
     }
 }
+

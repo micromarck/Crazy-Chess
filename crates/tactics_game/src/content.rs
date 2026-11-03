@@ -18,7 +18,7 @@ use tactics_core::modules;
 
 /// Rust modules, in load order. Add yours here.
 fn rust_modules() -> Vec<Box<dyn GameModule>> {
-    vec![Box::new(modules::BaseModule), Box::new(modules::GrenadierModule)]
+    vec![Box::new(modules::BaseModule), Box::new(modules::GrenadierModule), Box::new(modules::ZombieModule)]
 }
 
 /// RON modules embedded at compile time: `(file name, contents)`.
@@ -26,6 +26,7 @@ pub const BUNDLED_DATA_MODULES: &[(&str, &str)] = &[
     ("marksman.ron", include_str!("../assets/modules/marksman.ron")),
     ("drones.ron", include_str!("../assets/modules/drones.ron")),
     ("creatures.ron", include_str!("../assets/modules/creatures.ron")),
+    ("zombies.ron", include_str!("../assets/modules/zombies.ron")),
 ];
 
 /// Folder (relative to the working directory) scanned for user modules on desktop.
@@ -124,6 +125,14 @@ mod tests {
         // The sectoid skeleton sits on top of the humanoid.
         let sk = rules.resolve_skeleton("sectoid").unwrap();
         assert!(sk.index_of("antenna_l").is_some() && sk.index_of("thigh_l").is_some());
+        // Zombies: class from Rust, look and moves from data.
+        assert_eq!(rules.class("zombie").unwrap().model, "zombie");
+        let zombie = rules.resolve_skeleton("zombie").unwrap();
+        assert!(zombie.index_of("jaw").is_some());
+        let za = rules.skeleton_animations("zombie");
+        assert_eq!(za["walk"].skeleton, "zombie");
+        assert_eq!(za["bite"].skeleton, "zombie");
+        assert_eq!(za["death"].skeleton, "humanoid", "inherited");
         let anims = rules.skeleton_animations("sectoid");
         assert_eq!(anims["cast"].skeleton, "sectoid");
         assert_eq!(anims["walk"].skeleton, "humanoid");

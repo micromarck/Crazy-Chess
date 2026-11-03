@@ -256,7 +256,9 @@ pub fn start_battle(
                 Some(t) => GenParams::new(*t, Objective::ALL[(seed % Objective::ALL.len() as u64) as usize], seed),
                 None => GenParams::random(seed),
             };
-            params.enemy_classes = levelgen::enemy_classes(&rules);
+            if params.theme != levelgen::Theme::Outbreak {
+                params.enemy_classes = levelgen::enemy_classes(&rules);
+            }
             let def = levelgen::generate(params);
             let (battle, warnings) = Battle::from_mission(rules, &def, seed);
             let mut lines = vec![format!("Generated mission: {}", def.name), def.description.clone()];

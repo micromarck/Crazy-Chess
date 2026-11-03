@@ -136,6 +136,12 @@ Area attacks (grenades, `explode`) damage destructible props; a destroyed
 prop frees its tile. Prop kinds with their own look: `barrel`, `crate`,
 `console`/`terminal`, `beacon`/`uplink` (anything else is a crate or wall).
 
+**Supply caches** are props with `cover="none"` and kind `supply_ammo`
+(+1 magazine and a full clip), `supply_medkit` (+4 HP) or `supply_grenade`
+(+1 grenade, or a magazine for soldiers without one). A soldier who steps on
+one takes it (`SupplyFound` event); they glow in the level and show as gold
+dots on the minimap.
+
 ## Generated missions
 
 The **Missions** panel can generate a mission (`generate:<theme>` UI command,
@@ -149,6 +155,7 @@ hand-made file. Same seed + settings = same mission; **Restart** replays it.
 | Urban | a street grid with lane markings; blocks with brick buildings (windows, doors, wooden floors, furniture), flat roofs with parapets and ladders, plazas with trees and hedges; parked cars, barrels, crates |
 | Industrial | an asphalt yard with concrete pads, warehouses, rows of coloured shipping containers (some stacked with ladders), fences, fuel-barrel clusters |
 | Wilds | grassland with stepped hills, a winding river with bridges, a dirt track, woods, rocks, hedgerows and a cabin |
+| **Outbreak** | a **500x500** zombie city (`gen:outbreak`, the *Outbreak* button): a full street grid; blocks of shops, **multi-storey towers** (a walled ground floor and up to three upper floors, each set back from the one below, joined by flights of stairs, with parapets), **split-level car parks** (decks 1.5 m apart joined by ramps), flat roofs with ladders and parks with ponds; wrecked cars and barricades; about 230 **supply caches** (more of them indoors and upstairs); about 350 **zombies** in dormant hordes of 3-10 (two packs awake from the start). Objective: get the squad to the EVAC far to the north. |
 
 | objective | win | lose |
 |---|---|---|
@@ -156,6 +163,9 @@ hand-made file. Same seed + settings = same mission; **Restart** replays it.
 | Extract | whole squad on the EVAC zone (north), or kill everything | squad wiped out |
 | Hold | survive 6 turns; waves attack the BEACON | beacon integrity reaches 0 |
 | Recover | grab the DATA, bring it back to the EVAC point (south) | squad wiped out |
+
+Outbreak is not in the random rotation (`any`). Its size is in
+`GenParams::outbreak` (`width`/`height` work for any theme).
 
 The squad deploys at the south edge; objectives and enemies are only placed
 on tiles reachable from there (doors count as open, climbing obeys the 1-level
@@ -170,7 +180,7 @@ from scripts. They live in `tactics_core/src/battle/stealth.rs` (rules) and
 
 | mechanic | how it works | XML | scripts |
 |---|---|---|---|
-| **Dormant pods** | a dormant enemy holds position (the AI just waits). It wakes when the squad sees it or it sees the squad, when it is hurt, when the alarm sounds, or by script. Units sharing a `pod` wake together. | `<unit dormant="true" pod="east">` | `wake(unit)`, `wake_all()`, `unit_dormant(unit)` |
+| **Dormant pods** | a dormant enemy holds position (it sits its turns out without taking actions). It wakes when the squad sees it or it sees the squad, when it is hurt, when the alarm sounds, when it **hears gunfire** (classes with `hearing`, e.g. zombies: 14 tiles), or by script. Units sharing a `pod` wake together. | `<unit dormant="true" pod="east">` | `wake(unit)`, `wake_all()`, `unit_dormant(unit)` |
 | **Patrols** | a patrolling unit is dormant and walks its waypoints in a loop, one AP per turn, through doors. | `<unit patrol="10,4 10,20 3,20">` | |
 | **Concealment** | unalerted enemies notice a soldier only within `detection` tiles **with line of sight** (red rings in the game). Being noticed or attacking raises the alarm: concealment ends, every enemy wakes, `alarm` hooks run. Without concealment there is no alarm unless a script raises it. | `<mission concealment="true" detection="4.5">` | `concealed()`, `alarm()`, `raise_alarm()`, `on="alarm"` |
 | **Doors** | a closed door blocks movement and sight (full cover). Any unit stepping next to it opens it unless it's locked. Multi-tile doors open together. The AI paths through unlocked doors. | `<door tag="vault" x y width height locked="true">` | `open_door(tag)`, `close_door(tag)`, `lock_door(tag, bool)`, `on="opened"` on the door |

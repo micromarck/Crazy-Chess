@@ -160,12 +160,15 @@ pub struct AttackProfile {
     /// miss are **ballistic**: every round is traced as a ray (see
     /// [`crate::battle`] `ballistics`).
     pub rounds: Option<u32>,
+    /// A strike in arm's reach (claws, bites, blades): rolled, not traced,
+    /// so nothing in between can be hit.
+    pub melee: bool,
 }
 
 impl AttackProfile {
-    /// Traced as bullets (single target, can miss) rather than rolled.
+    /// Traced as bullets (single target, can miss, not melee) rather than rolled.
     pub fn is_ballistic(&self) -> bool {
-        self.area_radius <= 0.0 && self.can_miss
+        self.area_radius <= 0.0 && self.can_miss && !self.melee
     }
 }
 
@@ -186,6 +189,7 @@ impl Default for AttackProfile {
             damage_bonus: 0,
             area_radius: 0.0,
             rounds: None,
+            melee: false,
         }
     }
 }
