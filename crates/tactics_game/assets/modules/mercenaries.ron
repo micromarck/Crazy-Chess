@@ -1,0 +1,210 @@
+// Mercenaries: an enemy faction of human soldiers, written entirely as a
+// module (classes, gear, look and scripts). Uses only the modding API:
+//
+//   * classes reuse the base weapons and moves (shoot, overwatch, hunker,
+//     reload; the Sniper Rifle is soldiers-only, so mercs bring their own
+//     long rifle) plus the Grenadier Pack's LMG, suppression, frag grenades and
+//     medkits, and the Marksman Pack's Aimed Shot;
+//   * a skeleton on top of the humanoid gives them armour plates, a gas
+//     mask and a red visor;
+//   * class `hooks` (scripts every unit of the class runs) make the Officer
+//     steady nearby mercs each turn, and break their nerve when he falls;
+//   * `script_library` holds functions those scripts share.
+//
+// Mercs are human: unlike robots they feel fear (morale), so the officer
+// matters. Squad "mercs" is a ready-made team for missions:
+//   <deploy team="enemy" squad="mercs" x=".." y=".."/>
+(
+    info: (
+        id: "mercenaries",
+        name: "Mercenaries",
+        version: "1.0",
+        author: "Tactics",
+        description: "Hostile human soldiers: riflemen, gunners, breachers, marksmen, medics and an officer who holds them together.",
+    ),
+
+    // ---------------------------------------------------------------------
+    // Shared script functions (available to every script).
+    // ---------------------------------------------------------------------
+    script_library: r#"
+        // Living mercenaries within `range` tiles of unit `u` (not u itself).
+        fn mercs_near(u, range) {
+            let out = [];
+            for id in units("enemy") {
+                if id != u && distance(u, id) <= range && unit_class(id).starts_with("merc_") {
+                    out.push(id);
+                }
+            }
+            out
+        }
+    "#,
+
+    weapons: [
+        (
+            id: "merc_carbine",
+            name: "Merc Carbine",
+            damage_min: 1,
+            damage_max: 2,
+            crit_chance: 10,
+            crit_bonus: 1,
+            optimal_range: 6.0,
+            max_range: 14.0,
+            burst: 3,
+            spread: 0.9,
+            clip_size: 18,
+            magazines: 3,
+            look: Smg,
+        ),
+        (
+            id: "merc_longrifle",
+            name: "Merc Long Rifle",
+            damage_min: 3,
+            damage_max: 5,
+            crit_chance: 20,
+            crit_bonus: 2,
+            optimal_range: 12.0,
+            max_range: 20.0,
+            burst: 1,
+            spread: 0.15,
+            clip_size: 4,
+            magazines: 3,
+            look: Sniper,
+        ),
+    ],
+
+    classes: [
+        (
+            id: "merc_rifleman",
+            name: "Merc Rifleman",
+            stats: (max_hp: 7, mobility: 12, aim: 62, defense: 0, sight: 14.0, bravery: 45),
+            weapon: "rifle",
+            abilities: ["shoot", "overwatch", "hunker", "reload"],
+            model: "merc",
+        ),
+        (
+            id: "merc_gunner",
+            name: "Merc Gunner",
+            stats: (max_hp: 9, mobility: 10, aim: 58, defense: 0, sight: 14.0, bravery: 55),
+            weapon: "lmg",
+            abilities: ["shoot", "suppress", "overwatch", "hunker", "reload"],
+            model: "merc",
+        ),
+        (
+            id: "merc_breacher",
+            name: "Merc Breacher",
+            stats: (max_hp: 8, mobility: 14, aim: 60, defense: 5, sight: 12.0, bravery: 50),
+            weapon: "shotgun",
+            abilities: ["shoot", "frag_grenade", "hunker", "reload"],
+            model: "merc",
+            hooks: [
+                // Combat stims: the first time he's hurt, he pushes on harder.
+                (on: "damaged", once: true, code: r#"
+                    if unit_alive(unit) {
+                        say(unit, "STIMS!");
+                        give_ap(unit, 1);
+                        add_stat(unit, "mobility", 1);
+                    }
+                "#),
+            ],
+        ),
+        (
+            id: "merc_marksman",
+            name: "Merc Marksman",
+            stats: (max_hp: 6, mobility: 11, aim: 76, defense: 0, sight: 18.0, bravery: 45),
+            weapon: "merc_longrifle",
+            abilities: ["aimed_shot", "shoot", "overwatch", "reload"],
+            model: "merc",
+        ),
+        (
+            id: "merc_medic",
+            name: "Merc Medic",
+            stats: (max_hp: 7, mobility: 12, aim: 55, defense: 0, sight: 14.0, bravery: 40),
+            weapon: "merc_carbine",
+            abilities: ["shoot", "medkit", "hunker", "reload"],
+            model: "merc",
+        ),
+        (
+            id: "merc_officer",
+            name: "Merc Officer",
+            stats: (max_hp: 9, mobility: 12, aim: 68, defense: 5, sight: 15.0, bravery: 80),
+            weapon: "merc_carbine",
+            abilities: ["shoot", "overwatch", "hunker", "reload"],
+            model: "merc_officer",
+            hooks: [
+                // Each turn: mercs within 5 tiles steady their nerves.
+                (on: "turn_start", code: r#"
+                    let near = mercs_near(unit, 5.0);
+                    for id in near { add_fear(id, -12); }
+                    if near.len() > 0 && chance(35) { say(unit, "HOLD THE LINE!"); }
+                "#),
+                // When the officer falls, the rest waver.
+                (on: "death", code: r#"
+                    message("The merc officer is down - their line wavers!");
+                    for id in units("enemy") {
+                        if unit_class(id).starts_with("merc_") {
+                            add_fear(id, 30);
+                            add_stat(id, "aim", -5);
+                        }
+                    }
+                "#),
+            ],
+        ),
+    ],
+
+    squads: [
+        (
+            id: "mercs",
+            members: [
+                (class: "merc_officer", name: "Merc Officer"),
+                (class: "merc_rifleman", name: "Merc Rifleman 1"),
+                (class: "merc_gunner", name: "Merc Gunner"),
+                (class: "merc_breacher", name: "Merc Breacher"),
+                (class: "merc_rifleman", name: "Merc Rifleman 2"),
+                (class: "merc_marksman", name: "Merc Marksman"),
+                (class: "merc_medic", name: "Merc Medic"),
+            ],
+        ),
+    ],
+
+    // ---------------------------------------------------------------------
+    // Look: armour plates, gas mask and visor on top of the humanoid.
+    // ---------------------------------------------------------------------
+    skeletons: [
+        (
+            id: "merc",
+            extends: "humanoid",
+            bones: [
+                // Bulkier chest rig.
+                (name: "chest", parent: "spine", offset: (0.0, 0.22, 0.0),
+                 shape: Box(size: (0.42, 0.22, 0.26)), shape_offset: (0.0, 0.08, 0.0), color: Team),
+                // Additions.
+                (name: "plate", parent: "chest", offset: (0.0, 0.09, -0.14),
+                 shape: Box(size: (0.3, 0.2, 0.04)), color: Dark),
+                (name: "pad_l", parent: "chest", offset: (-0.24, 0.16, 0.0),
+                 shape: Box(size: (0.12, 0.06, 0.16)), color: Dark),
+                (name: "pad_r", parent: "chest", offset: (0.24, 0.16, 0.0),
+                 shape: Box(size: (0.12, 0.06, 0.16)), color: Dark),
+                (name: "mask", parent: "head", offset: (0.0, 0.08, -0.1),
+                 shape: Box(size: (0.16, 0.1, 0.06)), color: Dark),
+                (name: "visor", parent: "head", offset: (0.0, 0.15, -0.11),
+                 shape: Box(size: (0.2, 0.04, 0.03)), color: Accent),
+            ],
+        ),
+        (
+            // The officer adds a beret-like cap and a radio antenna.
+            id: "merc_officer",
+            extends: "merc",
+            bones: [
+                (name: "cap", parent: "head", offset: (0.0, 0.22, 0.0),
+                 shape: Box(size: (0.26, 0.06, 0.26)), color: Accent),
+                (name: "antenna", parent: "chest", offset: (0.12, 0.2, 0.12), rotation: (0.0, 0.0, -10.0),
+                 shape: Capsule(radius: 0.01, length: 0.35), shape_offset: (0.0, 0.18, 0.0), color: Dark),
+            ],
+        ),
+    ],
+
+    models: [
+        (id: "merc", skeleton: "merc", fallback: Soldier),
+        (id: "merc_officer", skeleton: "merc_officer", fallback: Soldier),
+    ],
+)

@@ -148,7 +148,9 @@ TBSium/
 * Included moves: Shoot, Overwatch, Hunker Down, Reload (base); Frag Grenade,
   Medkit + Grenadier class (Rust example module); Aimed Shot, Psi Bolt (RON example);
   Zombies (Rust class with a melee Bite and the horde AI, shambling look in
-  `assets/modules/zombies.ron`).
+  `assets/modules/zombies.ron`); Mercenaries and Corrupted Robots (pure data
+  modules with class scripts: an officer who holds the line, machines that
+  break down, malfunction and lose armour over time).
 * 2 action points per unit; move (1 AP) or dash (2 AP), blue/yellow range overlay.
 * Directional half/full cover, flanking (+crit), cover shields on hover.
 * Hit chance = aim − defence − cover − hunker ± range falloff, shown with a full breakdown.

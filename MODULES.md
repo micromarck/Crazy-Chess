@@ -328,7 +328,7 @@ The result is the `Volley` event, one `Bullet` per round. Area attacks and
 | Section | Type | Key fields |
 |---|---|---|
 | `weapons` | `Weapon` | `id, name, damage_min, damage_max, crit_chance, crit_bonus, optimal_range, max_range, clip_size, burst` (rounds per shot, 1), `pellets` (rays per round, 1; shotguns 8), `spread` (extra degrees of scatter, 0.6), `magazines` (spare magazines, 3), `classes` (who may carry it; empty = anyone), `look` (`Rifle`, `Shotgun`, `Sniper`, `Smg`, `Lmg`, `Pistol`, `Plasma`, `None`), `model` (custom held model id) |
-| `classes` | `UnitClass` | `id, name, stats: (max_hp, mobility, aim, defense, sight, climb, bravery), weapon, abilities: [...], model, fearless, loadout`, `horde` (mindless swarm AI: close in and strike, cheap enough for hundreds; their deaths play in the background, all at once, without a kill camera), `hearing` (tiles: gunfire this close wakes it while dormant), `body: (hover, height, muzzle)` (hitbox in metres: `hover` lifts flyers like drones off the ground — their shots pass over heads, enemies aim high, half cover beneath them does not count; `muzzle: Some(m)` sets the gun height) |
+| `classes` | `UnitClass` | `id, name, stats: (max_hp, mobility, aim, defense, sight, climb, bravery), weapon, abilities: [...], model, fearless, loadout`, `hooks` (class scripts, see below), `horde` (mindless swarm AI: close in and strike, cheap enough for hundreds; their deaths play in the background, all at once, without a kill camera), `hearing` (tiles: gunfire this close wakes it while dormant), `body: (hover, height, muzzle)` (hitbox in metres: `hover` lifts flyers like drones off the ground — their shots pass over heads, enemies aim high, half cover beneath them does not count; `muzzle: Some(m)` sets the gun height) |
 | `squads` | `SquadDef` | `id` (`"player"` / `"enemy"` are deployed), `members: [(class, name, loadout, gear, appearance)]` (the Barracks roster replaces `"player"` in game) |
 | `items` | `ItemDef` | `id, name, description, slot (Armor / Utility), stats: (max_hp, mobility, aim, defense, sight, bravery), abilities, charges, classes, model, socket` |
 | `loadouts` | `LoadoutDef` | `id, name, description, classes, gear: (weapon, armor, items: [...])` |
@@ -411,6 +411,53 @@ combat: (morale: (shaken_at: 30, panicked_at: 60, ally_killed_near: 35)),
 ```
 
 ---
+
+### Class scripts (`hooks`) and shared functions (`script_library`)
+
+A class can carry **scripts** that every unit of it runs, wherever it
+appears (hand-made missions, generated maps, `spawn_unit`). They use the
+mission scripting language and API (see MISSIONS.md, *Scripts*), with
+`unit` = the unit itself:
+
+| `on` | runs when |
+|---|---|
+| `turn_start` | its team's turn starts |
+| `damaged` | it takes damage (`amount`) |
+| `death` | it dies |
+| `spotted` | the player's squad first sees it |
+| `enter` | it steps onto a tile (`x`, `y`) |
+
+```ron
+classes: [
+    (
+        id: "rusty_bot",
+        // ...
+        hooks: [
+            (on: "turn_start", code: "decay(unit);"),
+            (on: "death", once: true, code: "explode(x, y, 1.5, 2);"),
+        ],
+    ),
+],
+// Functions every script can call (class scripts and missions).
+script_library: r#"
+    fn decay(u) {
+        add_stat(u, "defense", -5);
+        if chance(20) { say(u, "MALFUNCTION"); give_ap(u, -2); }
+    }
+"#,
+```
+
+Handy for living enemies: `unit_stat` / `set_stat` / `add_stat` change
+aim, defence, mobility, sight and max HP; `chance` / `rand` roll from the
+battle's seed (replays stay identical); `units(team)` and `distance(a, b)`
+reach the units around; `say(unit, text)` shows a callout over it; mission
+flags (`set_flag("wear_" + unit, ...)`) keep per-unit state. Unknown events
+are reported as module problems; script errors show in the combat log, and
+`Battle::dry_run_scripts()` checks every hook in tests.
+
+Examples: `assets/modules/corrupted_robots.ron` (machines that shed armour
+and malfunction more as they wear down) and `assets/modules/mercenaries.ron`
+(an officer who steadies nearby troops and whose death breaks their nerve).
 
 ## In-game editor
 

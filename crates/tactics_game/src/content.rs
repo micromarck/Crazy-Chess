@@ -27,6 +27,8 @@ pub const BUNDLED_DATA_MODULES: &[(&str, &str)] = &[
     ("drones.ron", include_str!("../assets/modules/drones.ron")),
     ("creatures.ron", include_str!("../assets/modules/creatures.ron")),
     ("zombies.ron", include_str!("../assets/modules/zombies.ron")),
+    ("mercenaries.ron", include_str!("../assets/modules/mercenaries.ron")),
+    ("corrupted_robots.ron", include_str!("../assets/modules/corrupted_robots.ron")),
 ];
 
 /// Folder (relative to the working directory) scanned for user modules on desktop.
@@ -113,6 +115,73 @@ pub fn save_user_module(_text: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tactics_core::prelude::*;
+
+    fn script_errors(events: &[GameEvent]) -> Vec<String> {
+        events.iter().filter_map(|e| if let GameEvent::ScriptError { message } = e { Some(message.clone()) } else { None }).collect()
+    }
+
+    /// The module enemies' class scripts compile and run (dry run of every
+    /// hook), and the robots really do break down over time.
+    #[test]
+    fn corrupted_robots_break_down_over_time() {
+        let (rules, _) = build_ruleset();
+        let mut b = Battle::new(Map::from_ascii(&"....................\n".repeat(8)), rules, 7);
+        let soldier = b.spawn("rifleman", "S", Team::Player, GridPos::new(0, 0)).unwrap();
+        let sentry = b.spawn("corrupted_sentry", "Sentry", Team::Enemy, GridPos::new(19, 7)).unwrap();
+        let loader = b.spawn("corrupted_loader", "Loader", Team::Enemy, GridPos::new(18, 7)).unwrap();
+        let drone = b.spawn("corrupted_drone", "Drone", Team::Enemy, GridPos::new(19, 5)).unwrap();
+        for m in ["merc_officer", "merc_rifleman", "merc_gunner", "merc_breacher", "merc_marksman", "merc_medic"] {
+            b.spawn(m, m, Team::Enemy, GridPos::new(10 + b.units().len() as i32, 2)).unwrap();
+        }
+        assert!(b.dry_run_scripts().is_empty(), "{:?}", b.dry_run_scripts());
+        let start = |id| b.unit(id).unwrap().stats.defense;
+        let (s0, d0) = (start(sentry), start(drone));
+        let mut events = Vec::new();
+        for _ in 0..6 {
+            events.extend(b.apply(Action::EndTurn).unwrap()); // enemy turn starts: decay
+            events.extend(b.apply(Action::EndTurn).unwrap());
+            if b.is_over() {
+                break;
+            }
+        }
+        assert!(script_errors(&events).is_empty(), "{:?}", script_errors(&events));
+        let alive_def = |id| b.unit(id).filter(|u| u.is_alive()).map(|u| u.stats.defense);
+        if let Some(d) = alive_def(sentry) {
+            assert!(d < s0, "sentry shed armour: {s0} -> {d}");
+        }
+        if let Some(d) = alive_def(drone) {
+            assert!(d < d0, "drone shed armour: {d0} -> {d}");
+        }
+        assert!(b.flags().get(&format!("wear_{}", sentry.0)).copied().unwrap_or(0) >= 1, "wear builds up");
+        let callouts: Vec<&str> =
+            events.iter().filter_map(|e| if let GameEvent::Callout { text, .. } = e { Some(text.as_str()) } else { None }).collect();
+        assert!(callouts.contains(&"PLATING FAILING"), "{callouts:?}");
+        assert!(
+            callouts.iter().any(|c| ["SYSTEM FREEZE", "SHORT CIRCUIT", "TARGETING GLITCH", "SERVO FAILURE"].contains(c)),
+            "worn machines malfunction: {callouts:?}"
+        );
+        let _ = (soldier, loader);
+    }
+
+    #[test]
+    fn loader_overdrives_and_officer_death_shakes_the_mercs() {
+        let (rules, _) = build_ruleset();
+        let mut b = Battle::new(Map::from_ascii(&"............\n".repeat(4)), rules, 3);
+        b.spawn("rifleman", "S", Team::Player, GridPos::new(0, 0)).unwrap();
+        let loader = b.spawn("corrupted_loader", "Loader", Team::Enemy, GridPos::new(11, 3)).unwrap();
+        let officer = b.spawn("merc_officer", "Officer", Team::Enemy, GridPos::new(6, 1)).unwrap();
+        let grunt = b.spawn("merc_rifleman", "Grunt", Team::Enemy, GridPos::new(7, 1)).unwrap();
+        let aim = b.unit(loader).unwrap().stats.aim;
+        let mut events = Vec::new();
+        b.apply_script_command(tactics_core::script::ScriptCommand::Damage { unit: loader.0, amount: 8 }, &mut events);
+        let l = b.unit(loader).unwrap();
+        assert!(l.is_alive() && l.stats.aim > aim && l.stats.defense == 0, "overdrive: aim {} def {}", l.stats.aim, l.stats.defense);
+        let fear = b.unit(grunt).unwrap().fear;
+        b.apply_script_command(tactics_core::script::ScriptCommand::Kill { unit: officer.0 }, &mut events);
+        assert!(b.unit(grunt).unwrap().fear > fear, "the line wavers");
+        assert!(script_errors(&events).is_empty(), "{:?}", script_errors(&events));
+    }
 
     #[test]
     fn bundled_modules_load_cleanly() {
