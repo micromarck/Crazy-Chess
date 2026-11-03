@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Salvage Run: a merc crew (Mercenaries module) is hauling corrupted robots
+  (Corrupted Robots module) out of a warehouse. Grab the robot core they're
+  after and get back to the evac point.
+
+  Coordinates: x = column from the left, y = ROW FROM THE TOP of <layout>.
+-->
+<mission id="salvage_run" name="Salvage Run" seed="9024" fog="true" win="script">
+  <description>A merc salvage crew is hauling corrupted robots out of a warehouse. Steal the robot core from inside and bring it back to the evac point.</description>
+
+  <layout>
+    ..................................
+    ..................................
+    ..................................
+    ...........HHHHHHHHHHHHH..........
+    ..HH.......H...........H..........
+    ..HH.......H...........H..........
+    ...........H..hh.......h..........
+    .......................H..........
+    ...........H.......hh..H.....HH...
+    .....h.....H...........H..........
+    ...........H...........H..........
+    ...........HHHhHH.HHhHHH..........
+    ..................................
+    ......hhh.........................
+    ..........................HH.HHH..
+    .............hh...........H....H..
+    ...................hhh....H....H..
+    ..........................H....H..
+    ...H......................H....H..
+    ...H......................HHHHHH..
+    ...H..............................
+    .........hhh......................
+    ..................................
+    ........................hhh.......
+    ..................................
+    ..................................
+  </layout>
+  <heights>
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000002222200
+    0000000000000000000000000002222200
+    0000000000000000000000000002222200
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+    0000000000000000000000000000000000
+  </heights>
+  <ladder x="29" y="5"/>
+
+  <deploy team="player" squad="player" x="4" y="23"/>
+
+  <!-- Merc crew. -->
+  <unit team="enemy" class="merc_officer" name="Foreman Kade" x="17" y="5" tag="officer" dormant="true" pod="warehouse"/>
+  <unit team="enemy" class="merc_rifleman" name="Merc Rifleman" x="13" y="9" dormant="true" pod="warehouse"/>
+  <unit team="enemy" class="merc_gunner" name="Merc Gunner" x="21" y="9" dormant="true" pod="warehouse"/>
+  <unit team="enemy" class="merc_marksman" name="Dock Marksman" x="29" y="3" dormant="true" pod="dock"/>
+  <unit team="enemy" class="merc_rifleman" name="Yard Patrol" x="16" y="18" patrol="16,18 6,15 16,13 25,21"/>
+  <!-- Their cargo, waking up. -->
+  <unit team="enemy" class="corrupted_sentry" name="Crated Sentry" x="20" y="4" dormant="true" pod="warehouse"/>
+  <unit team="enemy" class="corrupted_loader" name="Loader L-3" x="28" y="17" dormant="true" pod="office">
+    <script on="spotted" once="true">message("They've got a loader in the office - keep your distance.");</script>
+  </unit>
+  <unit team="enemy" class="corrupted_drone" name="Drone D-5" x="30" y="11" dormant="true" pod="dock"/>
+
+  <door tag="west_door" x="11" y="7"/>
+  <door tag="front_door" x="17" y="11"/>
+  <door tag="office_door" x="28" y="14"/>
+
+  <prop tag="truck" kind="car" x="24" y="13" cover="half" hp="8"/>
+  <prop tag="fuel" kind="barrel" x="12" y="13" cover="half" hp="1">
+    <script on="destroyed">explode(x, y, 1.6, 3);</script>
+  </prop>
+  <prop tag="crate1" kind="crate" x="15" y="4" cover="half" hp="4"/>
+  <prop tag="crate2" kind="crate" x="21" y="6" cover="half" hp="4"/>
+  <prop tag="ammo1" kind="supply_ammo" x="8" y="17" cover="none"/>
+  <prop tag="med1" kind="supply_medkit" x="22" y="20" cover="none"/>
+  <prop tag="nade1" kind="supply_grenade" x="4" y="11" cover="none"/>
+
+  <zone tag="core" x="18" y="7" width="1" height="1" marker="objective" label="ROBOT CORE">
+    <script on="enter" team="player" once="true">
+      set_flag("core", 1);
+      message(unit_name(unit) + " has the robot core. Back to the evac point!");
+      objective("Bring the robot core to the EVAC point (south-west)");
+      show_zone("core", false);
+      show_zone("evac", true);
+    </script>
+  </zone>
+  <zone tag="evac" x="2" y="23" width="3" height="2" marker="evac" label="EVAC" hidden="true">
+    <script on="enter" team="player">
+      if flag("core") == 1 { message("Core secured. Mission complete!"); win(); }
+    </script>
+  </zone>
+
+  <script on="start">
+    set_flag("core", 0);
+    objective("Steal the ROBOT CORE from the warehouse");
+    message("A merc crew is loading corrupted robots in the warehouse. The core is inside.");
+  </script>
+</mission>

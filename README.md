@@ -54,7 +54,11 @@ look automatically.
 
 New to the controls? Play *Basic Training* from the Missions list. Bundled large levels: *Proving Grounds*
 (sandbox), *Hold the Beacon* (defend and extract), *Clear the Complex*
-(explore and clear) and *Silent Theft* (stealth heist). See
+(explore and clear) and *Silent Theft* (stealth heist); with the
+faction modules: *Merc Ambush* (storm a merc compound, break their nerve by
+killing the officer), *Scrapyard* (corrupted robots that fall apart: kill
+them or outlast them) and *Salvage Run* (steal a robot core from a merc
+crew and their cargo). See
 **[MISSIONS.md](MISSIONS.md)**.
 
 The HUD is an **HTML/CSS layout** (`assets/ui/hud.html`) rendered natively on

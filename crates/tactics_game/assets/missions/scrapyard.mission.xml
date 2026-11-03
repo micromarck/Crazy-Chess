@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Scrapyard: corrupted robots (Corrupted Robots module) in a junkyard. They
+  shed armour and malfunction more every turn, so time is on your side:
+  destroy them, or hold out until they grind to a halt.
+
+  Coordinates: x = column from the left, y = ROW FROM THE TOP of <layout>.
+-->
+<mission id="scrapyard" name="Scrapyard" seed="5150" fog="true">
+  <description>Corrupted machines roam a junkyard. They break down a little more every turn: destroy them, or survive 8 turns until they grind to a halt.</description>
+
+  <layout>
+    ..............................
+    ..............................
+    ..........H...................
+    ...HHHH...H.........HHHHH.....
+    ...HHHH...H...................
+    ..........H..h................
+    ..........H...............H...
+    ........h.........h.......H...
+    .......................h..H...
+    ...h..........HHH.........H...
+    ......HH......HHH.........H...
+    ......HH...h..................
+    ......HH..........h...........
+    ......HH.............HHHH.....
+    ...............h.....HHHH.....
+    ............H.................
+    .........h..H.................
+    ..HHH.......H............h....
+    ..............................
+    .................HHH..........
+    ......h.......................
+    .....................h........
+    ..............................
+    ..............................
+  </layout>
+  <heights>
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000012100000000000
+    000000000000000011100000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    001100000000000000000000000000
+    001100000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+  </heights>
+
+  <deploy team="player" squad="player" x="14" y="21"/>
+
+  <unit team="enemy" class="corrupted_loader" name="Loader L-7" x="5" y="6" tag="loader1">
+    <script on="spotted" once="true">message("A loader! It hits hard up close - but it's falling apart.");</script>
+  </unit>
+  <unit team="enemy" class="corrupted_loader" name="Loader L-9" x="24" y="5"/>
+  <unit team="enemy" class="corrupted_sentry" name="Sentry S-1" x="12" y="4" dormant="true" pod="north"/>
+  <unit team="enemy" class="corrupted_sentry" name="Sentry S-4" x="17" y="3" dormant="true" pod="north"/>
+  <unit team="enemy" class="corrupted_sentry" name="Sentry S-6" x="27" y="12" dormant="true" pod="east"/>
+  <unit team="enemy" class="corrupted_drone" name="Drone D-2" x="8" y="9" patrol="8,9 20,9 20,16 8,16"/>
+  <unit team="enemy" class="corrupted_drone" name="Drone D-9" x="25" y="11" dormant="true" pod="east"/>
+
+  <prop tag="wreck1" kind="car" x="9" y="13" cover="half" hp="8"/>
+  <prop tag="wreck2" kind="car" x="19" y="15" cover="half" hp="8"/>
+  <prop tag="wreck3" kind="car" x="4" y="7" cover="half" hp="8"/>
+  <prop tag="drum1" kind="barrel" x="15" y="12" cover="half" hp="1">
+    <script on="destroyed">explode(x, y, 1.6, 3);</script>
+  </prop>
+  <prop tag="drum2" kind="barrel" x="22" y="10" cover="half" hp="1">
+    <script on="destroyed">explode(x, y, 1.6, 3);</script>
+  </prop>
+  <prop tag="ammo1" kind="supply_ammo" x="11" y="19" cover="none"/>
+  <prop tag="ammo2" kind="supply_ammo" x="26" y="20" cover="none"/>
+  <prop tag="med1" kind="supply_medkit" x="3" y="15" cover="none"/>
+  <prop tag="nade1" kind="supply_grenade" x="20" y="11" cover="none"/>
+
+  <script on="start">
+    objective("Destroy the machines - or survive 8 turns (they fall apart over time)");
+    message("Corrupted machines in the yard. Every turn they shed armour and glitch more.");
+  </script>
+  <script on="turn_start" team="player">
+    if round >= 9 { message("The last machines grind to a halt."); win(); }
+    else if round > 1 { objective("Destroy the machines - or survive " + (9 - round) + " more turns"); }
+  </script>
+</mission>
