@@ -214,6 +214,26 @@ impl Battle {
         }
     }
 
+    /// Puts a unit to sleep (dormant) or wakes it silently (setup, tests).
+    pub fn set_dormant(&mut self, id: UnitId, dormant: bool) {
+        if let Some(u) = self.units.get_mut(id.0 as usize) {
+            u.ai.dormant = dormant;
+        }
+    }
+
+    /// Wakes dormant units whose `hearing` reaches `pos` (a gunshot).
+    pub(super) fn hear_gunfire(&mut self, pos: GridPos, events: &mut Vec<GameEvent>) {
+        let heard: Vec<UnitId> = self
+            .units
+            .iter()
+            .filter(|u| u.is_alive() && u.ai.dormant && u.ai.hearing > 0.0 && u.pos.distance(pos) <= u.ai.hearing)
+            .map(|u| u.id)
+            .collect();
+        for id in heard {
+            self.wake(id, events);
+        }
+    }
+
     fn wake_one(&mut self, id: UnitId, events: &mut Vec<GameEvent>) {
         let u = &mut self.units[id.0 as usize];
         if u.ai.dormant {

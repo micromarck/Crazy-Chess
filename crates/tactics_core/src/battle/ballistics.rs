@@ -130,6 +130,8 @@ impl Battle {
             suppress,
             bullets: bullets.clone(),
         });
+        // Gunfire is loud: dormant units that can hear it come running.
+        self.hear_gunfire(shooter.pos, events);
 
         // Apply: damage per hit in order (deaths, scripts, fear), props.
         for b in &bullets {

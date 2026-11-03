@@ -37,8 +37,9 @@ const SIZE: f32 = 190.0;
 
 #[derive(Resource, Default)]
 struct MinimapState {
-    /// Battle revision the image was drawn for.
-    drawn: Option<(u64, usize)>,
+    /// What the image was drawn for: (battle seed and size, alive props, open doors,
+    /// visible zones). Units are dots on top, so moves don't redraw it.
+    drawn: Option<(usize, usize, usize, usize)>,
     /// `Some(on)` once the player pressed M (overrides the default).
     user_choice: Option<bool>,
     image: Handle<Image>,
@@ -109,7 +110,7 @@ fn toggle(
 }
 
 /// Colour of one map cell.
-fn cell_color(battle: &Battle, p: GridPos) -> [u8; 4] {
+fn cell_color(battle: &Battle, props: &std::collections::HashMap<GridPos, &tactics_core::battle::Prop>, p: GridPos) -> [u8; 4] {
     let map = battle.map();
     let zone = battle.zones().iter().find(|z| z.visible && z.contains(p));
     if let Some(z) = zone {
@@ -119,8 +120,14 @@ fn cell_color(battle: &Battle, p: GridPos) -> [u8; 4] {
             _ => [240, 200, 60, 255],
         };
     }
-    if battle.door_at(p).is_some_and(|d| d.door.is_some_and(|s| !s.open)) {
-        return [70, 150, 165, 255];
+    if let Some(prop) = props.get(&p) {
+        if prop.door.is_some_and(|s| !s.open) {
+            return [70, 150, 165, 255];
+        }
+        // Supply caches: gold, so the squad can plan a route through them.
+        if prop.kind.starts_with("supply") {
+            return [250, 215, 70, 255];
+        }
     }
     let shade = (map.elevation(p) as i32 * 14).min(70);
     let lift = |v: i32| (v + shade).clamp(0, 255) as u8;
@@ -152,17 +159,21 @@ fn redraw(
 ) {
     let b = &battle.battle;
     let map = b.map();
-    let key = (battle.revision, b.zones().iter().filter(|z| z.visible).count());
+    let alive = b.props().iter().filter(|p| p.alive).count();
+    let open = b.props().iter().filter(|p| p.door.is_some_and(|d| d.open)).count();
+    let key = (battle.seed as usize ^ (map.width() as usize) << 20, alive, open, b.zones().iter().filter(|z| z.visible).count());
     if state.drawn == Some(key) {
         return;
     }
     state.drawn = Some(key);
+    let props: std::collections::HashMap<GridPos, &tactics_core::battle::Prop> =
+        b.props().iter().filter(|p| p.alive).map(|p| (p.pos, p)).collect();
     let (w, h) = (map.width().max(1) as u32, map.height().max(1) as u32);
     let mut data = Vec::with_capacity((w * h * 4) as usize);
     for row in 0..h as i32 {
         for x in 0..w as i32 {
             // Row 0 of the image is the north edge (highest grid y).
-            data.extend_from_slice(&cell_color(b, GridPos::new(x, h as i32 - 1 - row)));
+            data.extend_from_slice(&cell_color(b, &props, GridPos::new(x, h as i32 - 1 - row)));
         }
     }
     let mut image = Image::new(

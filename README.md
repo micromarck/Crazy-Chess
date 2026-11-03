@@ -45,7 +45,10 @@ mechanics: **dormant pods, patrols, concealment and alarms, doors, fog of
 war, AI goals and objectives**. **Generated missions**: urban streets with enterable buildings and
 rooftops, industrial yards with container stacks, or wilds with hills, a
 river and woods, each with a random objective (eliminate, extract, hold a
-beacon, recover data). Maps are painted with surfaces (asphalt, grass,
+beacon, recover data). **Outbreak**: a 500x500 zombie city with
+multi-storey towers and split-level car parks (stairs and ramps between
+floors), supply caches everywhere and hundreds of slow zombies that come
+running at the sound of gunfire. Maps are painted with surfaces (asphalt, grass,
 brick, containers, trees, water...), and hand-made missions get the same
 look automatically.
 
@@ -142,7 +145,9 @@ TBSium/
   enemy / ally / tile), range, and attack stats (base accuracy, accuracy bonus,
   half/full cover penalties, crit, damage, area radius).
 * Included moves: Shoot, Overwatch, Hunker Down, Reload (base); Frag Grenade,
-  Medkit + Grenadier class (Rust example module); Aimed Shot, Psi Bolt (RON example).
+  Medkit + Grenadier class (Rust example module); Aimed Shot, Psi Bolt (RON example);
+  Zombies (Rust class with a melee Bite and the horde AI, shambling look in
+  `assets/modules/zombies.ron`).
 * 2 action points per unit; move (1 AP) or dash (2 AP), blue/yellow range overlay.
 * Directional half/full cover, flanking (+crit), cover shields on hover.
 * Hit chance = aim − defence − cover − hunker ± range falloff, shown with a full breakdown.

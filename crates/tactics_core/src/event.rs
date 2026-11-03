@@ -97,6 +97,9 @@ pub enum GameEvent {
     PropDamaged { prop: PropId, hp: i32 },
     /// A prop was destroyed (its tile becomes open floor).
     PropDestroyed { prop: PropId },
+    /// A soldier walked over a supply cache and took it (`text` says what,
+    /// e.g. "+1 magazine"). The prop is gone.
+    SupplyFound { unit: UnitId, prop: PropId, text: String },
     /// A tile's terrain, height or ladder changed; redraw it.
     TerrainChanged { pos: GridPos },
     /// A message from a mission script.

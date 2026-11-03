@@ -40,6 +40,10 @@ pub enum Theme {
     Urban,
     Industrial,
     Wilds,
+    /// A huge zombie-infested city (500x500 by default): street grid,
+    /// multi-storey towers with stairs, split-level car parks, supply caches
+    /// everywhere and hundreds of slow zombies. Not in the random rotation.
+    Outbreak,
 }
 
 /// What the squad must do.
@@ -58,10 +62,11 @@ impl Theme {
             Theme::Urban => "Urban",
             Theme::Industrial => "Industrial",
             Theme::Wilds => "Wilds",
+            Theme::Outbreak => "Outbreak",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|t| t.name().eq_ignore_ascii_case(s.trim()))
+        Self::ALL.into_iter().chain([Theme::Outbreak]).find(|t| t.name().eq_ignore_ascii_case(s.trim()))
     }
 }
 
@@ -97,7 +102,15 @@ pub struct GenParams {
 impl GenParams {
     /// Sensible defaults for a theme and objective.
     pub fn new(theme: Theme, objective: Objective, seed: u64) -> Self {
+        if theme == Theme::Outbreak {
+            return Self::outbreak(seed);
+        }
         Self { theme, objective, width: 32, height: 28, enemy_classes: vec!["sectoid".into()], fog: theme != Theme::Wilds, seed }
+    }
+
+    /// The huge zombie city: 500x500, reach the evac on the far side.
+    pub fn outbreak(seed: u64) -> Self {
+        Self { theme: Theme::Outbreak, objective: Objective::Extract, width: 500, height: 500, enemy_classes: vec!["zombie".into()], fog: true, seed }
     }
 
     /// A random theme and objective from `seed`.
@@ -156,6 +169,8 @@ struct Gen {
     hooks: Vec<ScriptHook>,
     library: String,
     spawn: GridPos,
+    /// Tiles with a prop (fast `free` checks on huge maps).
+    prop_tiles: std::collections::HashSet<GridPos>,
 }
 
 fn hook(on: HookEvent, team: Option<Team>, code: impl Into<String>) -> ScriptHook {
@@ -178,6 +193,7 @@ impl Gen {
             hooks: Vec::new(),
             library: String::new(),
             spawn,
+            prop_tiles: Default::default(),
             p: GenParams { width: w, height: h, ..p },
         }
     }
@@ -199,7 +215,7 @@ impl Gen {
     }
     /// Open floor nothing is reserved on.
     fn free(&self, p: GridPos) -> bool {
-        self.inside(p) && self.map.terrain(p) == Terrain::Floor && !self.keep.contains(&p) && !self.props.iter().any(|q| q.pos == p)
+        self.inside(p) && self.map.terrain(p) == Terrain::Floor && !self.keep.contains(&p) && !self.prop_tiles.contains(&p)
     }
     fn fill(&mut self, r: Rect, surface: Surface) {
         for t in r.tiles() {
@@ -227,6 +243,7 @@ impl Gen {
             CoverLevel::None => Terrain::Floor,
         };
         self.map.set_terrain(p, terrain);
+        self.prop_tiles.insert(p);
         self.props.push(PropDef { tag, kind: kind.into(), pos: p, cover, hp, model: None, hooks: scripts });
     }
 
@@ -336,6 +353,340 @@ impl Gen {
 
     fn random_tile(&mut self, area: Rect) -> GridPos {
         GridPos::new(self.range(area.x0, area.x1), self.range(area.y0, area.y1))
+    }
+
+    /// Levels per storey of a tower (a level is 0.5 m: a storey is 2 m).
+    const STOREY: i8 = 4;
+
+    /// A multi-storey tower: a walled ground floor with doors, and up to
+    /// three upper floors, each smaller than the one below (a terraced
+    /// block), joined by flights of stairs. Upper floors have parapets; the
+    /// raised floors give full cover to whoever stands below them.
+    fn tower(&mut self, r: Rect) {
+        if r.w() < 12 || r.h() < 12 || r.tiles().any(|t| !self.free(t)) {
+            return;
+        }
+        let wall = if self.roll(50) { Surface::Concrete } else { Surface::Brick };
+        self.building(r, wall, Surface::Interior);
+        let mut floor = r.shrink(1);
+        let storeys = self.range(1, 3);
+        for k in 1..=storeys {
+            let upper = floor.shrink(2);
+            if upper.w() < 5 || upper.h() < 5 {
+                break;
+            }
+            let level = k as i8 * Self::STOREY;
+            let top = k == storeys || upper.shrink(2).w() < 5 || upper.shrink(2).h() < 5;
+            for t in upper.tiles() {
+                self.clear_tile(t);
+                self.map.set_elevation(t, level);
+                self.map.set_surface(t, if top { Surface::Roof } else { Surface::Interior });
+            }
+            // Stairs along the floor below, beside the upper floor's south
+            // or north edge: one level per step.
+            let (row, edge) = if self.roll(50) { (upper.y0 - 1, upper.y0) } else { (upper.y1 + 1, upper.y1) };
+            let x0 = if self.roll(50) { upper.x0 + 1 } else { upper.x1 - Self::STOREY as i32 };
+            for i in 1..Self::STOREY {
+                let t = GridPos::new(x0 + i as i32 - 1, row);
+                self.clear_tile(t);
+                self.map.set_elevation(t, level - Self::STOREY + i);
+                self.map.set_surface(t, Surface::Metal);
+                self.keep.insert(t);
+            }
+            let landing = GridPos::new(x0 + Self::STOREY as i32 - 2, edge);
+            self.keep.insert(landing);
+            // The step before the first stair stays clear too.
+            self.keep.insert(GridPos::new(x0 - 1, row));
+            // Parapet with gaps, never beside the stairs.
+            for t in upper.tiles().filter(|t| upper.is_edge(*t)).collect::<Vec<_>>() {
+                let near_stairs = t.y == edge && t.x >= x0 - 1 && t.x <= x0 + Self::STOREY as i32;
+                if !near_stairs && self.free(t) && self.roll(45) {
+                    self.map.set_terrain(t, Terrain::LowCover);
+                    self.map.set_surface(t, wall);
+                }
+            }
+            floor = upper;
+        }
+    }
+
+    /// Empties a tile: open floor, no prop.
+    fn clear_tile(&mut self, t: GridPos) {
+        self.map.set_terrain(t, Terrain::Floor);
+        self.map.set_ladder(t, false);
+        if self.prop_tiles.remove(&t) {
+            self.props.retain(|p| p.pos != t);
+        }
+    }
+
+    /// A split-level car park: decks stepping up 1.5 m each from south to
+    /// north, joined by ramps, with pillars, parked cars and low walls along
+    /// each drop.
+    fn car_park(&mut self, r: Rect) {
+        if r.w() < 10 || r.h() < 12 || r.tiles().any(|t| !self.free(t)) {
+            return;
+        }
+        let decks = (r.h() / 6).clamp(2, 4);
+        let depth = r.h() / decks;
+        let rise: i8 = 3;
+        for k in 0..decks {
+            let y0 = r.y0 + k * depth;
+            let y1 = if k == decks - 1 { r.y1 } else { y0 + depth - 1 };
+            let deck = Rect::new(r.x0, y0, r.x1, y1);
+            let level = k as i8 * rise;
+            for t in deck.tiles() {
+                self.map.set_elevation(t, level);
+                self.map.set_surface(t, if (t.x - r.x0) % 5 == 2 && t.y > y0 + 1 { Surface::Lines } else { Surface::Asphalt });
+            }
+            // Ramp up from the deck below: the first two rows of this deck,
+            // two tiles wide, at the levels in between.
+            let rx = if self.roll(50) { r.x0 + 1 } else { r.x1 - 2 };
+            if k > 0 {
+                for (dy, step) in [(0, 1), (1, 2)] {
+                    for dx in 0..2 {
+                        let t = GridPos::new(rx + dx, y0 + dy);
+                        self.map.set_elevation(t, level - rise + step);
+                        self.map.set_surface(t, Surface::Concrete);
+                        self.keep.insert(t);
+                    }
+                }
+                for dx in 0..2 {
+                    self.keep.insert(GridPos::new(rx + dx, y0 - 1));
+                    self.keep.insert(GridPos::new(rx + dx, y0 + 2));
+                }
+                // Low wall along the drop to the deck below, except the ramp.
+                for x in r.x0..=r.x1 {
+                    let t = GridPos::new(x, y0);
+                    if (x < rx - 1 || x > rx + 2) && self.roll(80) {
+                        self.block(t, Terrain::LowCover, Surface::Concrete);
+                    }
+                }
+            }
+            // Pillars and parked cars.
+            for x in (r.x0 + 2..r.x1).step_by(5) {
+                let t = GridPos::new(x, (y0 + y1) / 2);
+                if !self.keep.contains(&t) {
+                    self.block(t, Terrain::HighCover, Surface::Concrete);
+                }
+            }
+            for _ in 0..self.range(1, (deck.w() / 4).max(1)) {
+                let t = self.random_tile(deck.shrink(1));
+                if self.free(t) {
+                    let tag = format!("car_{}_{}", t.x, t.y);
+                    self.prop(tag, "car", t, CoverLevel::Half, Some(8), Vec::new());
+                }
+            }
+        }
+    }
+
+    /// The zombie city: a grid of streets around city blocks, each block a
+    /// row of shops, a tower, a car park, flat roofs or a park.
+    fn outbreak(&mut self) {
+        let (w, h) = (self.w(), self.h());
+        self.fill(Rect::new(0, 0, w - 1, h - 1), Surface::Concrete);
+        // Street lines: blocks 18-34 tiles across, roads 4 wide.
+        let lines = |g: &mut Self, len: i32| {
+            let mut out = Vec::new();
+            let mut at = g.range(10, 18);
+            while at + 4 < len - 6 {
+                out.push(at);
+                at += 4 + g.range(18, 34);
+            }
+            out
+        };
+        let xs = lines(self, w);
+        let ys = lines(self, h);
+        for &x in &xs {
+            for y in 0..h {
+                for dx in 0..4 {
+                    let p = GridPos::new(x + dx, y);
+                    self.map.set_surface(p, if (dx == 1 || dx == 2) && y % 4 == 0 { Surface::Lines } else { Surface::Asphalt });
+                    self.keep.insert(p);
+                }
+            }
+        }
+        for &y in &ys {
+            for x in 0..w {
+                for dy in 0..4 {
+                    let p = GridPos::new(x, y + dy);
+                    self.map.set_surface(p, if (dy == 1 || dy == 2) && x % 4 == 0 { Surface::Lines } else { Surface::Asphalt });
+                    self.keep.insert(p);
+                }
+            }
+        }
+        // Blocks between the streets (a pavement ring left free).
+        let bounds = |v: &[i32], len: i32| {
+            let mut out = Vec::new();
+            let mut start = 0;
+            for &s in v {
+                out.push((start, s - 1));
+                start = s + 4;
+            }
+            out.push((start, len - 1));
+            out
+        };
+        for (y0, y1) in bounds(&ys, h) {
+            for (x0, x1) in bounds(&xs, w) {
+                let block = Rect::new(x0 + 1, y0 + 1, x1 - 1, y1 - 1);
+                if block.w() < 6 || block.h() < 6 {
+                    continue;
+                }
+                let near_spawn = block.tiles().any(|t| t.distance(self.spawn) < 8.0);
+                let roll = if near_spawn { 99 } else { self.range(0, 99) };
+                match roll {
+                    0..=29 => self.shops(block),
+                    30..=51 => {
+                        let inset = self.range(0, 2);
+                        self.tower(block.shrink(inset));
+                    }
+                    52..=63 => self.car_park(block.shrink(1)),
+                    64..=75 => {
+                        // Flat roofs with ladders, and a shop.
+                        let half = block.x0 + block.w() / 2;
+                        let level = self.range(2, 4) as i8;
+                        self.rooftop(Rect::new(block.x0, block.y0, half - 1, block.y1.min(block.y0 + 9)), level, Surface::Roof, Surface::Concrete);
+                        self.building(Rect::new(half + 1, block.y0, block.x1, block.y1.min(block.y0 + 8)), Surface::Brick, Surface::Interior);
+                    }
+                    _ => self.park(block),
+                }
+            }
+        }
+        // Wreckage in the streets: abandoned cars, barricades, barrels.
+        let street: Vec<GridPos> = self.keep.iter().copied().filter(|p| p.distance(self.spawn) > 6.0 && self.map.surface(*p) == Surface::Asphalt).collect();
+        if street.is_empty() {
+            return;
+        }
+        for _ in 0..(w * h / 260) {
+            let p = street[self.range(0, street.len() as i32 - 1) as usize];
+            self.keep.remove(&p);
+            match self.range(0, 9) {
+                0..=5 => {
+                    let tag = format!("car_{}_{}", p.x, p.y);
+                    self.prop(tag, "car", p, CoverLevel::Half, Some(8), Vec::new());
+                }
+                6..=7 => self.block(p, Terrain::LowCover, Surface::Sandbags),
+                8 => self.barrel(p),
+                _ => self.crate_at(p),
+            }
+            self.keep.insert(p);
+        }
+    }
+
+    /// Two to four shops side by side.
+    fn shops(&mut self, block: Rect) {
+        let n = if block.w() >= 24 { self.range(2, 4) } else { self.range(1, 2) };
+        let lot = block.w() / n;
+        for i in 0..n {
+            let x0 = block.x0 + i * lot;
+            let depth = self.range(7, block.h().min(14));
+            let r = Rect::new(x0, block.y0, x0 + lot - 2, (block.y0 + depth - 1).min(block.y1));
+            let wall = if self.roll(60) { Surface::Brick } else { Surface::Concrete };
+            self.building(r, wall, Surface::Interior);
+        }
+    }
+
+    /// A park: grass, trees, hedges and a pond.
+    fn park(&mut self, block: Rect) {
+        self.fill(block, Surface::Grass);
+        for _ in 0..(block.w() * block.h() / 18) {
+            let t = self.random_tile(block);
+            self.block(t, Terrain::HighCover, Surface::Tree);
+        }
+        for _ in 0..self.range(1, 3) {
+            let start = self.random_tile(block);
+            let horizontal = self.roll(50);
+            let len = self.range(3, 6);
+            self.wall_line(start, len, horizontal, Terrain::LowCover, Surface::Hedge, 15);
+        }
+        if self.roll(40) && block.w() > 10 && block.h() > 10 {
+            let c = self.random_tile(block.shrink(4));
+            for t in Rect::new(c.x - 2, c.y - 1, c.x + 2, c.y + 1).tiles() {
+                if self.free(t) {
+                    self.map.set_terrain(t, Terrain::Void);
+                    self.map.set_surface(t, Surface::Water);
+                }
+            }
+        }
+    }
+
+    /// Supply caches (ammo, medkits, grenades) across the city: more of them
+    /// indoors and on upper floors, where they're harder to reach.
+    fn supplies(&mut self, reach: &ReachableSet, taken: &mut BTreeSet<GridPos>) {
+        let (w, h) = (self.w(), self.h());
+        let count = (w * h / 1100).max(4);
+        let all = self.spots(reach, Rect::new(0, 0, w - 1, h - 1), taken);
+        let (good, rest): (Vec<GridPos>, Vec<GridPos>) =
+            all.into_iter().partition(|p| self.map.elevation(*p) > 0 || self.map.surface(*p) == Surface::Interior);
+        for i in 0..count {
+            let pool = if self.roll(65) && !good.is_empty() { &good } else { &rest };
+            let Some(p) = self.pick(&pool.clone()) else { continue };
+            if taken.contains(&p) || p.distance(self.spawn) < 4.0 {
+                continue;
+            }
+            taken.insert(p);
+            let kind = match self.range(0, 9) {
+                0..=4 => "supply_ammo",
+                5..=7 => "supply_medkit",
+                _ => "supply_grenade",
+            };
+            self.prop(format!("supply_{i}"), kind, p, CoverLevel::None, None, Vec::new());
+        }
+    }
+
+    /// Zombie hordes: dormant packs of 3-10 all over the city (gunfire wakes
+    /// the ones nearby), plus a couple of awake packs closing in from the start.
+    fn hordes(&mut self, reach: &ReachableSet, taken: &mut BTreeSet<GridPos>) {
+        let (w, h) = (self.w(), self.h());
+        let class = self.p.enemy_classes.first().cloned().unwrap_or_else(|| "zombie".into());
+        let target = (w * h / 700).max(6);
+        let spots: Vec<GridPos> = self
+            .spots(reach, Rect::new(0, 0, w - 1, h - 1), taken)
+            .into_iter()
+            .filter(|p| p.distance(self.spawn) >= 16.0)
+            .collect();
+        if spots.is_empty() {
+            return;
+        }
+        let mut placed = 0;
+        let mut pack = 0;
+        let mut tries = 0;
+        while placed < target && tries < target * 4 {
+            tries += 1;
+            let Some(centre) = self.pick(&spots) else { break };
+            if taken.contains(&centre) {
+                continue;
+            }
+            // The first two packs start awake and nearby.
+            let awake = pack < 2;
+            if awake && !(16.0..34.0).contains(&centre.distance(self.spawn)) {
+                continue;
+            }
+            let size = self.range(3, 10).min(target - placed);
+            let mut n = 0;
+            for r in 0..4 {
+                for t in Rect::new(centre.x - r, centre.y - r, centre.x + r, centre.y + r).tiles() {
+                    if n >= size || taken.contains(&t) || !reach.contains(t) || !self.free(t) {
+                        continue;
+                    }
+                    taken.insert(t);
+                    n += 1;
+                    self.units.push(UnitPlacement {
+                        team: Team::Enemy,
+                        class: class.clone(),
+                        name: format!("{} {}-{}", capitalise(&class), pack + 1, n),
+                        pos: t,
+                        tag: None,
+                        hooks: Vec::new(),
+                        dormant: !awake,
+                        pod: Some(format!("horde{pack}")),
+                        patrol: Vec::new(),
+                        loadout: None,
+                        gear: Default::default(),
+                    });
+                }
+            }
+            placed += n;
+            pack += 1;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -700,11 +1051,12 @@ impl Gen {
     /// Picks a reachable 3x2 (or smaller) area within `band`.
     fn area_in(&mut self, reach: &ReachableSet, band: Rect, taken: &BTreeSet<GridPos>) -> Option<Rect> {
         let spots = self.spots(reach, band, taken);
+        let set: std::collections::HashSet<GridPos> = spots.iter().copied().collect();
         for (cw, ch) in [(3, 2), (2, 2), (1, 1)] {
             let fits: Vec<GridPos> = spots
                 .iter()
                 .copied()
-                .filter(|p| Rect::new(p.x, p.y, p.x + cw - 1, p.y + ch - 1).tiles().all(|t| spots.contains(&t)))
+                .filter(|p| Rect::new(p.x, p.y, p.x + cw - 1, p.y + ch - 1).tiles().all(|t| set.contains(&t)))
                 .collect();
             if let Some(p) = self.pick(&fits) {
                 return Some(Rect::new(p.x, p.y, p.x + cw - 1, p.y + ch - 1));
@@ -808,6 +1160,7 @@ impl Gen {
             Theme::Urban => Surface::Concrete,
             Theme::Industrial => Surface::Asphalt,
             Theme::Wilds => Surface::Grass,
+            Theme::Outbreak => Surface::Concrete,
         };
         for p in self.map.positions().collect::<Vec<_>>() {
             if self.map.surface(p) == Surface::Default {
@@ -818,7 +1171,12 @@ impl Gen {
         let reach = self.reachable();
         let mut taken: BTreeSet<GridPos> = BTreeSet::new();
         let (eliminate, goal) = self.objective(&reach, &mut taken);
-        self.enemies(&reach, &mut taken);
+        if self.p.theme == Theme::Outbreak {
+            self.supplies(&reach, &mut taken);
+            self.hordes(&reach, &mut taken);
+        } else {
+            self.enemies(&reach, &mut taken);
+        }
         let name = format!("{} {}", self.p.theme.name(), self.p.objective.name());
         let mut keep_doors = Vec::new();
         for d in std::mem::take(&mut self.doors) {
@@ -865,6 +1223,7 @@ pub fn generate(params: GenParams) -> MissionDef {
         Theme::Urban => g.urban(),
         Theme::Industrial => g.industrial(),
         Theme::Wilds => g.wilds(),
+        Theme::Outbreak => g.outbreak(),
     }
     g.finish()
 }
@@ -874,7 +1233,7 @@ pub fn generate(params: GenParams) -> MissionDef {
 pub fn enemy_classes(rules: &crate::content::Ruleset) -> Vec<String> {
     let mut list: Vec<String> = rules
         .classes()
-        .filter(|c| c.model != "soldier" && c.id != "training_dummy")
+        .filter(|c| c.model != "soldier" && c.id != "training_dummy" && !c.horde)
         .map(|c| c.id.clone())
         .collect();
     list.sort_by_key(|c| (c != "sectoid", c.clone()));
@@ -900,6 +1259,96 @@ mod tests {
     fn deterministic() {
         let p = GenParams::new(Theme::Urban, Objective::Extract, 42);
         assert_eq!(generate(p.clone()), generate(p));
+    }
+
+    fn outbreak(seed: u64, size: i32) -> MissionDef {
+        generate(GenParams { width: size, height: size, ..GenParams::outbreak(seed) })
+    }
+
+    #[test]
+    fn outbreak_is_huge_by_default_and_deterministic() {
+        let p = GenParams::outbreak(5);
+        assert!(p.width >= 500 && p.height >= 500);
+        assert_eq!(outbreak(9, 120), outbreak(9, 120));
+    }
+
+    /// Upper floors are reached by stairs (climbing one level per step),
+    /// supplies and zombies are spread around, and the evac is reachable.
+    #[test]
+    fn outbreak_has_reachable_upper_floors_supplies_and_hordes() {
+        for seed in 0..3 {
+            let m = outbreak(seed, 160);
+            let mut map = m.map.clone();
+            for d in &m.doors {
+                for t in &d.tiles {
+                    map.set_terrain(*t, Terrain::Floor);
+                }
+            }
+            let start = m.deploys[0].pos;
+            let reach = pathfinding::reachable(&map, start, u32::MAX / 4, Climb::default(), |_| true);
+            let top = reach.iter().map(|(p, _)| map.elevation(p)).max().unwrap();
+            assert!(top >= 2 * Gen::STOREY, "seed {seed}: a second-floor-or-higher tile is reachable on foot ({top})");
+            let supplies: Vec<_> = m.props.iter().filter(|p| p.kind.starts_with("supply")).collect();
+            assert!(supplies.len() >= 15, "seed {seed}: {} supplies", supplies.len());
+            assert!(supplies.iter().all(|p| reach.contains(p.pos)));
+            assert!(supplies.iter().any(|p| map.elevation(p.pos) > 0), "some supplies are upstairs");
+            let zombies = m.units.iter().filter(|u| u.class == "zombie").count();
+            assert!(zombies >= 30, "seed {seed}: {zombies} zombies");
+            assert!(m.units.iter().all(|u| reach.contains(u.pos)));
+            let evac = m.zones.iter().find(|z| z.tag == "evac").expect("evac zone");
+            assert!(reach.contains(evac.min));
+            assert!(evac.min.y > 160 * 3 / 4 - 1, "evac on the far side");
+        }
+    }
+
+    #[test]
+    fn soldiers_pick_up_supplies_by_walking_over_them() {
+        let mut rules = rules();
+        rules.add_module(&crate::modules::ZombieModule);
+        let m = outbreak(2, 100);
+        let (mut b, warnings) = Battle::from_mission(rules, &m, 1);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        b.begin();
+        // Teleport-free: pick the cache nearest to a soldier and walk there.
+        let s = b.living(Team::Player).next().unwrap().id;
+        let spare = b.unit(s).unwrap().weapon.spare;
+        let mut found = None;
+        for _ in 0..40 {
+            if b.active_team() != Team::Player {
+                b.apply(crate::action::Action::EndTurn).unwrap();
+                continue;
+            }
+            let here = b.unit(s).unwrap().pos;
+            let range = b.movement_range(s);
+            let occupied: Vec<GridPos> = b.units().iter().filter(|u| u.is_alive() && u.id != s).map(|u| u.pos).collect();
+            let mut caches: Vec<GridPos> = b.props().iter().filter(|p| p.alive && p.kind == "supply_ammo").map(|p| p.pos).collect();
+            caches.sort_by_key(|p| (p.chebyshev(here), *p));
+            let Some(path) = caches
+                .iter()
+                .find_map(|c| pathfinding::find_path(b.map(), here, *c, None, Climb::default(), |p| !occupied.contains(&p)).map(|(path, _)| path))
+            else {
+                break;
+            };
+            // The furthest tile along the route this turn's AP reaches.
+            let Some(step) = path.iter().rev().copied().find(|p| range.contains(*p)) else {
+                b.apply(crate::action::Action::EndTurn).unwrap();
+                continue;
+            };
+            let events = b.apply(crate::action::Action::Move { unit: s, to: step }).unwrap();
+            if let Some(GameEvent::SupplyFound { text, .. }) = events.iter().find(|e| matches!(e, GameEvent::SupplyFound { .. })) {
+                found = Some(text.clone());
+                break;
+            }
+            if !b.unit(s).unwrap().is_alive() || b.is_over() {
+                break;
+            }
+            if b.unit(s).unwrap().action_points == 0 {
+                b.apply(crate::action::Action::EndTurn).unwrap();
+            }
+        }
+        let text = found.expect("walked onto an ammo cache");
+        assert!(text.contains("magazine"), "{text}");
+        assert_eq!(b.unit(s).unwrap().weapon.spare, spare + 1);
     }
 
     /// Every theme × objective over several seeds builds a valid, playable

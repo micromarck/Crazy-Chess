@@ -7,6 +7,7 @@
 //! * [`GrenadierModule`] — an **example** of an add-on module written in Rust:
 //!   a new class with an area-of-effect grenade and a medkit, and a rebalanced
 //!   player squad. Copy it as a template for your own modules.
+//! * [`ZombieModule`] — slow melee zombies with the horde brain and hearing.
 //!
 //! To add a module: create a file here (or in any crate), implement
 //! [`GameModule`](crate::content::GameModule), and add it to the module list
@@ -16,6 +17,8 @@
 mod base;
 mod grenadier;
 pub mod humanoid;
+mod zombies;
 
 pub use base::BaseModule;
 pub use grenadier::GrenadierModule;
+pub use zombies::ZombieModule;

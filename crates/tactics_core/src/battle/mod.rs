@@ -199,7 +199,7 @@ impl Battle {
             charges,
             status: Default::default(),
             model: class.model.clone(),
-            ai: Default::default(),
+            ai: crate::unit::UnitAi { horde: class.horde, hearing: class.hearing, ..Default::default() },
             fear: 0,
             fearless: class.fearless,
             body: class.body,
@@ -287,7 +287,10 @@ impl Battle {
         };
         let budget = unit.stats.mobility * unit.action_points as u32;
         let climb = crate::grid::Climb { max_up: unit.stats.climb };
-        pathfinding::reachable(&self.map, unit.pos, budget, climb, |p| self.unit_at(p).is_none())
+        // Occupied tiles once (not a scan of every unit per neighbour: big
+        // maps have hundreds of units).
+        let occupied: std::collections::HashSet<GridPos> = self.units.iter().filter(|u| u.is_alive()).map(|u| u.pos).collect();
+        pathfinding::reachable(&self.map, unit.pos, budget, climb, |p| !occupied.contains(&p))
     }
 
     /// How many action points moving `movement_cost` points costs this unit.
@@ -830,7 +833,10 @@ impl Battle {
         }
         let ap = self.rules.combat.action_points;
         for u in self.units.iter_mut().filter(|u| u.team == team && u.is_alive()) {
-            u.action_points = ap;
+            // Dormant units with no patrol have nothing to do: they sit the
+            // turn out without taking actions (hundreds of sleeping zombies
+            // cost nothing). Woken during the turn, they act from the next.
+            u.action_points = if u.ai.dormant && u.ai.patrol.is_empty() { 0 } else { ap };
             u.status.overwatch = None;
             u.status.defense_bonus = 0;
             u.cooldowns.retain(|_, turns| {

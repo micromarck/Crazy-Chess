@@ -215,6 +215,11 @@ pub fn choose_action(battle: &Battle, id: UnitId, config: &AiConfig) -> Action {
         return patrol_step(battle, unit).map_or(Action::Wait { unit: id }, |to| Action::Move { unit: id, to });
     }
 
+    // Hordes (zombies) don't do tactics: close in and strike.
+    if unit.ai.horde {
+        return horde_action(battle, unit);
+    }
+
     let mood = mood(battle, unit, config);
     let mut config = adapted(config, mood);
     // Self-preservation grows as HP drops (robots too: it's tactics, not fear).
@@ -659,6 +664,67 @@ fn advance_towards(battle: &Battle, unit: &Unit, range: &ReachableSet, goal: Gri
         .filter(|(_, d, _)| *d < here)
         .min_by(|a, b| a.2.total_cmp(&b.2).then(a.0.cmp(&b.0)))
         .map(|(pos, _, _)| pos)
+}
+
+/// Horde brain: strike the weakest enemy in reach, else shamble towards the
+/// nearest one. Costs one small path search, so hundreds of zombies stay cheap.
+fn horde_action(battle: &Battle, unit: &Unit) -> Action {
+    let id = unit.id;
+    let mut foes: Vec<&Unit> = battle.living(unit.team.opponent()).collect();
+    foes.sort_by(|a, b| unit.pos.distance(a.pos).total_cmp(&unit.pos.distance(b.pos)).then(a.id.cmp(&b.id)));
+
+    // 1. Strike: the weakest enemy any attack can legally reach.
+    let mut strikes: Vec<(i32, Action)> = Vec::new();
+    for def in abilities(battle, unit).filter(|d| matches!(d.effect, AbilityEffect::Attack(_))) {
+        for foe in foes.iter().take_while(|f| unit.pos.distance(f.pos) <= 25.0).take(6) {
+            let a = Action::UseAbility { unit: id, ability: def.id.clone(), target: Target::Unit(foe.id) };
+            if battle.validate(&a).is_ok() {
+                strikes.push((foe.hp, a));
+            }
+        }
+    }
+    if let Some((_, a)) = strikes.into_iter().min_by_key(|(hp, _)| *hp) {
+        return a;
+    }
+
+    // 2. Close in on the nearest enemy.
+    let Some(prey) = foes.first() else { return Action::Wait { unit: id } };
+    let goal = prey.pos;
+    if unit.pos.chebyshev(goal) <= 1 {
+        return Action::Wait { unit: id }; // in reach but can't strike (no AP)
+    }
+    let range = battle.movement_range(id);
+    let one_ap = unit.stats.mobility;
+    let d = unit.pos.distance(goal);
+    // Walking distance to the prey, searched only around the chase (a
+    // bounded flood from the prey), so it stays cheap on huge maps.
+    let field = (d <= 40.0).then(|| {
+        let budget = ((d * 1.6 + 12.0) * crate::pathfinding::DIAGONAL_COST as f32) as u32;
+        crate::pathfinding::reachable(battle.map(), goal, budget, Climb { max_up: unit.stats.climb.max(1) }, |p| battle.map().is_walkable(p))
+    });
+    let score = |p: GridPos| -> f32 {
+        match field.as_ref().and_then(|f| f.cost(p)) {
+            Some(c) => c as f32,
+            None => 10_000.0 + p.distance(goal) * 10.0,
+        }
+    };
+    let here = score(unit.pos);
+    // Prefer a tile next to the prey within one AP (so it can still bite),
+    // else the closest it can get with all its AP.
+    let next_to = range
+        .iter()
+        .filter(|(p, c)| *c <= one_ap && p.chebyshev(goal) <= 1)
+        .min_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+    if let Some((p, _)) = next_to {
+        return Action::Move { unit: id, to: p };
+    }
+    range
+        .iter()
+        .filter(|(p, _)| *p != unit.pos)
+        .map(|(p, c)| (p, score(p), c))
+        .filter(|(_, s, _)| *s < here)
+        .min_by(|a, b| a.1.total_cmp(&b.1).then(a.2.cmp(&b.2)).then(a.0.cmp(&b.0)))
+        .map_or(Action::Wait { unit: id }, |(p, _, _)| Action::Move { unit: id, to: p })
 }
 
 /// Next patrol move for a dormant unit: up to one AP towards its waypoint.
