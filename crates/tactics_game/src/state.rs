@@ -243,7 +243,7 @@ pub enum PlayerCommand {
     Confirm,
     /// Touchscreen: enter / leave move mode for the selected soldier.
     MoveMode,
-    /// Turn the camera 45°: `true` = clockwise (like E), `false` = like Q.
+    /// Turn the camera 45°: `true` = like E (the `<` button), `false` = like Q (`>`).
     RotateCamera(bool),
     /// Enter: confirm if aiming, otherwise end the turn.
     ConfirmOrEndTurn,

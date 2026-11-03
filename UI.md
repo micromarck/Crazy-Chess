@@ -62,7 +62,7 @@ Any `<button>` (or element with `data-command`) is clickable/tappable:
 | `end_turn`, `next_unit`, `prev_unit`, `cancel`, `restart` | same as the End Turn button / Tab / Shift+Tab / Esc / F5 |
 | `confirm` | fire the aimed ability (Space), or make the picked touch move |
 | `move` | touchscreen: enter / leave move mode (then tap a tile, then `confirm`) |
-| `rotate:left`, `rotate:right` | turn the camera 45° (like Q / E) |
+| `rotate:left`, `rotate:right` | turn the view 45° left / right (like E / Q) |
 | `roster:<command>` | Barracks: `select:<id>`, `squad`, `class`, `look:<field>`, `random_look`, `rename`, `recruit`, `dismiss` |
 | `gear:<what>:<member>[:<slot>]`, `apply_loadout` | edit squad loadouts (see the Loadout panel) |
 | `ability:<id>` | use the selected unit's ability (or start targeting it) |
