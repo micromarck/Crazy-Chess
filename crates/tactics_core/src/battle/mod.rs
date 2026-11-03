@@ -217,7 +217,18 @@ impl Battle {
             gear: Loadout { weapon: Some(weapon_id), ..gear },
             appearance: None,
         };
+        // The class's scripts ride along with every unit of it.
+        let hooks: Vec<crate::mission::ScriptHook> = class
+            .hooks
+            .iter()
+            .filter_map(|h| {
+                crate::mission::HookEvent::parse(&h.on).map(|on| crate::mission::ScriptHook { on, team: None, once: h.once, code: h.code.clone() })
+            })
+            .collect();
         self.units.push(unit);
+        if !hooks.is_empty() {
+            self.add_hooks(world::HookOwner::Unit(id), &hooks);
+        }
         Ok(id)
     }
 

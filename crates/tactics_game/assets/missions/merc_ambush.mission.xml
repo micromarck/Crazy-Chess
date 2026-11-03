@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Merc Ambush: a mercenary team (Mercenaries module) holds a walled
+  compound with a watchtower. Their officer keeps them steady; kill him and
+  their nerve breaks.
+
+  Coordinates: x = column from the left, y = ROW FROM THE TOP of <layout>.
+  Layout: . floor   # cut out   h half cover   H full cover
+-->
+<mission id="merc_ambush" name="Merc Ambush" seed="7311" fog="true">
+  <description>Mercenaries hold a walled compound with a sniper tower. Their officer keeps them in line: take him down and the rest will waver.</description>
+
+  <layout>
+    ..............................
+    ..............................
+    ..............HHHHHHHHHHHHHH..
+    .HH...........H............H..
+    ........HH....H............H..
+    ..............h............H..
+    ....H.........H......hh....H..
+    ....H.........H............H..
+    ....H.........H............H..
+    ...........h..h..hhh.......H..
+    ..............H............H..
+    ..............H............H..
+    ......hhh.....H............H..
+    ..............HHHhHH.HHhHHHH..
+    ..............................
+    ..........h...................
+    ..........h...................
+    ...hhh....h.......HH..........
+    ..................HH..........
+    .......................hhh....
+    ............hhh...............
+    ..............................
+    ..............................
+    ..............................
+  </layout>
+  <heights>
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000333000
+    000000000000000000000000333000
+    000000000000000000000000333000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+    000000000000000000000000000000
+  </heights>
+  <ladder x="24" y="6"/>
+
+  <deploy team="player" squad="player" x="3" y="21"/>
+
+  <!-- The compound: they wake when they see or hear you. -->
+  <unit team="enemy" class="merc_officer" name="Captain Varga" x="20" y="7" tag="officer" dormant="true" pod="compound">
+    <script on="spotted" once="true">message("That's their officer - drop him and the rest will waver.");</script>
+  </unit>
+  <unit team="enemy" class="merc_gunner" name="Merc Gunner" x="18" y="10" dormant="true" pod="compound"/>
+  <unit team="enemy" class="merc_marksman" name="Tower Marksman" x="25" y="4" dormant="true" pod="compound">
+    <script on="spotted" once="true">message("Sniper on the watchtower!");</script>
+  </unit>
+  <unit team="enemy" class="merc_breacher" name="Merc Breacher" x="16" y="4" dormant="true" pod="compound"/>
+  <unit team="enemy" class="merc_medic" name="Merc Medic" x="22" y="8" dormant="true" pod="compound"/>
+  <unit team="enemy" class="merc_rifleman" name="Gate Guard" x="21" y="12" dormant="true" pod="compound"/>
+  <!-- A patrol walking the road outside. -->
+  <unit team="enemy" class="merc_rifleman" name="Merc Patrol" x="12" y="11" patrol="12,11 12,18 22,16 9,7"/>
+
+  <door tag="gate" x="20" y="13"/>
+
+  <prop tag="truck" kind="car" x="16" y="15" cover="half" hp="8"/>
+  <prop tag="fuel" kind="barrel" x="21" y="11" cover="half" hp="1">
+    <script on="destroyed">explode(x, y, 1.6, 3);</script>
+  </prop>
+  <prop tag="crate1" kind="crate" x="25" y="10" cover="half" hp="4"/>
+  <prop tag="crate2" kind="crate" x="16" y="7" cover="half" hp="4"/>
+  <prop tag="ammo1" kind="supply_ammo" x="5" y="12" cover="none"/>
+  <prop tag="med1" kind="supply_medkit" x="11" y="19" cover="none"/>
+  <prop tag="nade1" kind="supply_grenade" x="9" y="6" cover="none"/>
+
+  <script on="start">
+    objective("Take the compound - the officer holds them together");
+    message("Mercenaries hold the compound to the north-east. Their officer keeps them steady.");
+  </script>
+  <script on="unit_killed">
+    if unit == unit_by_tag("officer") { objective("Officer down - finish them while they waver"); }
+  </script>
+</mission>

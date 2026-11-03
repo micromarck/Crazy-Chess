@@ -20,7 +20,7 @@ use super::Battle;
 use crate::event::GameEvent;
 use crate::grid::{CoverLevel, GridPos, Surface, Terrain};
 use crate::mission::{HookEvent, MissionDef, ScriptHook, ZoneDef};
-use crate::script::{self, ScriptCommand, ScriptVars, ScriptWorld, WorldProp, WorldUnit};
+use crate::script::{self, ScriptCommand, ScriptVars, ScriptWorld, UnitStat, WorldProp, WorldUnit};
 use crate::unit::{Team, UnitId};
 use super::stealth::team_index;
 
@@ -286,7 +286,7 @@ impl Battle {
             .iter()
             .filter_map(|h| {
                 let vars = ScriptVars { unit, prop: None, pos: unit.and_then(|u| self.unit(UnitId(u))).map(|u| u.pos), amount: 1 };
-                script::run(&h.hook.code, &self.library, &vars, &world).err().map(|e| format!("{:?} hook: {e}", h.hook.on))
+                script::run(&h.hook.code, &self.script_library(), &vars, &world).err().map(|e| format!("{:?} hook: {e}", h.hook.on))
             })
             .collect()
     }
@@ -309,18 +309,32 @@ impl Battle {
                     alive: u.is_alive(),
                     dormant: u.ai.dormant,
                     fear: u.fear,
+                    class: u.class.clone(),
+                    aim: u.stats.aim,
+                    defense: u.stats.defense,
+                    mobility: (u.stats.mobility / 2) as i32,
+                    sight: u.stats.sight.round() as i32,
                 })
                 .collect(),
             props: self.props.iter().map(|p| WorldProp { tag: p.tag.clone(), pos: p.pos, hp: p.hp, alive: p.alive }).collect(),
             map: Some(self.map.clone()),
             flags: self.flags.clone(),
+            seed: 0,
             alarm: self.stealth.alarm,
             concealed: self.stealth.concealed,
         }
     }
 
+    /// Module script functions, then the mission's own library.
+    fn script_library(&self) -> String {
+        if self.rules.script_library.is_empty() { self.library.clone() } else { format!("{}\n{}", self.rules.script_library, self.library) }
+    }
+
     fn run_hook(&mut self, code: &str, vars: &ScriptVars, events: &mut Vec<GameEvent>) {
-        match script::run(code, &self.library, vars, &self.snapshot()) {
+        let mut world = self.snapshot();
+        world.seed = self.rng.next_u64();
+        let library = self.script_library();
+        match script::run(code, &library, vars, &world) {
             Ok(commands) => {
                 self.script_depth += 1;
                 for c in commands {
@@ -350,6 +364,29 @@ impl Battle {
                 None => events.push(GameEvent::ScriptError { message: format!("spawn_unit: no free tile near {pos}") }),
             },
             ScriptCommand::Damage { unit, amount } => self.apply_damage(UnitId(unit), amount, true, events),
+            ScriptCommand::SetStat { unit, stat, value, relative } => {
+                let Some(u) = self.units.get_mut(unit as usize).filter(|u| u.is_alive()) else { return };
+                let s = &mut u.stats;
+                let now = match stat {
+                    UnitStat::Aim => s.aim,
+                    UnitStat::Defense => s.defense,
+                    UnitStat::Mobility => (s.mobility / 2) as i32,
+                    UnitStat::Sight => s.sight.round() as i32,
+                    UnitStat::MaxHp => s.max_hp,
+                };
+                let v = if relative { now + value } else { value };
+                match stat {
+                    UnitStat::Aim => s.aim = v.clamp(0, 200),
+                    UnitStat::Defense => s.defense = v.clamp(-100, 100),
+                    UnitStat::Mobility => s.mobility = (v.clamp(0, 30) * 2) as u32,
+                    UnitStat::Sight => s.sight = v.clamp(1, 40) as f32,
+                    UnitStat::MaxHp => {
+                        s.max_hp = v.clamp(1, 999);
+                        u.hp = u.hp.min(s.max_hp);
+                    }
+                }
+            }
+            ScriptCommand::Say { unit, text } => events.push(GameEvent::Callout { unit: UnitId(unit), text }),
             ScriptCommand::Kill { unit } => self.apply_damage(UnitId(unit), i32::MAX / 2, true, events),
             ScriptCommand::Heal { unit, amount } => {
                 if let Some(u) = self.units.get_mut(unit as usize).filter(|u| u.is_alive()) {

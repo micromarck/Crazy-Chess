@@ -35,6 +35,7 @@ pub fn collect_ui_data(
     lab: Res<crate::lab::LabState>,
     settings: Res<crate::settings::GameSettings>,
     roster: Res<crate::roster::Roster>,
+    touch: Res<crate::touch::TouchMode>,
     mut data: ResMut<UiData>,
 ) {
     let mut v = UiValues::default();
@@ -118,10 +119,25 @@ pub fn collect_ui_data(
 
     // Targeting / hover.
     let pending = selection.pending.as_ref().and_then(|a| b.ability(a));
+    // Touchscreen controls: the Move button and the move confirmation.
+    v.set("ui.touch", bool_str(touch.active));
+    let mover = selection.unit.and_then(|id| b.unit(id)).filter(|u| u.can_act() && player_turn);
+    v.set("move.available", bool_str(mover.is_some()));
+    v.set("move.state", if selection.move_mode { "active" } else if mover.is_some() { "ready" } else { "disabled" });
+    v.set("move.active", bool_str(selection.move_mode));
+    v.set("move.picked", bool_str(selection.move_target.is_some()));
+    let move_cost = match (mover, selection.move_target, selection.range.as_ref()) {
+        (Some(u), Some(to), Some(range)) => range.cost(to).map(|c| {
+            let ap = b.move_cost_ap(u.id, c);
+            if ap >= u.action_points { format!("Dash here ({ap} AP, ends the turn)") } else { format!("Move here ({ap} AP)") }
+        }),
+        _ => None,
+    };
+    v.set("move.info", move_cost.unwrap_or_else(|| "Move: tap a blue or yellow tile".into()));
     v.set("targeting", bool_str(pending.is_some()));
     v.set("targeting.name", pending.map_or("", |d| d.name.as_str()));
     v.set("targeting.aimed", bool_str(selection.aim.is_some()));
-    v.set("hover.info", hover_info(&state, &selection));
+    v.set("hover.info", hover_info(&state, &selection, touch.active));
 
     // Log.
     let lines: Vec<String> = log.lines().cloned().collect();
@@ -218,6 +234,8 @@ pub fn collect_ui_data(
     v.set("settings.invert_orbit", on(settings.invert_orbit));
     v.set("settings.action_camera", on(settings.action_camera));
     v.set("settings.difficulty", settings.difficulty_name());
+    v.set("settings.ui_scale", settings.ui_scale_name());
+    v.set("settings.edge_margin", settings.edge_margin_name());
 
     // Misc toggles.
     v.set("editor.open", bool_str(editor.open));
@@ -309,7 +327,7 @@ fn abilities(b: &Battle, unit: &Unit, selection: &Selection) -> Vec<BTreeMap<Str
 }
 
 /// Odds breakdown for the hovered target, or move cost for a hovered tile.
-pub fn hover_info(state: &BattleState, selection: &Selection) -> String {
+pub fn hover_info(state: &BattleState, selection: &Selection, touch: bool) -> String {
     let b = &state.battle;
     let mut s = String::new();
     if let (Some(sel), Some(hover)) = (selection.unit, selection.hovered) {
@@ -347,7 +365,11 @@ pub fn hover_info(state: &BattleState, selection: &Selection) -> String {
         }
     }
     if s.is_empty() {
-        s = "Click an enemy to aim, a tile to move\nRight-drag: rotate   Wheel: zoom   F: focus".into();
+        s = if touch {
+            "Tap an enemy to aim, Move then a tile to move\nDrag: pan   Pinch: zoom   < >: turn the view".into()
+        } else {
+            "Click an enemy to aim, a tile to move\nRight-drag: rotate   Wheel: zoom   F: focus".into()
+        };
     }
     s.trim_end().to_string()
 }

@@ -15,6 +15,13 @@
 //! 4. on a reachable tile → move there.
 //!
 //! Two steps for attacks means a slip of the mouse never wastes a turn.
+//!
+//! **On a touchscreen** ([`TouchMode`](crate::touch::TouchMode)) moving is
+//! deliberate too: tapping the ground only inspects that tile (its info stays
+//! up, since a finger doesn't hover). Press **Move** first: the range shows,
+//! tapping a reachable tile previews the path and cost, and tapping it again
+//! or pressing **Confirm** moves. **Cancel** (or tapping Move again) leaves
+//! move mode.
 //! Confirm with a second click/tap, **Space**, **Enter**, or the ability's
 //! key/button again. Cancel with **right-click** or **Esc** (first the aim,
 //! then targeting).
@@ -85,14 +92,35 @@ pub fn pointer_over_ui(hover_map: &HoverMap, nodes: &Query<(), With<Node>>) -> b
     hover_map.values().any(|hits| hits.keys().any(|e| nodes.contains(*e)))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_hover(
     window: Single<&Window>,
     touches: Res<Touches>,
+    touch: Res<crate::touch::TouchMode>,
+    gesture: Res<TouchGesture>,
+    drag: Res<crate::camera::MouseDrag>,
     camera: Single<(&Camera, &GlobalTransform), With<CameraRig>>,
     state: Res<BattleState>,
     mut selection: ResMut<Selection>,
 ) {
     let (camera, cam_transform) = *camera;
+    if touch.active {
+        // A finger doesn't hover: the tile last tapped (not panned over)
+        // stays "hovered", and a picked destination wins over it.
+        // (A mouse click counts as a tap when touch mode is forced on.)
+        let tap = touches
+            .iter_just_released()
+            .next()
+            .filter(|_| !gesture.dragged)
+            .map(|t| t.position())
+            .or_else(|| window.cursor_position().filter(|_| drag.clicked));
+        if let Some(p) = tap {
+            selection.hovered = camera.viewport_to_world(cam_transform, p).ok().and_then(|ray| pick_tile(state.battle.map(), ray));
+        } else if let Some(target) = selection.move_target {
+            selection.hovered = Some(target);
+        }
+        return;
+    }
     selection.hovered = pointer_position(&window, &touches)
         .and_then(|p| camera.viewport_to_world(cam_transform, p).ok())
         .and_then(|ray| pick_tile(state.battle.map(), ray));
@@ -192,6 +220,7 @@ fn board_click(
     mut log: ResMut<LogMessages>,
     mut rig: Single<&mut CameraRig>,
     settings: Res<crate::settings::GameSettings>,
+    touch: Res<crate::touch::TouchMode>,
 ) {
     // A click (press + release without dragging), a tap, or releasing an
     // order-drag that started on the selected soldier.
@@ -236,10 +265,40 @@ fn board_click(
         return;
     }
 
-    // 4. Move.
+    // 4. Move. On a touchscreen: only in move mode, and only once the
+    //    destination is confirmed (tapped twice or the Confirm button).
     let action = Action::Move { unit: selected, to: tile };
+    if touch.active {
+        if !selection.move_mode {
+            return; // just inspecting the tile
+        }
+        if selection.move_target == Some(tile) {
+            confirm_move(&mut state, &mut selection, &mut playback, &mut log);
+        } else if battle.validate(&action).is_ok() {
+            selection.move_target = Some(tile);
+        } else {
+            selection.move_target = None;
+            log.push("Can't move there: tap a blue or yellow tile".into());
+        }
+        return;
+    }
     if battle.validate(&action).is_ok() {
         let _ = state.apply(action, &mut playback);
+    }
+}
+
+/// Makes the move picked in touch move mode.
+fn confirm_move(state: &mut BattleState, selection: &mut Selection, playback: &mut Playback, log: &mut LogMessages) {
+    let (Some(unit), Some(to)) = (selection.unit, selection.move_target) else { return };
+    match state.apply(Action::Move { unit, to }, playback) {
+        Ok(()) => {
+            selection.move_mode = false;
+            selection.move_target = None;
+        }
+        Err(e) => {
+            log.push(format!("Can't move there: {e}"));
+            selection.move_target = None;
+        }
     }
 }
 
@@ -262,6 +321,8 @@ fn aim(
         Ok(()) => {
             selection.pending = Some(ability);
             selection.aim = Some(target);
+            selection.move_mode = false;
+            selection.move_target = None;
             let at = match target {
                 Target::Unit(t) => battle.unit(t).map(|u| u.pos),
                 Target::Tile(p) => Some(p),
@@ -337,19 +398,47 @@ fn handle_commands(
                 continue;
             }
             PlayerCommand::CancelTargeting => {
-                // Step back one level: aim → targeting → nothing.
-                if selection.aim.take().is_none() {
+                // Step back one level: aim → targeting → nothing; a picked
+                // move destination → move mode → nothing.
+                if selection.move_mode {
+                    if selection.move_target.take().is_none() {
+                        selection.move_mode = false;
+                    }
+                } else if selection.aim.take().is_none() {
                     selection.pending = None;
                 }
                 rig.restore_zoom();
                 continue;
             }
             PlayerCommand::Confirm => {
-                fire(&mut state, &mut selection, &mut playback, &mut log);
+                if selection.move_target.is_some() {
+                    confirm_move(&mut state, &mut selection, &mut playback, &mut log);
+                } else {
+                    fire(&mut state, &mut selection, &mut playback, &mut log);
+                }
+                continue;
+            }
+            PlayerCommand::MoveMode => {
+                let can_move = selection.unit.and_then(|u| state.battle.unit(u)).is_some_and(|u| u.can_act());
+                if selection.move_mode || !can_move {
+                    selection.move_mode = false;
+                    selection.move_target = None;
+                    if !can_move {
+                        log.push("Select a soldier with action points left to move".into());
+                    }
+                } else {
+                    selection.move_mode = true;
+                    selection.move_target = None;
+                    selection.pending = None;
+                    selection.aim = None;
+                    rig.restore_zoom();
+                }
                 continue;
             }
             PlayerCommand::ConfirmOrEndTurn => {
-                if selection.aim.is_some() {
+                if selection.move_target.is_some() {
+                    confirm_move(&mut state, &mut selection, &mut playback, &mut log);
+                } else if selection.aim.is_some() {
                     fire(&mut state, &mut selection, &mut playback, &mut log);
                 } else if selection.pending.is_none() {
                     let _ = state.apply(Action::EndTurn, &mut playback);
@@ -359,9 +448,13 @@ fn handle_commands(
             PlayerCommand::EndTurn => {
                 selection.pending = None;
                 selection.aim = None;
+                selection.move_mode = false;
+                selection.move_target = None;
                 let _ = state.apply(Action::EndTurn, &mut playback);
                 continue;
             }
+            // Camera turns are handled by the camera (they work at any time).
+            PlayerCommand::RotateCamera(_) => continue,
             // Battle (re)starts are handled by `missions` (they work even when the battle is over).
             PlayerCommand::Restart | PlayerCommand::StartMission(_) | PlayerCommand::Skirmish | PlayerCommand::Generate(_) => continue,
             PlayerCommand::UseAbility(id) => id.clone(),
@@ -378,6 +471,9 @@ fn handle_commands(
         };
         let Some(unit) = selection.unit else { continue };
         let Some(def) = state.battle.ability(&ability) else { continue };
+        // Any ability takes over from touch move mode.
+        selection.move_mode = false;
+        selection.move_target = None;
 
         if def.targeting == Targeting::SelfOnly {
             selection.pending = None;

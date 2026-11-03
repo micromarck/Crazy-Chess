@@ -38,6 +38,11 @@ pub enum ScriptCommand {
     SetHeight { pos: GridPos, level: i8 },
     SetLadder { pos: GridPos, ladder: bool },
     GiveAp { unit: u32, amount: i32 },
+    /// Changes one of a unit's stats (`aim`, `defense`, `mobility` in tiles
+    /// per action point, `sight`, `max_hp`); `relative` adds instead of sets.
+    SetStat { unit: u32, stat: UnitStat, value: i32, relative: bool },
+    /// A short callout floating over a unit (also in the log).
+    Say { unit: u32, text: String },
     SetFlag { name: String, value: i64 },
     /// Changes a unit's fear (positive = scarier, scaled by bravery).
     AddFear { unit: u32, amount: i32 },
@@ -63,9 +68,36 @@ pub enum ScriptCommand {
     Lose,
 }
 
+/// Unit stats scripts can read and change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnitStat {
+    Aim,
+    Defense,
+    /// Tiles per action point (internally movement points / 2).
+    Mobility,
+    Sight,
+    MaxHp,
+}
+
+impl UnitStat {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.trim() {
+            "aim" => Self::Aim,
+            "defense" | "defence" => Self::Defense,
+            "mobility" => Self::Mobility,
+            "sight" => Self::Sight,
+            "max_hp" | "hp_max" => Self::MaxHp,
+            _ => return None,
+        })
+    }
+}
+
 /// What a script can see.
 #[derive(Debug, Clone, Default)]
 pub struct ScriptWorld {
+    /// Seed for this script run's `chance` / `rand` (drawn from the battle's
+    /// random numbers, so replays stay identical).
+    pub seed: u64,
     pub round: i64,
     pub active_team: Option<Team>,
     pub units: Vec<WorldUnit>,
@@ -90,6 +122,12 @@ pub struct WorldUnit {
     pub alive: bool,
     pub dormant: bool,
     pub fear: i32,
+    pub class: String,
+    pub aim: i32,
+    pub defense: i32,
+    /// Tiles per action point.
+    pub mobility: i32,
+    pub sight: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -265,7 +303,66 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
         engine.on_print(move |text| out.lock().unwrap().commands.push(ScriptCommand::Message(text.to_string())));
     }
 
+    // --- stats, callouts ------------------------------------------------------
+    cmd!("set_stat", |unit: INT, stat: &str, value: INT| {
+        let stat = UnitStat::parse(stat).ok_or_else(|| fail(format!("set_stat: unknown stat '{stat}' (aim, defense, mobility, sight, max_hp)")))?;
+        Ok(ScriptCommand::SetStat { unit: unit as u32, stat, value: value as i32, relative: false })
+    });
+    cmd!("add_stat", |unit: INT, stat: &str, delta: INT| {
+        let stat = UnitStat::parse(stat).ok_or_else(|| fail(format!("add_stat: unknown stat '{stat}' (aim, defense, mobility, sight, max_hp)")))?;
+        Ok(ScriptCommand::SetStat { unit: unit as u32, stat, value: delta as i32, relative: true })
+    });
+    cmd!("say", |unit: INT, text: &str| Ok(ScriptCommand::Say { unit: unit as u32, text: text.to_string() }));
+
+    // --- deterministic randomness ---------------------------------------------
+    {
+        let seed = world.seed;
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let next = move || {
+            let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // SplitMix64 of (seed, call number).
+            let mut z = seed.wrapping_add(0x9E37_79B9_7F4A_7C15u64.wrapping_mul(n + 1));
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^ (z >> 31)
+        };
+        let n2 = next.clone();
+        engine.register_fn("chance", move |percent: INT| -> bool { (n2() % 100) < percent.clamp(0, 100) as u64 });
+        engine.register_fn("rand", move |lo: INT, hi: INT| -> INT {
+            let (lo, hi) = (lo.min(hi), lo.max(hi));
+            lo + (next() % ((hi - lo) as u64 + 1)) as INT
+        });
+    }
+
     // --- queries ------------------------------------------------------------
+    let w = world.clone();
+    engine.register_fn("unit_stat", move |id: INT, stat: &str| -> R<INT> {
+        let stat = UnitStat::parse(stat).ok_or_else(|| fail(format!("unit_stat: unknown stat '{stat}' (aim, defense, mobility, sight, max_hp)")))?;
+        Ok(w.units.iter().find(|u| u.id as INT == id).map_or(0, |u| match stat {
+            UnitStat::Aim => u.aim,
+            UnitStat::Defense => u.defense,
+            UnitStat::Mobility => u.mobility,
+            UnitStat::Sight => u.sight,
+            UnitStat::MaxHp => u.max_hp,
+        } as INT))
+    });
+    let w = world.clone();
+    engine.register_fn("units", move |team: &str| -> rhai::Array {
+        let want = parse_team(team);
+        w.units.iter().filter(|u| u.alive && (team == "any" || Some(u.team) == want)).map(|u| rhai::Dynamic::from(u.id as INT)).collect()
+    });
+    let w = world.clone();
+    engine.register_fn("distance", move |a: INT, b: INT| -> FLOAT {
+        let pos = |id: INT| w.units.iter().find(|u| u.id as INT == id).map(|u| u.pos);
+        match (pos(a), pos(b)) {
+            (Some(p), Some(q)) => p.distance(q) as FLOAT,
+            _ => 1.0e9,
+        }
+    });
+    let w = world.clone();
+    engine.register_fn("unit_class", move |id: INT| -> String { w.units.iter().find(|u| u.id as INT == id).map_or(String::new(), |u| u.class.clone()) });
+    let w = world.clone();
+    engine.register_fn("unit_max_hp", move |id: INT| -> INT { w.units.iter().find(|u| u.id as INT == id).map_or(0, |u| u.max_hp as INT) });
     let w = world.clone();
     engine.register_fn("unit_hp", move |id: INT| -> INT { w.units.iter().find(|u| u.id as INT == id).map_or(0, |u| u.hp as INT) });
     let w = world.clone();
@@ -354,13 +451,47 @@ mod tests {
                 alive: true,
                 dormant: false,
                 fear: 0,
+                class: "sentry".into(),
+                aim: 60,
+                defense: 20,
+                mobility: 5,
+                sight: 12,
             }],
             props: vec![],
             map: Some(Map::new(5, 5)),
             flags: [("seen".to_string(), 1)].into(),
             alarm: false,
             concealed: true,
+            seed: 42,
         }
+    }
+
+    #[test]
+    fn stats_callouts_and_seeded_randomness() {
+        let code = r#"
+            let boss = unit_by_tag("boss");
+            if unit_class(boss) == "sentry" && unit_stat(boss, "defense") == 20 {
+                add_stat(boss, "defense", -5);
+                set_stat(boss, "mobility", 3);
+                say(boss, "SYSTEM FAULT");
+            }
+            let a = rand(1, 6);
+            if a < 1 || a > 6 { lose(); }
+            set_flag("roll", a);
+            set_flag("lucky", if chance(50) { 1 } else { 0 });
+            for id in units("enemy") { if distance(id, boss) < 1.0 { set_flag("near", 1); } }
+            if units("player").len() != 0 { lose(); }
+        "#;
+        let cmds = run(code, "", &ScriptVars::default(), &world()).unwrap();
+        assert!(cmds.contains(&ScriptCommand::SetStat { unit: 4, stat: UnitStat::Defense, value: -5, relative: true }));
+        assert!(cmds.contains(&ScriptCommand::SetStat { unit: 4, stat: UnitStat::Mobility, value: 3, relative: false }));
+        assert!(cmds.contains(&ScriptCommand::Say { unit: 4, text: "SYSTEM FAULT".into() }));
+        assert!(!cmds.contains(&ScriptCommand::Lose));
+        assert!(cmds.contains(&ScriptCommand::SetFlag { name: "near".into(), value: 1 }));
+        // Same seed, same rolls: deterministic replays.
+        assert_eq!(run(code, "", &ScriptVars::default(), &world()).unwrap(), cmds);
+        // Unknown stats are script errors, not silent no-ops.
+        assert!(run("add_stat(4, \"armour\", 1);", "", &ScriptVars::default(), &world()).is_err());
     }
 
     #[test]

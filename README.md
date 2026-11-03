@@ -54,7 +54,11 @@ look automatically.
 
 New to the controls? Play *Basic Training* from the Missions list. Bundled large levels: *Proving Grounds*
 (sandbox), *Hold the Beacon* (defend and extract), *Clear the Complex*
-(explore and clear) and *Silent Theft* (stealth heist). See
+(explore and clear) and *Silent Theft* (stealth heist); with the
+faction modules: *Merc Ambush* (storm a merc compound, break their nerve by
+killing the officer), *Scrapyard* (corrupted robots that fall apart: kill
+them or outlast them) and *Salvage Run* (steal a robot core from a merc
+crew and their cargo). See
 **[MISSIONS.md](MISSIONS.md)**.
 
 The HUD is an **HTML/CSS layout** (`assets/ui/hud.html`) rendered natively on
@@ -148,7 +152,9 @@ TBSium/
 * Included moves: Shoot, Overwatch, Hunker Down, Reload (base); Frag Grenade,
   Medkit + Grenadier class (Rust example module); Aimed Shot, Psi Bolt (RON example);
   Zombies (Rust class with a melee Bite and the horde AI, shambling look in
-  `assets/modules/zombies.ron`).
+  `assets/modules/zombies.ron`); Mercenaries and Corrupted Robots (pure data
+  modules with class scripts: an officer who holds the line, machines that
+  break down, malfunction and lose armour over time).
 * 2 action points per unit; move (1 AP) or dash (2 AP), blue/yellow range overlay.
 * Directional half/full cover, flanking (+crit), cover shields on hover.
 * Hit chance = aim − defence − cover − hunker ± range falloff, shown with a full breakdown.
@@ -177,13 +183,18 @@ TBSium/
 
 | | Desktop | Touch |
 |---|---|---|
-| Select / move | Left click | Tap |
+| Select | Left click | Tap |
+| Move | Left click a tile | **Move** button, tap a tile (path and cost preview), tap it again or **Confirm** |
+| Inspect a tile | Hover | Tap (without Move): its info stays up |
 | Attack | Click an enemy to **aim** (camera frames the shot, odds by the cursor), click again / Space / Enter to **fire** | Tap to aim, tap again or **Fire** |
 | Cancel aim / targeting | Right-click or Esc | Cancel button |
 | Move by dragging | Drag from the selected soldier to a tile, release | — |
-| Pan | Left- or middle-drag the ground, WASD / arrows | One-finger drag |
-| Rotate / tilt | Right-drag (sideways / up-down), Q / E | Two-finger twist |
-| Zoom | Wheel (towards the cursor), Z / X | Pinch |
+| Pan | Left- or middle-drag the ground, WASD / arrows | One-finger drag (the ground stays under the finger; flick to glide) |
+| Rotate / tilt | Right-drag (sideways / up-down), Q / E | the < and > buttons (45° steps) |
+| Zoom | Wheel (towards the cursor), Z / X | Pinch (towards the fingers; two fingers only zoom) |
+| Scroll menus and lists | Wheel | Drag the panel (flick to keep scrolling) |
+| Menu / button size | Settings > UI size | Settings > UI size (auto: a bit smaller on phones) |
+| Keep clear of the phone's back / home buttons | — | Settings > Screen edge margin (auto: 48 px on Android) |
 | Abilities of the selected unit | 1-9 (press again to fire when aimed) | ability buttons |
 | Next / previous unit | Tab / Shift+Tab | Next button |
 | Centre on selected unit / reset view | F / Home | — |
@@ -198,6 +209,10 @@ TBSium/
 | Character Lab | F7 | Missions button |
 | Restart mission | F5 | button on game-over screen |
 | Pick a mission | — | Missions button |
+
+Touch controls switch on automatically on Android and at the first touch
+elsewhere (back to mouse rules when the mouse is used). `TBS_TOUCH=1`
+forces them on, to try the touch interface with a mouse.
 
 ## Building
 
@@ -247,7 +262,7 @@ NativeActivity, so it can be packaged without a Java/Gradle project:
 # Requires the Android SDK + NDK, with ANDROID_HOME and ANDROID_NDK_ROOT set.
 rustup target add aarch64-linux-android
 cargo install --locked cargo-apk
-cargo apk run -p tactics_game --release      # builds, installs & launches on a connected device
+cargo apk run -p tactics_game --release --lib   # builds, installs & launches on a connected device
 ```
 
 No NDK at hand? The **Android APK** GitHub Actions workflow

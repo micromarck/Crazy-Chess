@@ -70,6 +70,9 @@ pub struct DataModule {
     pub skeletons: Vec<SkeletonDef>,
     /// Keyframe animations, keyed by (skeleton, slot).
     pub animations: Vec<SkeletalAnimation>,
+    /// Rhai functions every script can call (class scripts, missions), e.g.
+    /// a breakdown routine shared by several classes.
+    pub script_library: String,
 }
 
 /// RON extensions we enable for every file, so authors can skip the
@@ -122,6 +125,10 @@ impl GameModule for DataModule {
     }
 
     fn register(&self, rules: &mut Ruleset) {
+        if !self.script_library.trim().is_empty() {
+            rules.script_library.push_str(&self.script_library);
+            rules.script_library.push('\n');
+        }
         if let Some(combat) = &self.combat {
             rules.combat = combat.clone();
         }

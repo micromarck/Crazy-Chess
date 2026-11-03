@@ -173,6 +173,8 @@ fn rebuild_layout(
 /// | `apply_loadout` | restart the mission with the new loadouts |
 /// | `setting:<name>` | change a setting (see [`crate::settings`]) |
 /// | `roster:<command>` | Barracks: edit saved soldiers (see [`crate::roster`]) |
+/// | `move` | touchscreen: enter / leave move mode (then tap a tile, then confirm) |
+/// | `rotate:left`, `rotate:right` | turn the view 45° left / right (like E / Q) |
 /// | `log:<text>` | print a message (handy while designing layouts) |
 #[allow(clippy::too_many_arguments)]
 pub fn run_ui_commands(
@@ -206,6 +208,19 @@ pub fn run_ui_commands(
             "cancel" => {
                 player.write(PlayerCommand::CancelTargeting);
             }
+            "move" => {
+                player.write(PlayerCommand::MoveMode);
+            }
+            // The buttons turn the *view*: "left" swings it the way E does.
+            "rotate" => match arg.trim() {
+                "left" => {
+                    player.write(PlayerCommand::RotateCamera(true));
+                }
+                "right" => {
+                    player.write(PlayerCommand::RotateCamera(false));
+                }
+                other => log.push(format!("UI: rotate:{other}? use rotate:left or rotate:right")),
+            },
             "restart" => {
                 player.write(PlayerCommand::Restart);
             }

@@ -11,5 +11,8 @@
   <mission file="holdout.mission.xml"/>
   <mission file="complex.mission.xml"/>
   <mission file="infiltration.mission.xml"/>
+  <mission file="merc_ambush.mission.xml"/>
+  <mission file="scrapyard.mission.xml"/>
+  <mission file="salvage_run.mission.xml"/>
   <mission file="lab.mission.xml"/>
 </missions>

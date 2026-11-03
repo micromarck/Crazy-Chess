@@ -7,11 +7,11 @@
 //!
 //! | Action | Desktop | Touch |
 //! |---|---|---|
-//! | Pan    | left- or middle-drag the ground (it stays under the cursor), WASD / arrows | one-finger drag |
-//! | Rotate / tilt | right-drag (horizontal / vertical), Q / E (45° steps) | two-finger twist |
-//! | Zoom   | mouse wheel (towards the cursor), Z / X | pinch |
+//! | Pan    | left- or middle-drag the ground (it stays under the cursor), WASD / arrows | one-finger drag (the ground stays under the finger; flick to glide) |
+//! | Rotate / tilt | right-drag (horizontal / vertical), Q / E (45° steps) | the two rotate buttons (45° steps; `rotate:left` / `rotate:right` HUD commands) |
+//! | Zoom   | mouse wheel (towards the cursor), Z / X | pinch (towards the fingers; two fingers only zoom) |
 //! | Reset view | Home (default tilt and zoom) | |
-//! | Move a soldier | drag from the selected soldier to a tile and release | tap |
+//! | Move a soldier | drag from the selected soldier to a tile and release | Move button, tap a tile, confirm |
 //! | Cancel aiming | right-click (without dragging) | |
 //!
 //! ## Smoothness
@@ -53,7 +53,7 @@ impl Plugin for CameraPlugin {
             .add_systems(Startup, spawn_camera)
             .add_systems(
                 Update,
-                (mouse_controls, keyboard_mouse_controls, touch_controls, apply_rig)
+                (mouse_controls, keyboard_mouse_controls, touch_controls, rotate_buttons, apply_rig)
                     .chain()
                     .in_set(FrameSet::Input)
                     .in_set(CameraSystems),
@@ -365,7 +365,18 @@ pub struct TouchGesture {
     pub dragged: bool,
     /// The gesture started on a UI panel (it scrolls the UI, not the camera).
     pub over_ui: bool,
+    /// Ground point held under the finger while panning.
+    grab: Option<Vec3>,
+    /// Glide after a flick (world units per second).
+    velocity: Vec3,
+    /// Fingers down last frame (re-grab when going from two to one).
+    fingers: usize,
+    /// Pinch in progress: finger spread and camera distance when it began.
+    pinch: Option<(f32, f32)>,
 }
+
+/// Pinch ratios this close to 1 are ignored (finger jitter).
+const PINCH_DEAD_ZONE: f32 = 0.04;
 
 /// Pixels a pointer must travel before a press counts as a drag.
 pub const DRAG_THRESHOLD: f32 = 12.0;
@@ -461,49 +472,112 @@ fn keyboard_mouse_controls(
     }
 }
 
+/// The HUD's rotate buttons: 45° steps, like Q / E.
+fn rotate_buttons(mut commands: MessageReader<crate::state::PlayerCommand>, director: Res<CameraDirector>, mut rig: Single<&mut CameraRig>) {
+    for command in commands.read() {
+        if let crate::state::PlayerCommand::RotateCamera(clockwise) = command
+            && !director.is_active()
+        {
+            // Snap to the 45° grid, then step (same feel as Q / E).
+            let snapped = (rig.target_yaw / FRAC_PI_4).round() * FRAC_PI_4;
+            rig.target_yaw = snapped + if *clockwise { FRAC_PI_4 } else { -FRAC_PI_4 };
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn touch_controls(
+    time: Res<Time<Real>>,
     touches: Res<Touches>,
     hover_map: Res<HoverMap>,
     ui_nodes: Query<(), With<Node>>,
     mut gesture: ResMut<TouchGesture>,
     director: Res<CameraDirector>,
+    camera: Single<(&Camera, &GlobalTransform), With<CameraRig>>,
     mut rig: Single<&mut CameraRig>,
 ) {
     if director.is_active() {
+        gesture.velocity = Vec3::ZERO;
         return;
     }
-    if touches.any_just_pressed() && touches.iter().count() == 1 {
+    let dt = time.delta_secs();
+    let (cam, cam_tr) = *camera;
+    let plane = rig.focus.y;
+    let active: Vec<_> = touches.iter().collect();
+    if touches.any_just_pressed() && active.len() == 1 {
         gesture.dragged = false;
         gesture.over_ui = pointer_over_ui(&hover_map, &ui_nodes);
+        gesture.velocity = Vec3::ZERO;
+        gesture.grab = ground_point(cam, cam_tr, active[0].position(), plane);
     }
     if gesture.over_ui {
+        gesture.fingers = active.len();
         return;
     }
-    let active: Vec<_> = touches.iter().collect();
     match active.as_slice() {
         [one] => {
+            // Coming back from two fingers: hold the ground where this finger is now.
+            if gesture.fingers != 1 {
+                gesture.grab = ground_point(cam, cam_tr, one.position(), plane);
+            }
             if one.distance().length() > DRAG_THRESHOLD {
                 gesture.dragged = true;
             }
-            if gesture.dragged {
-                let k = rig.target_distance * 0.003;
-                let d = one.delta();
-                rig.pan(Vec2::new(-d.x, d.y) * k);
+            if gesture.dragged
+                && let (Some(grab), Some(now)) = (gesture.grab, ground_point(cam, cam_tr, one.position(), plane))
+            {
+                // The grabbed ground point stays under the finger.
+                let before = rig.target_focus;
+                rig.focus += Vec3::new(grab.x - now.x, 0.0, grab.z - now.z);
+                rig.target_focus = rig.focus;
+                rig.focus_velocity = Vec3::ZERO;
+                rig.clamp_focus();
+                let moved = rig.target_focus - before;
+                if dt > 0.0 {
+                    gesture.velocity = gesture.velocity.lerp(moved / dt, 0.5);
+                }
             }
         }
         [a, b, ..] => {
             gesture.dragged = true;
-            // Pinch: ratio of finger distances this frame vs last frame.
-            let now = a.position() - b.position();
-            let before = a.previous_position() - b.previous_position();
-            if before.length() > 1.0 && now.length() > 1.0 {
-                rig.zoom(before.length() / now.length());
-                // Twist: change of angle between the fingers.
-                rig.target_yaw -= before.angle_to(now);
+            gesture.velocity = Vec3::ZERO;
+            // Two fingers only zoom (rotation has its own buttons). The zoom
+            // follows the pinch from where it started, ignoring jitter.
+            let span = (a.position() - b.position()).length().max(1.0);
+            let (span0, dist0) = *gesture.pinch.get_or_insert((span, rig.target_distance));
+            let ratio = span0 / span;
+            let excess = ((ratio - 1.0).abs() - PINCH_DEAD_ZONE).max(0.0);
+            let ratio = 1.0 + excess * (ratio - 1.0).signum();
+            let old = rig.target_distance;
+            rig.target_distance = (dist0 * ratio).clamp(CameraRig::MIN_DISTANCE, CameraRig::MAX_DISTANCE);
+            rig.user_distance = rig.target_distance;
+            // Towards the point between the fingers.
+            let shrink = 1.0 - rig.target_distance / old;
+            let mid = (a.position() + b.position()) / 2.0;
+            if shrink != 0.0
+                && let Some(p) = ground_point(cam, cam_tr, mid, plane)
+            {
+                let toward = Vec3::new(p.x - rig.target_focus.x, 0.0, p.z - rig.target_focus.z);
+                rig.target_focus += toward * shrink;
+                rig.clamp_focus();
             }
         }
-        [] => {}
+        [] => {
+            // Glide after a flick, slowing down.
+            if gesture.velocity.length_squared() > 0.01 {
+                let v = gesture.velocity;
+                rig.target_focus += v * dt;
+                rig.clamp_focus();
+                gesture.velocity *= (-5.0 * dt).exp();
+            } else {
+                gesture.velocity = Vec3::ZERO;
+            }
+        }
     }
+    if active.len() < 2 {
+        gesture.pinch = None;
+    }
+    gesture.fingers = active.len();
 }
 
 /// Eases the rig towards its targets and writes the camera transform.

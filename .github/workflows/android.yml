@@ -27,12 +27,33 @@ jobs:
       - name: Install cargo-apk
         run: cargo install --locked cargo-apk
 
+      # Release APKs must be signed. Uses your key if the repository has the
+      # secrets ANDROID_KEYSTORE_B64 (base64 of a .keystore/.jks) and
+      # ANDROID_KEYSTORE_PASSWORD; otherwise a throwaway key is made for this
+      # run (fine for sideloading; updates over an install need the same key).
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "CARGO_APK_RELEASE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          else
+            keytool -genkeypair -keystore "$RUNNER_TEMP/release.keystore" -alias tactics \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android -dname "CN=Tactics"
+            echo "CARGO_APK_RELEASE_KEYSTORE_PASSWORD=android" >> "$GITHUB_ENV"
+          fi
+          echo "CARGO_APK_RELEASE_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+
       - name: Build the APK
         run: |
           export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export ANDROID_NDK_ROOT="$ANDROID_NDK_LATEST_HOME"
           echo "SDK: $ANDROID_HOME  NDK: $ANDROID_NDK_ROOT"
-          cargo apk build -p tactics_game --release
+          # --lib: package only the Android library (the crate also has a desktop binary).
+          cargo apk build -p tactics_game --release --lib
 
       - uses: actions/upload-artifact@v4
         with:

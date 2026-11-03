@@ -221,6 +221,7 @@ pub fn start_battle(
     mut log: ResMut<LogMessages>,
     mut rig: Single<&mut CameraRig>,
     floating: Query<Entity, With<FloatingText>>,
+    mut flags: ResMut<crate::html_ui::UiFlags>,
     mut commands: Commands,
 ) {
     let Some(request) = requests.read().last().cloned() else { return };
@@ -304,12 +305,57 @@ pub fn start_battle(
         rig.target_distance = rig.user_distance;
         rig.focus_at(tile_top(map, u.pos));
     }
+    // Menus that led here (Missions, Loadout...) close with the new battle.
+    for panel in ["missions", "loadout", "barracks", "settings", "help"] {
+        if let Some(open) = flags.0.get_mut(panel) {
+            *open = false;
+        }
+    }
     reset.write(BattleReset);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The faction missions (Mercenaries / Corrupted Robots modules): their
+    /// scripts pass a dry run, and the objective, the evac point and every
+    /// enemy can be reached on foot from the deploy point (doors opened,
+    /// ladders climbed).
+    #[test]
+    fn faction_missions_are_reachable_and_scripted() {
+        use tactics_core::grid::{Climb, Terrain};
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(MISSION_DIR);
+        let (rules, _) = crate::content::build_ruleset();
+        for f in ["merc_ambush.mission.xml", "scrapyard.mission.xml", "salvage_run.mission.xml"] {
+            let def = parse_mission(&std::fs::read_to_string(dir.join(f)).unwrap()).unwrap();
+            let (b, warnings) = Battle::from_mission(rules.clone(), &def, 1);
+            assert!(warnings.is_empty(), "{f}: {warnings:?}");
+            assert!(b.dry_run_scripts().is_empty(), "{f}: {:?}", b.dry_run_scripts());
+            let mut map = b.map().clone();
+            for d in &def.doors {
+                for t in &d.tiles {
+                    map.set_terrain(*t, Terrain::Floor);
+                }
+            }
+            let start = b.living(Team::Player).next().unwrap().pos;
+            let reach = tactics_core::pathfinding::reachable(&map, start, u32::MAX / 4, Climb::default(), |_| true);
+            for z in &def.zones {
+                assert!(reach.contains(z.min), "{f}: zone '{}' unreachable", z.tag);
+            }
+            for e in b.living(Team::Enemy) {
+                // Flyers can be up anywhere; everyone else must be on reachable ground.
+                if e.stats.climb < 5 {
+                    let near = [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]
+                        .iter()
+                        .any(|(dx, dy)| reach.contains(tactics_core::grid::GridPos::new(e.pos.x + dx, e.pos.y + dy)));
+                    assert!(near, "{f}: {} unreachable at {:?}", e.name, e.pos);
+                }
+            }
+            let classes: std::collections::BTreeSet<&str> = b.living(Team::Enemy).map(|u| u.class.as_str()).collect();
+            assert!(classes.iter().any(|c| c.starts_with("merc_") || c.starts_with("corrupted_")), "{f}: {classes:?}");
+        }
+    }
 
     /// Every mission in `assets/missions/index.xml` parses and builds a
     /// battle with the game's modules, without warnings or script errors.

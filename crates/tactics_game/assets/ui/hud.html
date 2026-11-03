@@ -64,8 +64,9 @@
   #unit { bottom: 80px; left: 12px; min-width: 230px; }
   #hover { bottom: 80px; right: 12px; max-width: 380px; }
 
-  #roster { top: 140px; left: 12px; padding: 6px; }
-  #missions { top: 140px; left: 190px; padding: 6px; max-width: 360px; }
+  /* Long panels are height-limited and scroll (drag with a finger, or the wheel). */
+  #roster { top: 140px; left: 12px; padding: 6px; max-height: 55vh; overflow: scroll; }
+  #missions { top: 140px; left: 190px; padding: 6px; max-width: 360px; max-height: 70vh; overflow: scroll; z-index: 10; }
   .mission {
     height: auto;
     min-width: 320px;
@@ -78,17 +79,17 @@
   .mission.current { background: #2f5e44; }
   .mission .key { max-width: 320px; }
 
-  #settings { top: 140px; left: 300px; padding: 10px; min-width: 300px; }
-  #barracks { top: 140px; left: 190px; padding: 8px; max-width: 880px; }
+  #settings { top: 140px; left: 300px; padding: 10px; min-width: 300px; max-height: 70vh; overflow: scroll; z-index: 10; }
+  #barracks { top: 140px; left: 190px; padding: 8px; max-width: 880px; max-height: 70vh; overflow: scroll; z-index: 10; }
   .barracks-body { flex-direction: row; }
-  .barracks-list { flex-direction: column; min-width: 240px; max-height: 420px; overflow: scroll; margin-right: 10px; }
+  .barracks-list { flex-direction: column; min-width: 240px; max-height: 60vh; overflow: scroll; margin-right: 10px; }
   .barracks-detail { flex-direction: column; max-width: 560px; }
-  #help { top: 140px; left: 300px; padding: 12px; max-width: 560px; }
+  #help { top: 140px; left: 300px; padding: 12px; max-width: 560px; max-height: 70vh; overflow: scroll; z-index: 10; }
   .help-grid { flex-direction: column; }
   .help-row { flex-direction: row; margin-bottom: 3px; }
   .help-key { color: #f2d24a; width: 160px; font-size: 13px; }
   .help-text { font-size: 13px; max-width: 360px; }
-  #loadout { top: 140px; left: 190px; padding: 8px; max-width: 760px; }
+  #loadout { top: 140px; left: 190px; padding: 8px; max-width: 760px; max-height: 70vh; overflow: scroll; z-index: 10; }
   .gear-row { flex-direction: column; margin-bottom: 8px; }
   .gear-name { font-size: 14px; }
   .gear-buttons { flex-direction: row; flex-wrap: wrap; }
@@ -99,7 +100,7 @@
   .morale.panicked { color: #c49bff; }
   .morale.fearless { color: #9aa1ad; }
   .fear-tag { font-size: 11px; color: #f2d24a; }
-  #lab { top: 140px; left: 12px; padding: 6px; max-width: 420px; }
+  #lab { top: 140px; left: 12px; padding: 6px; max-width: 420px; max-height: 70vh; overflow: scroll; z-index: 10; }
   .lab-item {
     height: auto;
     min-width: 260px;
@@ -151,6 +152,22 @@
     justify-content: flex-end;
   }
   #abilities { flex-direction: row; }
+  /* Touchscreen camera: turn the view in 45° steps (pinch zooms). */
+  #rotate { position: absolute; right: 12px; top: 40%; flex-direction: column; }
+  .rotate-button { min-width: 64px; height: 56px; margin-left: 0px; margin-bottom: 8px; font-size: 20px; }
+  /* Touchscreen move: pick a tile, then confirm. */
+  #move-bar {
+    position: absolute;
+    top: 12px;
+    left: 30%;
+    right: 30%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    background: #2a5d8ae6;
+    border-radius: 6px;
+    padding: 6px 10px;
+  }
 
   #game-over {
     position: absolute;
@@ -232,6 +249,8 @@
   <span class="title" style="font-size: 16px; margin-bottom: 6px">Settings</span>
   <button class="mission" data-command="setting:permadeath"><span>Permadeath (fallen soldiers are lost)</span><span class="key">{{ settings.permadeath }}</span></button>
   <button class="mission" data-command="setting:difficulty"><span>AI difficulty</span><span class="key">{{ settings.difficulty }}</span></button>
+  <button class="mission" data-command="setting:edge_margin"><span>Screen edge margin (clear of phone buttons)</span><span class="key">{{ settings.edge_margin }}</span></button>
+  <button class="mission" data-command="setting:ui_scale"><span>UI size (menus and buttons)</span><span class="key">{{ settings.ui_scale }}</span></button>
   <button class="mission" data-command="setting:anim_speed"><span>Animation speed</span><span class="key">{{ settings.anim_speed }}</span></button>
   <button class="mission" data-command="setting:camera_speed"><span>Camera speed</span><span class="key">{{ settings.camera_speed }}</span></button>
   <button class="mission" data-command="setting:action_camera"><span>Action camera (frame shots)</span><span class="key">{{ settings.action_camera }}</span></button>
@@ -286,7 +305,19 @@
 <!-- Controls cheat sheet (H) -->
 <div id="help" class="panel" data-if="ui.help">
   <span class="title" style="font-size: 16px; margin-bottom: 6px">Controls</span>
-  <div class="help-grid">
+  <div class="help-grid" data-if="ui.touch">
+    <div class="help-row"><span class="help-key">Tap soldier</span><span class="help-text">select</span></div>
+    <div class="help-row"><span class="help-key">Move button</span><span class="help-text">then tap a tile to preview, tap it again or Confirm to move</span></div>
+    <div class="help-row"><span class="help-key">Tap tile</span><span class="help-text">inspect it (cover, odds) without moving</span></div>
+    <div class="help-row"><span class="help-key">Tap enemy</span><span class="help-text">aim, tap again (or Fire) to shoot</span></div>
+    <div class="help-row"><span class="help-key">One-finger drag</span><span class="help-text">pan (flick to glide)</span></div>
+    <div class="help-row"><span class="help-key">Pinch</span><span class="help-text">zoom (towards your fingers)</span></div>
+    <div class="help-row"><span class="help-key">&lt; and &gt; buttons</span><span class="help-text">turn the view 45 degrees left / right</span></div>
+    <div class="help-row"><span class="help-key">Tap a squad name</span><span class="help-text">select and centre the view on them</span></div>
+    <div class="help-row"><span class="help-key">Drag a panel</span><span class="help-text">scroll menus and lists</span></div>
+    <div class="help-row"><span class="help-key">Settings</span><span class="help-text">UI size: make menus bigger or smaller</span></div>
+  </div>
+  <div class="help-grid" data-if="!ui.touch">
     <div class="help-row"><span class="help-key">Left click</span><span class="help-text">select a soldier, move to a tile</span></div>
     <div class="help-row"><span class="help-key">Click enemy</span><span class="help-text">aim (odds by the cursor), click again to fire</span></div>
     <div class="help-row"><span class="help-key">Space / Enter</span><span class="help-text">fire the aimed ability</span></div>
@@ -363,13 +394,27 @@
 <!-- Targeting banner -->
 <div id="targeting" data-if="targeting">
   <span style="margin-right: 10px" data-if="!targeting.aimed">{{ targeting.name }}: pick a target</span>
-  <span style="margin-right: 10px" data-if="targeting.aimed">{{ targeting.name }}: click again to fire</span>
+  <span style="margin-right: 10px" data-if="targeting.aimed">{{ targeting.name }}: tap / click again to fire</span>
   <button class="small-button" data-command="confirm" data-if="targeting.aimed">Fire<span class="key">Space</span></button>
   <button class="small-button" data-command="cancel">Cancel<span class="key">Esc</span></button>
 </div>
 
+<!-- Touchscreen camera rotation (pinch only zooms) -->
+<div id="rotate" data-if="ui.touch">
+  <button class="rotate-button" data-command="rotate:left">&lt;<span class="key">turn</span></button>
+  <button class="rotate-button" data-command="rotate:right">&gt;<span class="key">turn</span></button>
+</div>
+
+<!-- Touchscreen move: shown after pressing Move -->
+<div id="move-bar" data-if="move.active">
+  <span style="margin-right: 10px">{{ move.info }}</span>
+  <button class="small-button" data-command="confirm" data-if="move.picked">Confirm</button>
+  <button class="small-button" data-command="cancel">Cancel</button>
+</div>
+
 <!-- Ability bar (built from the selected unit's abilities) + turn buttons -->
 <div id="actions">
+  <button class="ability {{ move.state }}" data-command="move" data-if="ui.touch">Move<span class="key">then tap a tile</span></button>
   <div id="abilities" data-for="a in abilities">
     <button class="ability {{ a.state }}" data-command="ability:{{ a.id }}">
       {{ a.name }}

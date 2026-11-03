@@ -622,6 +622,17 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             FloatingText::spawn(&mut p.commands, at, text.clone(), theme::TRACER);
             vec![Anim::Wait { remaining: 0.9 }]
         }
+        GameEvent::Callout { unit, text } => {
+            // Only for units the squad can see (no giving away hidden enemies).
+            if battle.is_revealed(*unit) {
+                p.log.push(format!("  {}: {text}", name(*unit)));
+                if let Some(pos) = pos_of(*unit) {
+                    FloatingText::spawn(&mut p.commands, pos + Vec3::Y * 2.1, text.clone(), theme::TRACER);
+                }
+                return vec![Anim::Wait { remaining: 0.35 }];
+            }
+            vec![]
+        }
         GameEvent::ScriptError { message } => {
             p.log.push(format!("Script error: {message}"));
             warn!("script error: {message}");
