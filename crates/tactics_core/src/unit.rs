@@ -82,6 +82,15 @@ pub struct Weapon {
     pub pellets: u32,
     /// Mechanical spread of each projectile, degrees (adds to aim error).
     pub spread: f32,
+    /// Its shots can't be stopped by the target's cover (no cover penalty,
+    /// no blocked rounds): e.g. a shotgun blast that wraps around a wall.
+    /// Walls and units in the way still stop projectiles.
+    pub ignores_cover: bool,
+    /// Closer than this (tiles) the weapon is awkward (a scoped rifle):
+    /// no close-range bonus, and `close_penalty` aim lost per tile inside it.
+    pub min_range: f32,
+    /// Aim lost per tile closer than `min_range`.
+    pub close_penalty: i32,
     /// Spare magazines carried into battle (each Reload uses one).
     pub magazines: u32,
     /// Spare magazines left (instance state: set from `magazines` on spawn).
@@ -111,6 +120,9 @@ impl Default for Weapon {
             burst: 1,
             pellets: 1,
             spread: 0.6,
+            ignores_cover: false,
+            min_range: 0.0,
+            close_penalty: 0,
             magazines: 3,
             spare: 0,
             look: WeaponLook::Rifle,

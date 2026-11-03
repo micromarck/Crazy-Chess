@@ -140,13 +140,18 @@ pub fn preview_attack(
         push("Suppressed", -rules.suppression_aim);
     }
     if profile.range_falloff {
-        let range_mod = if distance > weapon.optimal_range {
-            -((distance - weapon.optimal_range) * rules.falloff_per_tile).round() as i32
+        if distance < weapon.min_range {
+            // Too close for this weapon (a scoped rifle): no close-range
+            // bonus, and a penalty for every tile inside its minimum range.
+            push("Too close", -((weapon.min_range - distance) * weapon.close_penalty as f32).round() as i32);
         } else {
-            (((weapon.optimal_range - distance) * rules.close_bonus_per_tile).round() as i32)
-                .min(rules.max_close_bonus)
-        };
-        push("Range", range_mod);
+            let range_mod = if distance > weapon.optimal_range {
+                -((distance - weapon.optimal_range) * rules.falloff_per_tile).round() as i32
+            } else {
+                (((weapon.optimal_range - distance) * rules.close_bonus_per_tile).round() as i32).min(rules.max_close_bonus)
+            };
+            push("Range", range_mod);
+        }
     }
 
     // Aim before cover; cover is applied below (as a penalty for rolled
@@ -158,17 +163,21 @@ pub fn preview_attack(
         breakdown.push((format!("Accuracy x{}", rules.accuracy_multiplier), scaled - raw));
     }
     let aim_chance = if raw > 0 { scaled } else { raw }.clamp(rules.min_hit, rules.max_hit);
+    let weapon_shot = matches!(profile.damage, DamageSource::Weapon);
+    // Some weapons (shotguns) can't be stopped by cover at all.
+    let ignores_cover = weapon_shot && weapon.ignores_cover;
     let cover_penalty = match cover.level {
+        _ if ignores_cover => 0,
         CoverLevel::Half => profile.half_cover_penalty,
         CoverLevel::Full => profile.full_cover_penalty,
         CoverLevel::None => 0,
     };
     match cover.level {
+        CoverLevel::Half | CoverLevel::Full if ignores_cover => breakdown.push(("Cover ignored".into(), 0)),
         CoverLevel::Half => breakdown.push(("Half cover".into(), -cover_penalty)),
         CoverLevel::Full => breakdown.push(("Full cover".into(), -cover_penalty)),
         CoverLevel::None => {}
     }
-    let weapon_shot = matches!(profile.damage, DamageSource::Weapon);
     let (hit_chance, rounds, cover_block, sigma) = if !profile.can_miss {
         (100, 1, 0, 0.0)
     } else if !profile.is_ballistic() {

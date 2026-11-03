@@ -66,6 +66,9 @@
             max_range: 20.0,
             burst: 1,
             spread: 0.15,
+            // Scoped: bad up close, like the soldiers' sniper rifle.
+            min_range: 5.0,
+            close_penalty: 10,
             clip_size: 4,
             magazines: 3,
             look: Sniper,
