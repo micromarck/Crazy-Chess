@@ -307,6 +307,7 @@ hit  = (base_accuracy or unit aim) + accuracy_bonus
        - target defense - target defend bonus
        - half/full cover penalty (if the target has cover facing the attack)
        ± range modifier (if range_falloff)
+       × combat.accuracy_multiplier (1.3 by default; the cover penalty comes after)
        clamped to [combat.min_hit, combat.max_hit] unless can_miss = false
 crit = weapon crit (weapon damage only) + crit_bonus + flank_crit_bonus (if flanked)
 ```

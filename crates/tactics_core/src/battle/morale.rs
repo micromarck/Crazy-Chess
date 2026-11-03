@@ -164,7 +164,9 @@ mod tests {
         b.add_fear(a, 40, &mut events); // bravery 50: x1
         assert!(events.iter().any(|ev| matches!(ev, GameEvent::MoraleChanged { level: FearLevel::Shaken, .. })));
         let shaken = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.aim_chance;
-        assert_eq!(calm - shaken, 10);
+        // Shaken: -10 aim, scaled by the global accuracy multiplier.
+        let expected = 10.0 * b.rules().combat.accuracy_multiplier;
+        assert!(((calm - shaken) as f32 - expected).abs() <= 1.0, "{calm} - {shaken}");
         b.add_fear(a, 60, &mut events);
         assert_eq!(b.rules().combat.morale.level(b.unit(a).unwrap().fear), FearLevel::Panicked);
         // Panic costs an action point next turn.

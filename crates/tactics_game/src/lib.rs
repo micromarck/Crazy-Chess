@@ -132,10 +132,25 @@ pub fn run() {
         .run();
 }
 
+/// Where a save file called `name` lives: the working directory on desktop,
+/// the app's private data folder on Android, nowhere on the web.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn save_path(name: &str) -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "android")]
+    {
+        bevy::android::ANDROID_APP.get()?.internal_data_path().map(|dir| dir.join(name))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Some(std::path::PathBuf::from(name))
+    }
+}
+
 /// Android entry point. `bevy_main` generates the `android_main` symbol that
 /// NativeActivity / GameActivity calls into.
+/// (The macro requires the function to be called `main`.)
 #[cfg(target_os = "android")]
 #[bevy_main]
-fn android_main_entry() {
+fn main() {
     run();
 }

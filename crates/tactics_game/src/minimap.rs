@@ -5,6 +5,10 @@
 //!   (evac green, objectives yellow, danger red) and doors;
 //! * soldiers (blue), enemies the squad can see (red; fogged ones are not
 //!   shown), the selected soldier highlighted, and a marker for the camera;
+//! * an **enemy heatmap** once only a few hostiles are left (5 or fewer)
+//!   and some are out of sight: a soft red glow roughly where each hidden
+//!   one is — big, blurred and shifted a little every round, so it points
+//!   the way without giving positions away;
 //! * **click** it to move the camera there, **M** to show/hide it (shown by
 //!   default on maps bigger than 24 tiles).
 
@@ -28,7 +32,7 @@ impl Plugin for MinimapPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MinimapState>()
             .add_systems(Startup, spawn_minimap)
-            .add_systems(Update, (toggle, redraw, place_dots, click_to_focus).chain().in_set(FrameSet::Present));
+            .add_systems(Update, (toggle, redraw, draw_heat, place_dots, click_to_focus).chain().in_set(FrameSet::Present));
     }
 }
 
@@ -43,7 +47,19 @@ struct MinimapState {
     /// `Some(on)` once the player pressed M (overrides the default).
     user_choice: Option<bool>,
     image: Handle<Image>,
+    /// The enemy heatmap texture and what it was drawn for.
+    heat: Handle<Image>,
+    heat_key: Option<u64>,
 }
+
+/// The heatmap layer over the minimap (under the dots).
+#[derive(Component)]
+struct HeatLayer;
+
+/// Heatmap texture resolution (it is drawn smoothed, so low is fine).
+const HEAT_RES: u32 = 48;
+/// The heatmap shows when this many hostiles or fewer are left.
+const HEAT_MAX_ENEMIES: usize = 5;
 
 #[derive(Component)]
 struct MinimapRoot;
@@ -65,6 +81,15 @@ fn spawn_minimap(mut commands: Commands, mut images: ResMut<Assets<Image>>, mut 
     );
     image.sampler = ImageSampler::nearest();
     state.image = images.add(image);
+    let mut heat = Image::new_fill(
+        Extent3d { width: HEAT_RES, height: HEAT_RES, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        &[0, 0, 0, 0],
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::default(),
+    );
+    heat.sampler = ImageSampler::linear();
+    state.heat = images.add(heat);
     commands
         .spawn((
             MinimapRoot,
@@ -81,12 +106,90 @@ fn spawn_minimap(mut commands: Commands, mut images: ResMut<Assets<Image>>, mut 
             BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.1)),
             Visibility::Hidden,
         ))
-        .with_child((
-            MinimapImage,
-            ImageNode::new(state.image.clone()),
-            Node { width: px(SIZE), height: px(SIZE), ..default() },
-            RelativeCursorPosition::default(),
-        ));
+        .with_children(|root| {
+            root.spawn((
+                MinimapImage,
+                ImageNode::new(state.image.clone()),
+                Node { width: px(SIZE), height: px(SIZE), ..default() },
+                RelativeCursorPosition::default(),
+            ))
+            .with_child((
+                HeatLayer,
+                ImageNode::new(state.heat.clone()),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(0),
+                    top: px(0),
+                    width: percent(100),
+                    height: percent(100),
+                    ..default()
+                },
+                Pickable::IGNORE,
+                Visibility::Hidden,
+            ));
+        });
+}
+
+/// Paints the enemy heatmap (see the module docs). Only enemies the squad
+/// can't see count (visible ones are dots already).
+fn draw_heat(
+    battle: Res<BattleState>,
+    mut state: ResMut<MinimapState>,
+    mut images: ResMut<Assets<Image>>,
+    mut layer: Single<&mut Visibility, With<HeatLayer>>,
+) {
+    let b = &battle.battle;
+    let map = b.map();
+    let living: Vec<&Unit> = b.living(Team::Enemy).collect();
+    let hidden: Vec<&Unit> = living.iter().copied().filter(|u| !b.is_revealed(u.id)).collect();
+    let show = !b.is_over() && !hidden.is_empty() && living.len() <= HEAT_MAX_ENEMIES;
+    let want = if show { Visibility::Inherited } else { Visibility::Hidden };
+    if **layer != want {
+        **layer = want;
+    }
+    if !show {
+        state.heat_key = None;
+        return;
+    }
+    // Redraw when the round or a hidden enemy's position changes.
+    let mut key = b.round() as u64 ^ 0xA5A5;
+    for u in &hidden {
+        key = key.rotate_left(11) ^ ((u.id.0 as u64) << 40 | (u.pos.x as u64) << 20 | u.pos.y as u32 as u64);
+    }
+    if state.heat_key == Some(key) {
+        return;
+    }
+    state.heat_key = Some(key);
+
+    let (w, h) = (map.width().max(1) as f32, map.height().max(1) as f32);
+    // Blob radius in tiles: a good chunk of the map, never pinpoint.
+    let radius = (w.max(h) * 0.09).max(5.0);
+    // Each enemy's blob is shifted by up to ~half a radius, differently
+    // every round (deterministic, so it doesn't flicker within a round).
+    let blobs: Vec<(f32, f32)> = hidden
+        .iter()
+        .map(|u| {
+            let mut z = (u.id.0 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (b.round() as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z ^= z >> 31;
+            let jx = ((z & 0xFFFF) as f32 / 65535.0 - 0.5) * radius;
+            let jy = (((z >> 16) & 0xFFFF) as f32 / 65535.0 - 0.5) * radius;
+            (u.pos.x as f32 + jx, u.pos.y as f32 + jy)
+        })
+        .collect();
+    let mut data = Vec::with_capacity((HEAT_RES * HEAT_RES * 4) as usize);
+    for row in 0..HEAT_RES {
+        for col in 0..HEAT_RES {
+            // Texel centre in grid coordinates (row 0 = north edge).
+            let gx = (col as f32 + 0.5) / HEAT_RES as f32 * w - 0.5;
+            let gy = h - 0.5 - (row as f32 + 0.5) / HEAT_RES as f32 * h;
+            let heat: f32 = blobs.iter().map(|(bx, by)| (-((gx - bx).powi(2) + (gy - by).powi(2)) / (radius * radius)).exp()).sum();
+            let a = (heat.min(1.0) * 0.6 * 255.0) as u8;
+            data.extend_from_slice(&[235, 60, 40, a]);
+        }
+    }
+    if let Some(mut img) = images.get_mut(&state.heat) {
+        img.data = Some(data);
+    }
 }
 
 fn toggle(

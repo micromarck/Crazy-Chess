@@ -181,7 +181,13 @@ fn build_fog_chunks(
         let parent = commands.spawn((FogChunk, Transform::IDENTITY, Visibility::default())).id();
         for (centres, material) in quads.iter().zip([&assets.dim, &assets.dark]) {
             if !centres.is_empty() {
-                commands.spawn((Mesh3d(meshes.add(quad_mesh(centres))), MeshMaterial3d(material.clone()), ChildOf(parent)));
+                commands.spawn((
+                    Mesh3d(meshes.add(quad_mesh(centres))),
+                    MeshMaterial3d(material.clone()),
+                    bevy::light::NotShadowCaster,
+                    bevy::light::NotShadowReceiver,
+                    ChildOf(parent),
+                ));
             }
         }
         fog.chunks.insert(key, parent);

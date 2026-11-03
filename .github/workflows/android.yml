@@ -1,0 +1,41 @@
+# Builds the Android APK (arm64) on GitHub's Ubuntu runners, which come with
+# the Android SDK and NDK, and uploads it as an artifact ("tactics-apk").
+# Run it from the Actions tab (Run workflow) or by pushing to a listed branch.
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ccr-bdc572a0-4i31t2, claude/chess-game-html-FlsMY]
+    paths: ["crates/**", "Cargo.toml", "Cargo.lock", ".github/workflows/android.yml"]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+
+      - name: Install cargo-apk
+        run: cargo install --locked cargo-apk
+
+      - name: Build the APK
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          export ANDROID_NDK_ROOT="$ANDROID_NDK_LATEST_HOME"
+          echo "SDK: $ANDROID_HOME  NDK: $ANDROID_NDK_ROOT"
+          cargo apk build -p tactics_game --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tactics-apk
+          path: target/release/apk/*.apk
+          if-no-files-found: error

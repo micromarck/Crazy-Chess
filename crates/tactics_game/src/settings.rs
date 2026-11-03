@@ -47,7 +47,7 @@ impl Default for GameSettings {
     }
 }
 
-#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+#[cfg(not(target_arch = "wasm32"))]
 const FILE: &str = "tbsium_settings.txt";
 
 fn next_of(options: &[f32], current: f32) -> f32 {
@@ -151,16 +151,16 @@ impl GameSettings {
     }
 
     fn load() -> Self {
-        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-        if let Ok(text) = std::fs::read_to_string(FILE) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(Ok(text)) = crate::save_path(FILE).map(std::fs::read_to_string) {
             return Self::from_text(&text);
         }
         Self::default()
     }
 
     fn save(&self) {
-        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-        if let Err(e) = std::fs::write(FILE, self.to_text()) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(Err(e)) = crate::save_path(FILE).map(|path| std::fs::write(path, self.to_text())) {
             warn!("couldn't save settings: {e}");
         }
     }
