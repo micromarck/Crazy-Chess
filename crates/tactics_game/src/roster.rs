@@ -48,7 +48,7 @@ impl Plugin for RosterPlugin {
 
 /// Most soldiers deployed at once.
 pub const SQUAD_SIZE: usize = 6;
-#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+#[cfg(not(target_arch = "wasm32"))]
 const FILE: &str = "tbsium_roster.ron";
 /// Classes a recruit can be (the player classes of the base modules).
 const PLAYER_CLASSES: [&str; 4] = ["rifleman", "assault", "sniper", "grenadier"];
@@ -107,11 +107,11 @@ pub struct Roster {
 }
 
 impl Roster {
-    /// Loads the saved roster (desktop), or starts empty (filled from the
+    /// Loads the saved roster (desktop, Android), or starts empty (filled from the
     /// modules' squad on first sync).
     pub fn load() -> Self {
-        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-        if let Ok(text) = std::fs::read_to_string(FILE) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(Ok(text)) = crate::save_path(FILE).map(std::fs::read_to_string) {
             match Self::from_text(&text) {
                 Ok(mut r) => {
                     r.dirty = true;
@@ -135,8 +135,8 @@ impl Roster {
     }
 
     fn save(&self) {
-        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-        if let Err(e) = std::fs::write(FILE, self.to_text()) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(Err(e)) = crate::save_path(FILE).map(|path| std::fs::write(path, self.to_text())) {
             warn!("couldn't save the roster: {e}");
         }
     }

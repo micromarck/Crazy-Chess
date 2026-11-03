@@ -32,6 +32,9 @@ bevy = { workspace = true, features = ["3d", "ui", "web"] }
 # NativeActivity needs no Java/Kotlin glue, so `cargo apk` can package it directly.
 # Switch to "android-game-activity" if you move to a Gradle project.
 bevy = { workspace = true, features = ["3d", "ui", "android-native-activity"] }
+# Bevy's asset hashing uses blake3; "pure" skips its C/assembly speed-ups so
+# the build doesn't need a C compiler for the target (only the NDK linker).
+blake3 = { version = "1.8", features = ["pure"] }
 
 # ---------------------------------------------------------------------------
 # Android packaging metadata (read by `cargo apk`; see README.md).

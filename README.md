@@ -250,6 +250,14 @@ cargo install --locked cargo-apk
 cargo apk run -p tactics_game --release      # builds, installs & launches on a connected device
 ```
 
+No NDK at hand? The **Android APK** GitHub Actions workflow
+(`.github/workflows/android.yml`) builds the APK on GitHub's runners (they
+have the SDK and NDK) and attaches it to the run as the `tactics-apk`
+artifact; start it from the Actions tab. The build needs no C compiler for
+the target (Bevy's `blake3` is built in its pure-Rust mode), only the NDK's
+linker. On the device, the roster and settings are saved in the app's
+private data folder.
+
 Packaging settings (app id, SDK levels, orientation, icon) live under
 `[package.metadata.android]` in `crates/tactics_game/Cargo.toml`. For Play
 Store builds (AAB, GameActivity), use a Gradle project with `cargo-ndk`, as in
