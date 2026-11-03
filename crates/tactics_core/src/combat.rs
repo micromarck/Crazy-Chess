@@ -151,7 +151,13 @@ pub fn preview_attack(
 
     // Aim before cover; cover is applied below (as a penalty for rolled
     // attacks, as a per-projectile block chance for ballistic ones).
-    let aim_chance = breakdown.iter().map(|(_, v)| *v).sum::<i32>().clamp(rules.min_hit, rules.max_hit);
+    // Global accuracy scaling (combat rules), shown as its own line.
+    let raw: i32 = breakdown.iter().map(|(_, v)| *v).sum();
+    let scaled = (raw.max(0) as f32 * rules.accuracy_multiplier).round() as i32;
+    if scaled != raw.max(0) && raw > 0 {
+        breakdown.push((format!("Accuracy x{}", rules.accuracy_multiplier), scaled - raw));
+    }
+    let aim_chance = if raw > 0 { scaled } else { raw }.clamp(rules.min_hit, rules.max_hit);
     let cover_penalty = match cover.level {
         CoverLevel::Half => profile.half_cover_penalty,
         CoverLevel::Full => profile.full_cover_penalty,
@@ -268,8 +274,22 @@ mod tests {
     }
 
     #[test]
+    fn accuracy_multiplier_scales_aim_before_cover() {
+        let map = Map::new(10, 10);
+        let a = make(Team::Player, GridPos::new(0, 0));
+        let b = make(Team::Enemy, GridPos::new(0, 6));
+        let fixed = AttackProfile { base_accuracy: Some(50), range_falloff: false, ..Default::default() };
+        let plain = preview_attack(&CombatRules { accuracy_multiplier: 1.0, ..Default::default() }, &map, a.pos, &a, &b, &fixed);
+        let boosted = preview_attack(&CombatRules::default(), &map, a.pos, &a, &b, &fixed);
+        assert_eq!(plain.aim_chance, 50);
+        assert_eq!(boosted.aim_chance, 65, "1.3x by default");
+        assert!(boosted.hit_chance > plain.hit_chance);
+        assert!(boosted.breakdown.iter().any(|(l, v)| l.starts_with("Accuracy x") && *v == 15));
+    }
+
+    #[test]
     fn high_ground_bonus() {
-        let rules = CombatRules::default();
+        let rules = CombatRules { accuracy_multiplier: 1.0, ..Default::default() };
         let mut map = Map::new(10, 10);
         let a = make(Team::Player, GridPos::new(0, 0));
         let b = make(Team::Enemy, GridPos::new(0, 5));
@@ -281,7 +301,7 @@ mod tests {
 
     #[test]
     fn base_accuracy_overrides_aim_and_can_miss_false_always_hits() {
-        let rules = CombatRules::default();
+        let rules = CombatRules { accuracy_multiplier: 1.0, ..Default::default() };
         let map = Map::new(10, 10);
         let a = make(Team::Player, GridPos::new(0, 0));
         let b = make(Team::Enemy, GridPos::new(0, 6));

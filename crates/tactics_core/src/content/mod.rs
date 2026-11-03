@@ -140,6 +140,8 @@ pub struct CombatRules {
     pub suppression_aim: i32,
     /// Fear added to a unit that gets suppressed.
     pub suppression_fear: i32,
+    /// Scales every attack's aim (before cover): 1.3 = 30% more accurate.
+    pub accuracy_multiplier: f32,
     /// Fear and its effects.
     pub morale: MoraleRules,
 }
@@ -156,6 +158,7 @@ impl Default for CombatRules {
             height_advantage_bonus: 15,
             suppression_aim: 25,
             suppression_fear: 15,
+            accuracy_multiplier: 1.3,
             morale: MoraleRules::default(),
         }
     }

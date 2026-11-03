@@ -29,7 +29,7 @@ impl Plugin for BoardPlugin {
             .add_systems(PreStartup, crate::scenery::setup_scenery)
             .init_resource::<BoardChunks>()
             .add_systems(Startup, (setup_assets, spawn_lights).chain())
-            .add_systems(Update, (queue_chunks, build_chunks).chain());
+            .add_systems(Update, (queue_chunks, build_chunks, no_board_shadows).chain());
     }
 }
 
@@ -450,6 +450,21 @@ fn spawn_lights(mut commands: Commands, state: Res<BattleState>) {
         DirectionalLight { illuminance: 9_000.0, shadow_maps_enabled: true, ..default() },
         Transform::from_translation(center + Vec3::new(-8.0, 20.0, 10.0)).looking_at(center, Vec3::Y),
     ));
+}
+
+/// The level itself casts no shadows (only characters do): marks every
+/// mesh built under a board chunk as [`NotShadowCaster`].
+fn no_board_shadows(
+    mut commands: Commands,
+    added: Query<Entity, (Added<Mesh3d>, Without<bevy::light::NotShadowCaster>)>,
+    parents: Query<&ChildOf>,
+    chunks: Query<(), With<BoardChunk>>,
+) {
+    for e in &added {
+        if parents.iter_ancestors(e).any(|a| chunks.contains(a)) {
+            commands.entity(e).insert(bevy::light::NotShadowCaster);
+        }
+    }
 }
 
 /// Queues chunks for (re)building: all of them after a reset, the touched

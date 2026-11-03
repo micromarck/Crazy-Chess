@@ -1057,6 +1057,8 @@ mod tests {
             p.accuracy_bonus = -30;
         }
         let after = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.aim_chance;
-        assert_eq!(after, before - 30);
+        let expected = 30.0 * b.rules().combat.accuracy_multiplier;
+        assert!(((before - after) as f32 - expected).abs() <= 1.0 || before == b.rules().combat.max_hit, "{before} -> {after}");
+        assert!(after < before - 25);
     }
 }
