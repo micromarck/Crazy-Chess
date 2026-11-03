@@ -190,6 +190,7 @@ TBSium/
 | Zoom | Wheel (towards the cursor), Z / X | Pinch (towards the fingers; two fingers only zoom) |
 | Scroll menus and lists | Wheel | Drag the panel (flick to keep scrolling) |
 | Menu / button size | Settings > UI size | Settings > UI size (auto: a bit smaller on phones) |
+| Keep clear of the phone's back / home buttons | — | Settings > Screen edge margin (auto: 48 px on Android) |
 | Abilities of the selected unit | 1-9 (press again to fire when aimed) | ability buttons |
 | Next / previous unit | Tab / Shift+Tab | Next button |
 | Centre on selected unit / reset view | F / Home | — |

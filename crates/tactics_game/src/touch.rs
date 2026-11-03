@@ -9,6 +9,10 @@
 //! * **UI size**: applies the `ui_scale` setting to Bevy's [`UiScale`]. On
 //!   `auto`, phones (touch, short screens) get a slightly smaller HUD so the
 //!   panels fit, desktops get 1.0.
+//! * **Screen edge margin**: UI anchored to the right edge ([`EdgeInset`]:
+//!   the HUD root, the minimap) keeps clear of the `edge_margin` setting,
+//!   so Android's back / home buttons (right edge in landscape) don't cover
+//!   the rotate or End Turn buttons.
 //! * **Scrolling menus without a mouse**: dragging a finger over any panel
 //!   with `overflow: scroll` scrolls it, with a fling when you let go; the
 //!   mouse wheel scrolls HUD panels too. A press that turned into a scroll
@@ -30,7 +34,7 @@ impl Plugin for TouchPlugin {
         app.insert_resource(TouchMode { active: cfg!(target_os = "android") || forced, forced })
             .init_resource::<UiDrag>()
             .add_systems(PreUpdate, detect_touch_mode)
-            .add_systems(Update, (apply_ui_scale, scroll_ui).in_set(FrameSet::Input));
+            .add_systems(Update, (apply_ui_scale, apply_edge_margin, scroll_ui).in_set(FrameSet::Input));
     }
 }
 
@@ -100,6 +104,24 @@ fn apply_ui_scale(settings: Res<crate::settings::GameSettings>, mode: Res<TouchM
     let want = if settings.ui_scale > 0.0 { settings.ui_scale } else { auto_ui_scale(mode.active, window.height()) };
     if (scale.0 - want).abs() > 1e-3 {
         scale.0 = want;
+    }
+}
+
+/// A UI node anchored to the right screen edge: its `right` offset is
+/// `base` UI pixels plus the screen edge margin.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct EdgeInset {
+    pub base: f32,
+}
+
+fn apply_edge_margin(settings: Res<crate::settings::GameSettings>, scale: Res<UiScale>, mut nodes: Query<(&EdgeInset, &mut Node)>) {
+    // The margin is in screen pixels; UI pixels are scaled by UiScale.
+    let margin = settings.edge_margin_px() / scale.0.max(0.1);
+    for (inset, mut node) in &mut nodes {
+        let want = Val::Px(inset.base + margin);
+        if node.right != want {
+            node.right = want;
+        }
     }
 }
 

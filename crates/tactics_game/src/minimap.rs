@@ -93,6 +93,7 @@ fn spawn_minimap(mut commands: Commands, mut images: ResMut<Assets<Image>>, mut 
     commands
         .spawn((
             MinimapRoot,
+            crate::touch::EdgeInset { base: 12.0 },
             Node {
                 position_type: PositionType::Absolute,
                 right: px(12),

@@ -84,7 +84,9 @@ pub fn spawn_document(commands: &mut Commands, roots: &[DomNode], ctx: &mut Buil
     let root = commands
         .spawn((
             HtmlRoot,
-            Node { position_type: PositionType::Absolute, width: percent(100), height: percent(100), ..default() },
+            // Full screen, except the edge margin on the right (see `touch`).
+            Node { position_type: PositionType::Absolute, left: px(0), top: px(0), right: px(0), height: percent(100), ..default() },
+            crate::touch::EdgeInset { base: 0.0 },
             Pickable::IGNORE,
         ))
         .id();

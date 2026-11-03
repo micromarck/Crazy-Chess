@@ -11,6 +11,7 @@
 //! | `edge_scroll` | on/off | pan when the mouse touches the window edge |
 //! | `invert_orbit` | on/off | flip right-drag tilt direction |
 //! | `action_camera` | on/off | frame shooter and target on attacks |
+//! | `edge_margin` | auto, 0 - 96 | keep the HUD clear of the right screen edge (Android's back / home buttons sit there in landscape; auto = 48 on Android, 0 elsewhere) |
 //! | `ui_scale` | auto, 0.7 - 1.5 | size of the HUD and menus (auto: a little smaller on phones, see [`crate::touch`]) |
 //! | `difficulty` | easy, normal, hard | enemy AI: easy = no threat reading, flanking or focus fire; hard = braver and bolder |
 
@@ -42,6 +43,9 @@ pub struct GameSettings {
     pub permadeath: bool,
     /// HUD / menu scale; 0 = automatic (see [`crate::touch`]).
     pub ui_scale: f32,
+    /// Space kept free at the right screen edge (system navigation buttons),
+    /// in screen pixels; -1 = automatic.
+    pub edge_margin: i32,
 }
 
 impl Default for GameSettings {
@@ -55,6 +59,7 @@ impl Default for GameSettings {
             difficulty: 1,
             permadeath: false,
             ui_scale: 0.0,
+            edge_margin: -1,
         }
     }
 }
@@ -96,6 +101,12 @@ impl GameSettings {
                 self.permadeath = !self.permadeath;
                 format!("Permadeath {}", on_off(self.permadeath))
             }
+            "edge_margin" => {
+                const OPTIONS: [i32; 6] = [-1, 0, 24, 48, 72, 96];
+                let i = OPTIONS.iter().position(|o| *o == self.edge_margin).map_or(0, |i| (i + 1) % OPTIONS.len());
+                self.edge_margin = OPTIONS[i];
+                format!("Screen edge margin: {}", self.edge_margin_name())
+            }
             "ui_scale" => {
                 self.ui_scale = next_of(&[0.0, 0.7, 0.85, 1.0, 1.15, 1.3, 1.5], self.ui_scale);
                 format!("UI size: {}", self.ui_scale_name())
@@ -112,9 +123,19 @@ impl GameSettings {
 
     pub fn to_text(&self) -> String {
         format!(
-            "anim_speed = {}\ncamera_speed = {}\nedge_scroll = {}\ninvert_orbit = {}\naction_camera = {}\ndifficulty = {}\npermadeath = {}\nui_scale = {}\n",
-            self.anim_speed, self.camera_speed, self.edge_scroll, self.invert_orbit, self.action_camera, self.difficulty, self.permadeath, self.ui_scale
+            "anim_speed = {}\ncamera_speed = {}\nedge_scroll = {}\ninvert_orbit = {}\naction_camera = {}\ndifficulty = {}\npermadeath = {}\nui_scale = {}\nedge_margin = {}\n",
+            self.anim_speed, self.camera_speed, self.edge_scroll, self.invert_orbit, self.action_camera, self.difficulty, self.permadeath, self.ui_scale, self.edge_margin
         )
+    }
+
+    /// The margin in screen pixels (`auto` resolved for this platform).
+    pub fn edge_margin_px(&self) -> f32 {
+        if self.edge_margin >= 0 { self.edge_margin as f32 } else if cfg!(target_os = "android") { 48.0 } else { 0.0 }
+    }
+
+    /// "auto (48 px)" or "24 px".
+    pub fn edge_margin_name(&self) -> String {
+        if self.edge_margin < 0 { format!("auto ({} px)", self.edge_margin_px()) } else { format!("{} px", self.edge_margin) }
     }
 
     /// "auto" or "x1.15".
@@ -164,6 +185,7 @@ impl GameSettings {
                 "invert_orbit" => s.invert_orbit = b.unwrap_or(s.invert_orbit),
                 "action_camera" => s.action_camera = b.unwrap_or(s.action_camera),
                 "permadeath" => s.permadeath = b.unwrap_or(s.permadeath),
+                "edge_margin" => s.edge_margin = v.parse::<i32>().ok().filter(|m| (-1..=200).contains(m)).unwrap_or(s.edge_margin),
                 "ui_scale" => s.ui_scale = v.parse::<f32>().ok().filter(|x| *x == 0.0 || (0.5..=2.0).contains(x)).unwrap_or(s.ui_scale),
                 "difficulty" => s.difficulty = v.parse::<u8>().ok().filter(|d| *d <= 2).unwrap_or(s.difficulty),
                 _ => {}

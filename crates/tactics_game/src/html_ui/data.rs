@@ -235,6 +235,7 @@ pub fn collect_ui_data(
     v.set("settings.action_camera", on(settings.action_camera));
     v.set("settings.difficulty", settings.difficulty_name());
     v.set("settings.ui_scale", settings.ui_scale_name());
+    v.set("settings.edge_margin", settings.edge_margin_name());
 
     // Misc toggles.
     v.set("editor.open", bool_str(editor.open));
