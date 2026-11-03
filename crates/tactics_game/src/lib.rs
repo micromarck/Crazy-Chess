@@ -51,6 +51,7 @@ pub mod rig;
 pub mod roster;
 pub mod scenery;
 pub mod settings;
+pub mod sky;
 pub mod state;
 pub mod theme;
 pub mod tooltip;
@@ -101,7 +102,7 @@ impl Plugin for TacticsPlugin {
             editor::EditorPlugin,
         ))
         .add_plugins((characters::CharactersPlugin, lab::LabPlugin, tooltip::TooltipPlugin, cutaway::CutawayPlugin, minimap::MinimapPlugin, settings::SettingsPlugin, looks::LooksPlugin, roster::RosterPlugin))
-            .add_plugins((fog::FogPlugin, touch::TouchPlugin));
+            .add_plugins((fog::FogPlugin, touch::TouchPlugin, sky::SkyPlugin));
     }
 }
 

@@ -73,9 +73,9 @@
   </zone>
 
   <!-- Objective 2: extraction, only after the upload. -->
-  <zone tag="extraction" x="0" y="0" width="2" height="1" marker="evac" label="EXTRACTION">
+  <zone tag="extraction" x="3" y="0" width="4" height="2" marker="evac" label="EXTRACTION">
     <script on="enter" team="player">
-      if flag("uplink") == 1 { message("Extraction!"); win(); }
+      if flag("uplink") == 1 { evac(zone_count("extraction", "player"), alive_count("player"), "Everyone aboard. Extraction!"); }
       else { message("Upload the data at the uplink first."); }
     </script>
   </zone>
@@ -91,5 +91,18 @@
       set_flag("warned", 1);
       message("Last soldier standing - get to the objective!");
     }
+  </script>
+
+  <!-- Evac: every soldier still alive has to be on the pad (checked when
+       someone steps on it, and at the start of each squad turn in case a
+       soldier left outside falls). -->
+  <script>
+    fn evac(inside, squad, done) {
+      if squad > 0 && inside >= squad { message(done); win(); }
+      else { message(inside + " of " + squad + " soldiers at the evac point - everyone still alive has to make it."); }
+    }
+  </script>
+  <script on="turn_start" team="player">
+    if flag("uplink") == 1 && alive_count("player") > 0 && zone_count("extraction", "player") >= alive_count("player") { message("Everyone aboard. Extraction!"); win(); }
   </script>
 </mission>

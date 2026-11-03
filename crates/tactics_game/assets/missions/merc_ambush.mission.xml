@@ -10,6 +10,9 @@
 <mission id="merc_ambush" name="Merc Ambush" seed="7311" fog="true">
   <description>Mercenaries hold a walled compound with a sniper tower. Their officer keeps them in line: take him down and the rest will waver.</description>
 
+  <!-- Sky: a vertical gradient (colour straight up, colour at the horizon). -->
+  <sky top="#3b6aa8" horizon="#e9dcc0"/>
+
   <layout>
     ..............................
     ..............................

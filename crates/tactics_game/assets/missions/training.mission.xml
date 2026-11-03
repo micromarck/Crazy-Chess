@@ -54,7 +54,7 @@
   <!-- Step 5: extract. -->
   <zone tag="evac" x="16" y="9" width="3" height="3" marker="evac" label="EVAC" hidden="true">
     <script on="enter" team="player">
-      if flag("trained") == 1 { message("Training complete. Welcome to the squad!"); win(); }
+      if flag("trained") == 1 { evac(zone_count("evac", "player"), alive_count("player"), "Training complete. Welcome to the squad!"); }
     </script>
   </zone>
 
@@ -75,5 +75,18 @@
   <!-- Nothing hunts you here, but don't dawdle forever. -->
   <script on="turn_start" team="player">
     if round == 6 && flag("trained") == 0 { message("Take your time - the dummies aren't going anywhere."); }
+  </script>
+
+  <!-- Evac: every soldier still alive has to be on the pad (checked when
+       someone steps on it, and at the start of each squad turn in case a
+       soldier left outside falls). -->
+  <script>
+    fn evac(inside, squad, done) {
+      if squad > 0 && inside >= squad { message(done); win(); }
+      else { message(inside + " of " + squad + " soldiers at the evac point - everyone still alive has to make it."); }
+    }
+  </script>
+  <script on="turn_start" team="player">
+    if flag("trained") == 1 && alive_count("player") > 0 && zone_count("evac", "player") >= alive_count("player") { message("Training complete. Welcome to the squad!"); win(); }
   </script>
 </mission>

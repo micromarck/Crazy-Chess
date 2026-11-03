@@ -9,6 +9,9 @@
 <mission id="salvage_run" name="Salvage Run" seed="9024" fog="true" win="script">
   <description>A merc salvage crew is hauling corrupted robots out of a warehouse. Steal the robot core from inside and bring it back to the evac point.</description>
 
+  <!-- Sky: a solid colour (an overcast night). -->
+  <sky color="#2b3138"/>
+
   <layout>
     ..................................
     ..................................
@@ -107,7 +110,7 @@
   </zone>
   <zone tag="evac" x="2" y="23" width="3" height="2" marker="evac" label="EVAC" hidden="true">
     <script on="enter" team="player">
-      if flag("core") == 1 { message("Core secured. Mission complete!"); win(); }
+      if flag("core") == 1 { evac(zone_count("evac", "player"), alive_count("player"), "Core secured and everyone out. Mission complete!"); }
     </script>
   </zone>
 
@@ -115,5 +118,18 @@
     set_flag("core", 0);
     objective("Steal the ROBOT CORE from the warehouse");
     message("A merc crew is loading corrupted robots in the warehouse. The core is inside.");
+  </script>
+
+  <!-- Evac: every soldier still alive has to be on the pad (checked when
+       someone steps on it, and at the start of each squad turn in case a
+       soldier left outside falls). -->
+  <script>
+    fn evac(inside, squad, done) {
+      if squad > 0 && inside >= squad { message(done); win(); }
+      else { message(inside + " of " + squad + " soldiers at the evac point - everyone still alive has to make it."); }
+    }
+  </script>
+  <script on="turn_start" team="player">
+    if flag("core") == 1 && alive_count("player") > 0 && zone_count("evac", "player") >= alive_count("player") { message("Core secured and everyone out. Mission complete!"); win(); }
   </script>
 </mission>

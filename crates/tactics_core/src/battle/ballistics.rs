@@ -495,6 +495,40 @@ mod tests {
     }
 
     #[test]
+    fn shotgun_is_accurate_up_close_and_cover_cannot_block_it() {
+        let preview = |map: &str, d: i32| {
+            let mut b = Battle::new(Map::from_ascii(map), rules(), 1);
+            let gear = Loadout { weapon: Some("shotgun".into()), ..Default::default() };
+            let a = b.spawn_equipped("assault", "A", Team::Player, GridPos::new(0, 0), None, &gear).unwrap();
+            let e = b.spawn("sectoid", "E", Team::Enemy, GridPos::new(d, 0)).unwrap();
+            let (a, e) = (b.unit(a).unwrap(), b.unit(e).unwrap());
+            let profile = b.rules().ability(&"shoot".into()).unwrap().effect.attack_profile().unwrap().clone();
+            crate::combat::preview_attack(&b.rules().combat, b.map(), a.pos, a, e, &profile)
+        };
+        let open = preview("..........", 4);
+        assert!(open.hit_chance >= 60, "each pellet hits often at 4 tiles: {}%", open.hit_chance);
+        assert!(open.expected_damage() >= 6.0, "{}", open.expected_damage());
+        for map in ["...h......", "...H......"] {
+            let covered = preview(map, 4);
+            assert_eq!(covered.cover_block, 0, "{map}: cover can't block pellets");
+            assert_eq!(covered.hit_chance, open.hit_chance, "{map}: same odds as in the open");
+        }
+    }
+
+    #[test]
+    fn snipers_are_bad_up_close() {
+        let aim_at = |d: i32| {
+            let mut b = Battle::new(Map::from_ascii("................"), rules(), 1);
+            let a = b.spawn("sniper", "S", Team::Player, GridPos::new(0, 0)).unwrap();
+            let e = b.spawn("sectoid", "E", Team::Enemy, GridPos::new(d, 0)).unwrap();
+            b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap()[0].1.aim_chance
+        };
+        let (adjacent, near, ok) = (aim_at(1), aim_at(3), aim_at(6));
+        assert!(adjacent < near && near < ok, "{adjacent} < {near} < {ok}");
+        assert!(ok - adjacent >= 40, "point blank costs a lot: {adjacent} vs {ok}");
+    }
+
+    #[test]
     fn misses_fly_on_and_walls_stop_them() {
         // A wall row just above the line of fire: high strays stop in it.
         let mut wall_stops = 0;

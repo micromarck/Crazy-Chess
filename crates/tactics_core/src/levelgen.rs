@@ -65,6 +65,17 @@ impl Theme {
             Theme::Outbreak => "Outbreak",
         }
     }
+    /// The sky over this theme's missions (a gradient).
+    pub fn sky(self) -> crate::mission::SkyDef {
+        let (top, horizon) = match self {
+            Theme::Urban => ([0x4a, 0x6f, 0x9c], [0xc9, 0xd6, 0xe3]),
+            Theme::Industrial => ([0x5b, 0x5f, 0x66], [0xd8, 0xc3, 0x9a]),
+            Theme::Wilds => ([0x3d, 0x7f, 0xc9], [0xe2, 0xef, 0xf7]),
+            Theme::Outbreak => ([0x1d, 0x1f, 0x2b], [0x7a, 0x4e, 0x3c]),
+        };
+        crate::mission::SkyDef { top: Some(top), horizon: Some(horizon), ..Default::default() }
+    }
+
     pub fn parse(s: &str) -> Option<Self> {
         Self::ALL.into_iter().chain([Theme::Outbreak]).find(|t| t.name().eq_ignore_ascii_case(s.trim()))
     }
@@ -1049,10 +1060,10 @@ impl Gen {
     }
 
     /// Picks a reachable 3x2 (or smaller) area within `band`.
-    fn area_in(&mut self, reach: &ReachableSet, band: Rect, taken: &BTreeSet<GridPos>) -> Option<Rect> {
+    fn area_in(&mut self, reach: &ReachableSet, band: Rect, taken: &BTreeSet<GridPos>, sizes: &[(i32, i32)]) -> Option<Rect> {
         let spots = self.spots(reach, band, taken);
         let set: std::collections::HashSet<GridPos> = spots.iter().copied().collect();
-        for (cw, ch) in [(3, 2), (2, 2), (1, 1)] {
+        for &(cw, ch) in sizes {
             let fits: Vec<GridPos> = spots
                 .iter()
                 .copied()
@@ -1080,20 +1091,16 @@ impl Gen {
                 (true, "Find and eliminate every hostile in the area.".into())
             }
             Objective::Extract => {
-                let Some(r) = self.area_in(reach, north, taken) else { return (true, "Eliminate all hostiles.".into()) };
-                let inside = self.count_expr(r, "player");
-                let code = format!(
-                    "let inside = {inside}; let squad = alive_count(\"player\"); \
-                     if inside == squad {{ message(\"Squad extracted!\"); win(); }} \
-                     else {{ message(inside + \" of \" + squad + \" soldiers at the evac point.\"); }}"
-                );
-                self.zone("evac", r, "evac", "EVAC", false, vec![hook(HookEvent::Enter, Some(Team::Player), code)]);
+                // Room for a full squad (up to 6) on the pad.
+                let Some(r) = self.area_in(reach, north, taken, &[(4, 2), (3, 2)]) else { return (true, "Eliminate all hostiles.".into()) };
+                self.zone("evac", r, "evac", "EVAC", false, vec![hook(HookEvent::Enter, Some(Team::Player), EVAC_ALL.replace("READY", "true"))]);
+                self.hooks.push(hook(HookEvent::TurnStart, Some(Team::Player), EVAC_TURN.replace("READY", "true")));
                 self.hooks.push(hook(HookEvent::Start, None, "objective(\"Get the whole squad to the EVAC point (north) - or clear the area\");"));
                 (true, "Push through to the evac point in the north with the whole squad.".into())
             }
             Objective::Recover => {
                 let mid = Rect::new(1, h / 2, w - 2, h - 2);
-                let Some(data) = self.area_in(reach, mid, taken) else { return (true, "Eliminate all hostiles.".into()) };
+                let Some(data) = self.area_in(reach, mid, taken, &[(3, 2), (2, 2), (1, 1)]) else { return (true, "Eliminate all hostiles.".into()) };
                 let data = Rect::new(data.x0, data.y0, data.x0, data.y0);
                 // Evac: next to where the squad came in.
                 let s = self.spawn;
@@ -1105,8 +1112,9 @@ impl Gen {
                 if let Some(t) = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().map(|(dx, dy)| GridPos::new(data.x0 + dx, data.y0 + dy)).find(|p| self.free(*p)) {
                     self.prop("terminal".into(), "console", t, CoverLevel::Half, None, Vec::new());
                 }
-                let leave = "if flag(\"data\") == 1 { message(\"Data recovered. Mission complete!\"); win(); }";
-                self.zone("evac", evac, "evac", "EVAC", true, vec![hook(HookEvent::Enter, Some(Team::Player), leave)]);
+                let ready = "flag(\"data\") == 1";
+                self.zone("evac", evac, "evac", "EVAC", true, vec![hook(HookEvent::Enter, Some(Team::Player), EVAC_ALL.replace("READY", ready))]);
+                self.hooks.push(hook(HookEvent::TurnStart, Some(Team::Player), EVAC_TURN.replace("READY", ready)));
                 self.hooks.push(hook(HookEvent::Start, None, "set_flag(\"data\", 0); objective(\"Recover the DATA, then return to the evac point\");"));
                 (false, "Recover the data from the marked terminal and bring it back to the evac point.".into())
             }
@@ -1202,9 +1210,21 @@ impl Gen {
             library: self.library,
             seed: Some(self.p.seed),
             eliminate_to_win: eliminate,
+            sky: self.p.theme.sky(),
         }
     }
 }
+
+/// Evac pad script: wins once every living soldier is on the pad (and
+/// `READY` holds), otherwise says how many are there.
+const EVAC_ALL: &str = "if READY { let inside = zone_count(\"evac\", \"player\"); let squad = alive_count(\"player\"); \
+     if squad > 0 && inside >= squad { message(\"Everyone's out. Mission complete!\"); win(); } \
+     else { message(inside + \" of \" + squad + \" soldiers at the evac point - everyone still alive has to make it.\"); } }";
+
+/// The same check at the start of each squad turn (a soldier who stayed
+/// outside may have fallen since everyone else got on the pad).
+const EVAC_TURN: &str = "if READY && alive_count(\"player\") > 0 && zone_count(\"evac\", \"player\") >= alive_count(\"player\") { \
+     message(\"Everyone's out. Mission complete!\"); win(); }";
 
 fn capitalise(s: &str) -> String {
     let mut c = s.chars();
@@ -1253,6 +1273,84 @@ mod tests {
         let mut r = Ruleset::standard();
         r.add_module(&GrenadierModule);
         r
+    }
+
+    /// Generated evac pads fit a full squad and need everyone alive on them.
+    #[test]
+    fn generated_evac_pads_fit_the_squad_and_need_everyone() {
+        for seed in 0..12 {
+            for objective in [Objective::Extract, Objective::Recover] {
+                for theme in Theme::ALL {
+                    let m = generate(GenParams::new(theme, objective, seed));
+                    let Some(z) = m.zones.iter().find(|z| z.tag == "evac") else { continue };
+                    let tiles = (z.max.x - z.min.x + 1) * (z.max.y - z.min.y + 1);
+                    assert!(tiles >= 6, "{theme:?} {objective:?} seed {seed}: evac pad of {tiles} tiles");
+                    assert!(z.hooks.iter().all(|h| h.code.contains("zone_count")), "{theme:?} {objective:?}");
+                    assert!(m.hooks.iter().any(|h| h.on == HookEvent::TurnStart && h.code.contains("zone_count")));
+                }
+            }
+        }
+    }
+
+    /// One soldier on the pad isn't enough; the last one in wins it. If the
+    /// soldier still outside falls, the rest win at the next turn start.
+    #[test]
+    fn evac_needs_every_living_soldier() {
+        let xml = format!(
+            r#"<mission id="e" name="E" win="script">
+                 <layout>
+                   ..........
+                   ..........
+                   ..........
+                   ..........
+                 </layout>
+                 <deploy team="player" squad="player" x="6" y="3"/>
+                 <unit team="enemy" class="training_dummy" name="Dummy" x="9" y="0"/>
+                 <zone tag="evac" x="0" y="0" width="4" height="2" marker="evac">
+                   <script on="enter" team="player">{}</script>
+                 </zone>
+                 <script on="turn_start" team="player">{}</script>
+               </mission>"#,
+            EVAC_ALL.replace("READY", "true"),
+            EVAC_TURN.replace("READY", "true")
+        );
+        let def = crate::mission::parse_mission(&xml).unwrap();
+        let pad: Vec<GridPos> = {
+            let z = &def.zones[0];
+            (z.min.y..=z.max.y).flat_map(|y| (z.min.x..=z.max.x).map(move |x| GridPos::new(x, y))).collect()
+        };
+        let walk_in = |b: &mut Battle, id: crate::unit::UnitId| {
+            let to = pad.iter().copied().find(|p| b.unit_at(*p).is_none()).unwrap();
+            b.apply(crate::action::Action::Move { unit: id, to }).unwrap();
+        };
+
+        // Everyone walks on: only the last one ends it.
+        let (mut b, _) = Battle::from_mission(rules(), &def, 1);
+        b.begin();
+        let squad: Vec<_> = b.living(Team::Player).map(|u| u.id).collect();
+        assert!(squad.len() >= 3);
+        for (i, id) in squad.iter().enumerate() {
+            walk_in(&mut b, *id);
+            let last = i + 1 == squad.len();
+            assert_eq!(b.is_over(), last, "after {} of {} on the pad", i + 1, squad.len());
+        }
+        assert_eq!(b.winner(), Some(Team::Player));
+
+        // All but one walk on; the straggler falls; next turn start wins.
+        let (mut b, _) = Battle::from_mission(rules(), &def, 1);
+        b.begin();
+        for id in &squad[..squad.len() - 1] {
+            walk_in(&mut b, *id);
+        }
+        assert!(!b.is_over());
+        let mut ev = Vec::new();
+        b.apply_script_command(crate::script::ScriptCommand::Kill { unit: squad[squad.len() - 1].0 }, &mut ev);
+        assert!(!b.is_over(), "nobody stepped on the pad since");
+        b.apply(crate::action::Action::EndTurn).unwrap();
+        if !b.is_over() {
+            b.apply(crate::action::Action::EndTurn).unwrap();
+        }
+        assert_eq!(b.winner(), Some(Team::Player), "won at the squad's next turn");
     }
 
     #[test]

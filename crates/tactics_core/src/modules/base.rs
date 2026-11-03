@@ -198,11 +198,14 @@ fn register_weapons(rules: &mut Ruleset) {
         crit_chance: 15,
         crit_bonus: 1,
         look: WeaponLook::Shotgun,
-        optimal_range: 2.0,
+        // A tight choke: deadly up close, still dangerous at mid range.
+        optimal_range: 4.0,
         max_range: 10.0,
         burst: 1,
         pellets: 8,
-        spread: 6.0,
+        spread: 1.8,
+        // The blast wraps around cover: pellets can't be blocked by it.
+        ignores_cover: true,
         clip_size: 6,
         magazines: 3,
         ..w("shotgun", "Shotgun")
@@ -216,6 +219,10 @@ fn register_weapons(rules: &mut Ruleset) {
         max_range: 25.0,
         burst: 1,
         spread: 0.1,
+        // The scope is useless up close: -10 aim per tile inside 5 tiles
+        // (an adjacent target: -40).
+        min_range: 5.0,
+        close_penalty: 10,
         clip_size: 5,
         magazines: 3,
         classes: vec!["sniper".into()],

@@ -104,6 +104,8 @@ pub struct ScriptWorld {
     pub props: Vec<WorldProp>,
     pub map: Option<Map>,
     pub flags: BTreeMap<String, i64>,
+    /// Marked zones: (tag, min corner, max corner), inclusive grid coords.
+    pub zones: Vec<(String, GridPos, GridPos)>,
     /// The alarm has been raised.
     pub alarm: bool,
     /// The squad is still concealed.
@@ -396,6 +398,17 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
         w.units.iter().filter(|u| u.alive && Some(u.team) == t).count() as INT
     });
     let w = world.clone();
+    engine.register_fn("zone_count", move |tag: &str, team: &str| -> INT {
+        // Living units of `team` ("" = all) inside the marked zone `tag`.
+        let t = parse_team(team);
+        let Some((_, lo, hi)) = w.zones.iter().find(|(z, ..)| z == tag) else { return 0 };
+        w.units
+            .iter()
+            .filter(|u| u.alive && (t.is_none() || Some(u.team) == t))
+            .filter(|u| u.pos.x >= lo.x && u.pos.x <= hi.x && u.pos.y >= lo.y && u.pos.y <= hi.y)
+            .count() as INT
+    });
+    let w = world.clone();
     engine.register_fn("count_in_area", move |x: INT, y: INT, width: INT, height: INT, team: &str| -> INT {
         // (x, y) is the top-left corner in top-down mission coordinates.
         let t = parse_team(team);
@@ -460,6 +473,7 @@ mod tests {
             props: vec![],
             map: Some(Map::new(5, 5)),
             flags: [("seen".to_string(), 1)].into(),
+            zones: vec![("pad".into(), GridPos::new(0, 0), GridPos::new(1, 0))],
             alarm: false,
             concealed: true,
             seed: 42,
@@ -480,6 +494,8 @@ mod tests {
             set_flag("roll", a);
             set_flag("lucky", if chance(50) { 1 } else { 0 });
             for id in units("enemy") { if distance(id, boss) < 1.0 { set_flag("near", 1); } }
+            set_flag("on_pad", zone_count("pad", "enemy"));
+            set_flag("nowhere", zone_count("missing", ""));
             if units("player").len() != 0 { lose(); }
         "#;
         let cmds = run(code, "", &ScriptVars::default(), &world()).unwrap();
@@ -488,6 +504,8 @@ mod tests {
         assert!(cmds.contains(&ScriptCommand::Say { unit: 4, text: "SYSTEM FAULT".into() }));
         assert!(!cmds.contains(&ScriptCommand::Lose));
         assert!(cmds.contains(&ScriptCommand::SetFlag { name: "near".into(), value: 1 }));
+        assert!(cmds.contains(&ScriptCommand::SetFlag { name: "on_pad".into(), value: 1 }), "the boss at (1, 0) is on the pad");
+        assert!(cmds.contains(&ScriptCommand::SetFlag { name: "nowhere".into(), value: 0 }));
         // Same seed, same rolls: deterministic replays.
         assert_eq!(run(code, "", &ScriptVars::default(), &world()).unwrap(), cmds);
         // Unknown stats are script errors, not silent no-ops.

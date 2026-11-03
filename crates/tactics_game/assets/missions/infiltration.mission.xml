@@ -111,9 +111,8 @@
 
   <zone tag="extraction" x="0" y="28" width="6" height="6" marker="evac" label="EXTRACTION">
     <script on="enter" team="player">
-      if flag("data") == 1 && unit == flag("carrier") {
-        message("Data extracted. Mission complete!");
-        win();
+      if flag("data") == 1 {
+        evac(zone_count("extraction", "player"), alive_count("player"), "Data extracted with the whole squad. Mission complete!");
       } else if flag("data") == 0 {
         message("We don't have the data yet.");
       }
@@ -167,5 +166,18 @@
       clear_ai_goal("player");
       zone_label("data_terminal", "DATA TERMINAL (backup)");
     }
+  </script>
+
+  <!-- Evac: every soldier still alive has to be on the pad (checked when
+       someone steps on it, and at the start of each squad turn in case a
+       soldier left outside falls). -->
+  <script>
+    fn evac(inside, squad, done) {
+      if squad > 0 && inside >= squad { message(done); win(); }
+      else { message(inside + " of " + squad + " soldiers at the evac point - everyone still alive has to make it."); }
+    }
+  </script>
+  <script on="turn_start" team="player">
+    if flag("data") == 1 && alive_count("player") > 0 && zone_count("extraction", "player") >= alive_count("player") { message("Data extracted with the whole squad. Mission complete!"); win(); }
   </script>
 </mission>
