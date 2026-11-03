@@ -365,7 +365,7 @@ pub fn hover_info(state: &BattleState, selection: &Selection, touch: bool) -> St
     }
     if s.is_empty() {
         s = if touch {
-            "Tap an enemy to aim, Move then a tile to move\nDrag: pan   Pinch: zoom   Twist: rotate".into()
+            "Tap an enemy to aim, Move then a tile to move\nDrag: pan   Pinch: zoom   < >: turn the view".into()
         } else {
             "Click an enemy to aim, a tile to move\nRight-drag: rotate   Wheel: zoom   F: focus".into()
         };

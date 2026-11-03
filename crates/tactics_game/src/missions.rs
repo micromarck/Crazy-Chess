@@ -221,6 +221,7 @@ pub fn start_battle(
     mut log: ResMut<LogMessages>,
     mut rig: Single<&mut CameraRig>,
     floating: Query<Entity, With<FloatingText>>,
+    mut flags: ResMut<crate::html_ui::UiFlags>,
     mut commands: Commands,
 ) {
     let Some(request) = requests.read().last().cloned() else { return };
@@ -303,6 +304,12 @@ pub fn start_battle(
         rig.distance = (map.width().max(map.height()) as f32 * 1.1).clamp(18.0, CameraRig::MAX_DISTANCE);
         rig.target_distance = rig.user_distance;
         rig.focus_at(tile_top(map, u.pos));
+    }
+    // Menus that led here (Missions, Loadout...) close with the new battle.
+    for panel in ["missions", "loadout", "barracks", "settings", "help"] {
+        if let Some(open) = flags.0.get_mut(panel) {
+            *open = false;
+        }
     }
     reset.write(BattleReset);
 }

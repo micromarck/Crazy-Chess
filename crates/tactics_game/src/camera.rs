@@ -8,8 +8,8 @@
 //! | Action | Desktop | Touch |
 //! |---|---|---|
 //! | Pan    | left- or middle-drag the ground (it stays under the cursor), WASD / arrows | one-finger drag (the ground stays under the finger; flick to glide) |
-//! | Rotate / tilt | right-drag (horizontal / vertical), Q / E (45° steps) | two-finger twist / two fingers dragged up or down |
-//! | Zoom   | mouse wheel (towards the cursor), Z / X | pinch (towards the fingers) |
+//! | Rotate / tilt | right-drag (horizontal / vertical), Q / E (45° steps) | the two rotate buttons (45° steps; `rotate:left` / `rotate:right` HUD commands) |
+//! | Zoom   | mouse wheel (towards the cursor), Z / X | pinch (towards the fingers; two fingers only zoom) |
 //! | Reset view | Home (default tilt and zoom) | |
 //! | Move a soldier | drag from the selected soldier to a tile and release | Move button, tap a tile, confirm |
 //! | Cancel aiming | right-click (without dragging) | |
@@ -53,7 +53,7 @@ impl Plugin for CameraPlugin {
             .add_systems(Startup, spawn_camera)
             .add_systems(
                 Update,
-                (mouse_controls, keyboard_mouse_controls, touch_controls, apply_rig)
+                (mouse_controls, keyboard_mouse_controls, touch_controls, rotate_buttons, apply_rig)
                     .chain()
                     .in_set(FrameSet::Input)
                     .in_set(CameraSystems),
@@ -371,7 +371,12 @@ pub struct TouchGesture {
     velocity: Vec3,
     /// Fingers down last frame (re-grab when going from two to one).
     fingers: usize,
+    /// Pinch in progress: finger spread and camera distance when it began.
+    pinch: Option<(f32, f32)>,
 }
+
+/// Pinch ratios this close to 1 are ignored (finger jitter).
+const PINCH_DEAD_ZONE: f32 = 0.04;
 
 /// Pixels a pointer must travel before a press counts as a drag.
 pub const DRAG_THRESHOLD: f32 = 12.0;
@@ -467,13 +472,25 @@ fn keyboard_mouse_controls(
     }
 }
 
+/// The HUD's rotate buttons: 45° steps, like Q / E.
+fn rotate_buttons(mut commands: MessageReader<crate::state::PlayerCommand>, director: Res<CameraDirector>, mut rig: Single<&mut CameraRig>) {
+    for command in commands.read() {
+        if let crate::state::PlayerCommand::RotateCamera(clockwise) = command
+            && !director.is_active()
+        {
+            // Snap to the 45° grid, then step (same feel as Q / E).
+            let snapped = (rig.target_yaw / FRAC_PI_4).round() * FRAC_PI_4;
+            rig.target_yaw = snapped + if *clockwise { FRAC_PI_4 } else { -FRAC_PI_4 };
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn touch_controls(
     time: Res<Time<Real>>,
     touches: Res<Touches>,
     hover_map: Res<HoverMap>,
     ui_nodes: Query<(), With<Node>>,
-    settings: Res<crate::settings::GameSettings>,
     mut gesture: ResMut<TouchGesture>,
     director: Res<CameraDirector>,
     camera: Single<(&Camera, &GlobalTransform), With<CameraRig>>,
@@ -524,29 +541,25 @@ fn touch_controls(
         [a, b, ..] => {
             gesture.dragged = true;
             gesture.velocity = Vec3::ZERO;
-            let now = a.position() - b.position();
-            let before = a.previous_position() - b.previous_position();
+            // Two fingers only zoom (rotation has its own buttons). The zoom
+            // follows the pinch from where it started, ignoring jitter.
+            let span = (a.position() - b.position()).length().max(1.0);
+            let (span0, dist0) = *gesture.pinch.get_or_insert((span, rig.target_distance));
+            let ratio = span0 / span;
+            let excess = ((ratio - 1.0).abs() - PINCH_DEAD_ZONE).max(0.0);
+            let ratio = 1.0 + excess * (ratio - 1.0).signum();
+            let old = rig.target_distance;
+            rig.target_distance = (dist0 * ratio).clamp(CameraRig::MIN_DISTANCE, CameraRig::MAX_DISTANCE);
+            rig.user_distance = rig.target_distance;
+            // Towards the point between the fingers.
+            let shrink = 1.0 - rig.target_distance / old;
             let mid = (a.position() + b.position()) / 2.0;
-            let (da, db) = (a.delta(), b.delta());
-            // Both fingers sliding the same way vertically (and not apart):
-            // tilt the camera.
-            let parallel = da.y * db.y > 0.0 && da.y.abs() > da.x.abs() && db.y.abs() > db.x.abs();
-            if parallel && (now.length() - before.length()).abs() < 4.0 {
-                let tilt = if settings.invert_orbit { -1.0 } else { 1.0 };
-                let dy = (da.y + db.y) / 2.0;
-                rig.target_pitch = (rig.target_pitch + tilt * dy * 0.005).clamp(0.3, 1.45);
-            } else if before.length() > 1.0 && now.length() > 1.0 {
-                // Pinch: zoom towards the point between the fingers.
-                let old = rig.target_distance;
-                rig.zoom(before.length() / now.length());
-                let shrink = 1.0 - rig.target_distance / old;
-                if let Some(p) = ground_point(cam, cam_tr, mid, plane) {
-                    let toward = Vec3::new(p.x - rig.target_focus.x, 0.0, p.z - rig.target_focus.z);
-                    rig.target_focus += toward * shrink;
-                    rig.clamp_focus();
-                }
-                // Twist: rotate with the fingers.
-                rig.target_yaw -= before.angle_to(now);
+            if shrink != 0.0
+                && let Some(p) = ground_point(cam, cam_tr, mid, plane)
+            {
+                let toward = Vec3::new(p.x - rig.target_focus.x, 0.0, p.z - rig.target_focus.z);
+                rig.target_focus += toward * shrink;
+                rig.clamp_focus();
             }
         }
         [] => {
@@ -560,6 +573,9 @@ fn touch_controls(
                 gesture.velocity = Vec3::ZERO;
             }
         }
+    }
+    if active.len() < 2 {
+        gesture.pinch = None;
     }
     gesture.fingers = active.len();
 }

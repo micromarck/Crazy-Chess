@@ -184,8 +184,8 @@ TBSium/
 | Cancel aim / targeting | Right-click or Esc | Cancel button |
 | Move by dragging | Drag from the selected soldier to a tile, release | — |
 | Pan | Left- or middle-drag the ground, WASD / arrows | One-finger drag (the ground stays under the finger; flick to glide) |
-| Rotate / tilt | Right-drag (sideways / up-down), Q / E | Two-finger twist / two fingers dragged up or down |
-| Zoom | Wheel (towards the cursor), Z / X | Pinch (towards the fingers) |
+| Rotate / tilt | Right-drag (sideways / up-down), Q / E | the < and > buttons (45° steps) |
+| Zoom | Wheel (towards the cursor), Z / X | Pinch (towards the fingers; two fingers only zoom) |
 | Scroll menus and lists | Wheel | Drag the panel (flick to keep scrolling) |
 | Menu / button size | Settings > UI size | Settings > UI size (auto: a bit smaller on phones) |
 | Abilities of the selected unit | 1-9 (press again to fire when aimed) | ability buttons |

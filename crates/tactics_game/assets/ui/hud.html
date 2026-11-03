@@ -152,6 +152,9 @@
     justify-content: flex-end;
   }
   #abilities { flex-direction: row; }
+  /* Touchscreen camera: turn the view in 45° steps (pinch zooms). */
+  #rotate { position: absolute; right: 12px; top: 40%; flex-direction: column; }
+  .rotate-button { min-width: 64px; height: 56px; margin-left: 0px; margin-bottom: 8px; font-size: 20px; }
   /* Touchscreen move: pick a tile, then confirm. */
   #move-bar {
     position: absolute;
@@ -307,8 +310,8 @@
     <div class="help-row"><span class="help-key">Tap tile</span><span class="help-text">inspect it (cover, odds) without moving</span></div>
     <div class="help-row"><span class="help-key">Tap enemy</span><span class="help-text">aim, tap again (or Fire) to shoot</span></div>
     <div class="help-row"><span class="help-key">One-finger drag</span><span class="help-text">pan (flick to glide)</span></div>
-    <div class="help-row"><span class="help-key">Pinch / twist</span><span class="help-text">zoom / rotate</span></div>
-    <div class="help-row"><span class="help-key">Two-finger drag</span><span class="help-text">up / down to tilt</span></div>
+    <div class="help-row"><span class="help-key">Pinch</span><span class="help-text">zoom (towards your fingers)</span></div>
+    <div class="help-row"><span class="help-key">&lt; and &gt; buttons</span><span class="help-text">turn the view 45 degrees left / right</span></div>
     <div class="help-row"><span class="help-key">Tap a squad name</span><span class="help-text">select and centre the view on them</span></div>
     <div class="help-row"><span class="help-key">Drag a panel</span><span class="help-text">scroll menus and lists</span></div>
     <div class="help-row"><span class="help-key">Settings</span><span class="help-text">UI size: make menus bigger or smaller</span></div>
@@ -393,6 +396,12 @@
   <span style="margin-right: 10px" data-if="targeting.aimed">{{ targeting.name }}: tap / click again to fire</span>
   <button class="small-button" data-command="confirm" data-if="targeting.aimed">Fire<span class="key">Space</span></button>
   <button class="small-button" data-command="cancel">Cancel<span class="key">Esc</span></button>
+</div>
+
+<!-- Touchscreen camera rotation (pinch only zooms) -->
+<div id="rotate" data-if="ui.touch">
+  <button class="rotate-button" data-command="rotate:left">&lt;<span class="key">turn</span></button>
+  <button class="rotate-button" data-command="rotate:right">&gt;<span class="key">turn</span></button>
 </div>
 
 <!-- Touchscreen move: shown after pressing Move -->

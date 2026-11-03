@@ -82,7 +82,8 @@ fn spawn_widgets(mut commands: Commands) {
             Text::new(""),
             TextFont { font_size: FontSize::Px(44.0), ..default() },
             TextColor(Color::NONE),
-            TextShadow::default(),
+            TextShadow { color: Color::BLACK.with_alpha(0.0), ..default() },
+            Visibility::Hidden,
             Pickable::IGNORE,
         ));
 }
@@ -309,24 +310,37 @@ fn player_can_act_now(
 fn show_banner(
     time: Res<Time<Real>>,
     mut banners: MessageReader<Banner>,
-    mut q: Single<(&mut BannerText, &mut Text, &mut TextColor)>,
+    mut q: Single<(&mut BannerText, &mut Text, &mut TextColor, &mut TextShadow, &mut Visibility)>,
 ) {
-    let (banner, text, color) = &mut *q;
+    let (banner, text, color, shadow, visibility) = &mut *q;
     if let Some(b) = banners.read().last() {
         banner.age = 0.0;
         text.0 = b.text.clone();
         color.0 = b.color;
     }
     if banner.age >= BANNER_TIME {
-        color.0.set_alpha(0.0);
+        // Fully gone, shadow included (a fading text leaves its shadow
+        // behind otherwise, e.g. "MISSION ACCOMPLISHED" over the next mission).
+        if **visibility != Visibility::Hidden {
+            **visibility = Visibility::Hidden;
+            color.0.set_alpha(0.0);
+            shadow.color.set_alpha(0.0);
+        }
         return;
+    }
+    if **visibility != Visibility::Inherited {
+        **visibility = Visibility::Inherited;
     }
     banner.age += time.delta_secs();
     // Quick fade in, hold, fade out.
     let k = banner.age / BANNER_TIME;
     let alpha = if k < 0.12 { k / 0.12 } else if k > 0.7 { (1.0 - k) / 0.3 } else { 1.0 };
     color.0.set_alpha(alpha.clamp(0.0, 1.0));
+    shadow.color.set_alpha(alpha.clamp(0.0, 1.0) * BANNER_SHADOW_ALPHA);
 }
+
+/// Opacity of the banner's drop shadow at full strength.
+const BANNER_SHADOW_ALPHA: f32 = 0.75;
 
 /// A floating label over a marked zone.
 #[derive(Component)]

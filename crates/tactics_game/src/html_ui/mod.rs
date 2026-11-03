@@ -174,6 +174,7 @@ fn rebuild_layout(
 /// | `setting:<name>` | change a setting (see [`crate::settings`]) |
 /// | `roster:<command>` | Barracks: edit saved soldiers (see [`crate::roster`]) |
 /// | `move` | touchscreen: enter / leave move mode (then tap a tile, then confirm) |
+/// | `rotate:left`, `rotate:right` | turn the camera 45° (like Q / E) |
 /// | `log:<text>` | print a message (handy while designing layouts) |
 #[allow(clippy::too_many_arguments)]
 pub fn run_ui_commands(
@@ -210,6 +211,15 @@ pub fn run_ui_commands(
             "move" => {
                 player.write(PlayerCommand::MoveMode);
             }
+            "rotate" => match arg.trim() {
+                "left" => {
+                    player.write(PlayerCommand::RotateCamera(false));
+                }
+                "right" => {
+                    player.write(PlayerCommand::RotateCamera(true));
+                }
+                other => log.push(format!("UI: rotate:{other}? use rotate:left or rotate:right")),
+            },
             "restart" => {
                 player.write(PlayerCommand::Restart);
             }

@@ -453,6 +453,8 @@ fn handle_commands(
                 let _ = state.apply(Action::EndTurn, &mut playback);
                 continue;
             }
+            // Camera turns are handled by the camera (they work at any time).
+            PlayerCommand::RotateCamera(_) => continue,
             // Battle (re)starts are handled by `missions` (they work even when the battle is over).
             PlayerCommand::Restart | PlayerCommand::StartMission(_) | PlayerCommand::Skirmish | PlayerCommand::Generate(_) => continue,
             PlayerCommand::UseAbility(id) => id.clone(),
