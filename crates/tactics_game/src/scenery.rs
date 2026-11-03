@@ -201,6 +201,24 @@ impl Scenery {
                 let height = if high { 1.5 } else { 0.6 };
                 (vec![piece(&self.ball, &self.rock, Vec3::Y * height * 0.45, Vec3::new(sx, height, sz))], height)
             }
+            // A broken wall: a heap of chunks of what it was.
+            Surface::Rubble => {
+                let mut v = Vec::new();
+                for i in 0..5u32 {
+                    let k = h.wrapping_mul(2654435761).wrapping_add(i * 977);
+                    let (x, z) = (((k % 60) as f32 / 100.0) - 0.3, (((k / 60) % 60) as f32 / 100.0) - 0.3);
+                    let s = 0.22 + ((k / 3600) % 18) as f32 / 100.0;
+                    let m = if i % 2 == 0 { &self.concrete } else { &self.brick };
+                    v.push(Piece {
+                        mesh: self.cube.clone(),
+                        material: m.clone(),
+                        transform: Transform::from_translation(top + Vec3::new(x, s * 0.45 + (i / 3) as f32 * 0.15, z))
+                            .with_rotation(Quat::from_euler(EulerRot::XYZ, (k % 7) as f32 * 0.2, (k % 11) as f32 * 0.5, (k % 5) as f32 * 0.25))
+                            .with_scale(Vec3::splat(s)),
+                    });
+                }
+                (v, low)
+            }
             Surface::Sandbags => (
                 (0..3)
                     .map(|i| piece(&self.cube, &self.sand, Vec3::Y * (0.1 + i as f32 * 0.18), Vec3::new(0.95 - i as f32 * 0.06, 0.17, 0.5)))

@@ -295,9 +295,10 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `flank_crit_bonus` | `40` | Extra crit vs. flanked (uncovered) targets. |
 | `damage` | `Weapon` | Or `Fixed(min: 2, max: 4)`. |
 | `damage_bonus` | `0` | Flat damage added on hit. |
-| `area_radius` | `0.0` | > 0 = hits every unit within that many tiles (friendly fire!). Cover is checked from the blast centre. |
+| `area_radius` | `0.0` | > 0 = hits every unit within that many tiles (friendly fire!), and damages destructible props and **walls** there too. Cover is checked from the blast centre. |
 | `rounds` | weapon `burst` | Rounds fired per use (e.g. `Some(12)` for suppression). |
 | `melee` | `false` | A strike in reach (claws, blades): rolled, not traced as a bullet. |
+| `shrapnel` | `0` | Area attacks: fragments thrown out of the blast in every direction, traced like bullets up to `area_radius + 5` tiles; 1 damage each to the first unit hit (friend or foe, outside the blast); walls stop them. The Frag Grenade throws 16. |
 
 Hit chance:
 
@@ -326,7 +327,7 @@ The result is the `Volley` event, one `Bullet` per round. Area attacks and
 | Section | Type | Key fields |
 |---|---|---|
 | `weapons` | `Weapon` | `id, name, damage_min, damage_max, crit_chance, crit_bonus, optimal_range, max_range, clip_size, burst` (rounds per shot, 1), `pellets` (rays per round, 1; shotguns 8), `spread` (extra degrees of scatter, 0.6), `magazines` (spare magazines, 3), `classes` (who may carry it; empty = anyone), `look` (`Rifle`, `Shotgun`, `Sniper`, `Smg`, `Lmg`, `Pistol`, `Plasma`, `None`), `model` (custom held model id) |
-| `classes` | `UnitClass` | `id, name, stats: (max_hp, mobility, aim, defense, sight, climb, bravery), weapon, abilities: [...], model, fearless, loadout`, `horde` (mindless swarm AI: close in and strike, cheap enough for hundreds), `hearing` (tiles: gunfire this close wakes it while dormant), `body: (hover, height, muzzle)` (hitbox in metres: `hover` lifts flyers like drones off the ground — their shots pass over heads, enemies aim high, half cover beneath them does not count; `muzzle: Some(m)` sets the gun height) |
+| `classes` | `UnitClass` | `id, name, stats: (max_hp, mobility, aim, defense, sight, climb, bravery), weapon, abilities: [...], model, fearless, loadout`, `horde` (mindless swarm AI: close in and strike, cheap enough for hundreds; their deaths play in the background, all at once, without a kill camera), `hearing` (tiles: gunfire this close wakes it while dormant), `body: (hover, height, muzzle)` (hitbox in metres: `hover` lifts flyers like drones off the ground — their shots pass over heads, enemies aim high, half cover beneath them does not count; `muzzle: Some(m)` sets the gun height) |
 | `squads` | `SquadDef` | `id` (`"player"` / `"enemy"` are deployed), `members: [(class, name, loadout, gear, appearance)]` (the Barracks roster replaces `"player"` in game) |
 | `items` | `ItemDef` | `id, name, description, slot (Armor / Utility), stats: (max_hp, mobility, aim, defense, sight, bravery), abilities, charges, classes, model, socket` |
 | `loadouts` | `LoadoutDef` | `id, name, description, classes, gear: (weapon, armor, items: [...])` |

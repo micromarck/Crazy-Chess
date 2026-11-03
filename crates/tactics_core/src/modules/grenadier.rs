@@ -27,7 +27,7 @@ impl GameModule for GrenadierModule {
         // 1. New abilities ---------------------------------------------------
         rules.add_ability(
             AbilityDef::new("frag_grenade", "Frag Grenade")
-                .with_description("Throw at a tile: 3-4 damage to everyone within 1.5 tiles. Never misses, ignores cover. 1 per battle.")
+                .with_description("Throw at a tile: 3-4 damage to everyone within 1.5 tiles and to walls and props there. Never misses, ignores cover. 16 fragments fly further out (1 damage each, friend or foe; walls stop them). 1 per battle.")
                 .with_cost(ApCost::Points(1))
                 .with_charges(1)
                 .with_targeting(Targeting::Tile, AbilityRange::Fixed(10.0))
@@ -39,6 +39,7 @@ impl GameModule for GrenadierModule {
                     flank_crit_bonus: 0,
                     damage: DamageSource::Fixed { min: 3, max: 4 },
                     area_radius: 1.5,
+                    shrapnel: 16,
                     ..Default::default()
                 })),
         );

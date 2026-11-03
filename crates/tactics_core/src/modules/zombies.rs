@@ -1,6 +1,6 @@
 //! Zombies: slow, tough, mindless and many.
 //!
-//! * `zombie` class — half a soldier's speed, 6 HP, a claw strike in reach,
+//! * `zombie` class — half a soldier's speed, 2 HP (one good hit), a claw strike in reach,
 //!   no fear. It uses the **horde** brain (closes in and strikes; cheap
 //!   enough for hundreds of units) and **hears** gunfire within 14 tiles
 //!   while dormant, so every shot draws the crowd in.
@@ -18,7 +18,7 @@ pub struct ZombieModule;
 impl GameModule for ZombieModule {
     fn info(&self) -> ModuleInfo {
         ModuleInfo {
-            description: "Adds slow, mindless zombies that swarm in hordes and come running at gunfire.".into(),
+            description: "Adds slow, fragile, mindless zombies that swarm in hordes and come running at gunfire.".into(),
             author: "Tactics".into(),
             ..ModuleInfo::new("zombies", "Zombie Pack")
         }
@@ -58,7 +58,7 @@ impl GameModule for ZombieModule {
             id: "zombie".into(),
             name: "Zombie".into(),
             // mobility 6 = 3 tiles per action point (soldiers: 6).
-            stats: UnitStats { max_hp: 6, mobility: 6, aim: 60, defense: 0, sight: 10.0, climb: 1, bravery: 100 },
+            stats: UnitStats { max_hp: 2, mobility: 6, aim: 60, defense: 0, sight: 10.0, climb: 1, bravery: 100 },
             weapon: "claws".into(),
             abilities: vec![AbilityId::new("bite")],
             model: "zombie".into(),

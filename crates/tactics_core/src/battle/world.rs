@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 
 use super::Battle;
 use crate::event::GameEvent;
-use crate::grid::{CoverLevel, GridPos, Terrain};
+use crate::grid::{CoverLevel, GridPos, Surface, Terrain};
 use crate::mission::{HookEvent, MissionDef, ScriptHook, ZoneDef};
 use crate::script::{self, ScriptCommand, ScriptVars, ScriptWorld, WorldProp, WorldUnit};
 use crate::unit::{Team, UnitId};
@@ -490,6 +490,7 @@ impl Battle {
         let pos = p.pos;
         if p.cover != CoverLevel::None {
             self.map.set_terrain(pos, Terrain::Floor);
+            self.map_version += 1;
         }
         events.push(GameEvent::PropDestroyed { prop: id });
         events.push(GameEvent::TerrainChanged { pos });
@@ -504,6 +505,57 @@ impl Battle {
             self.apply_damage(u, damage, true, events);
         }
         self.damage_props_in_area(center, radius, damage, events);
+        self.damage_walls_in_area(center, radius, damage, events);
+    }
+
+    /// Hit points of the terrain cover on `pos` (walls, trees, rocks...);
+    /// `None` = not cover, or indestructible.
+    pub fn wall_hp(&self, pos: GridPos) -> Option<i32> {
+        if self.props.iter().any(|p| p.alive && p.pos == pos) {
+            return None; // props have their own hit points
+        }
+        let max = match (self.map.terrain(pos), self.map.surface(pos)) {
+            (Terrain::HighCover, Surface::Rock) => return None,
+            (Terrain::HighCover, Surface::Container | Surface::Metal) => 10,
+            (Terrain::HighCover, _) => 6,
+            (Terrain::LowCover, Surface::Rock) => 8,
+            (Terrain::LowCover, _) => 3,
+            _ => return None,
+        };
+        Some(max - self.wall_damage.get(&pos).copied().unwrap_or(0))
+    }
+
+    /// Blast damage to walls and other terrain cover within `radius`. A
+    /// broken wall collapses into rubble (half cover); broken low cover
+    /// becomes open ground.
+    pub(super) fn damage_walls_in_area(&mut self, center: GridPos, radius: f32, damage: i32, events: &mut Vec<GameEvent>) {
+        let r = radius.ceil() as i32;
+        for y in center.y - r..=center.y + r {
+            for x in center.x - r..=center.x + r {
+                let pos = GridPos::new(x, y);
+                if !self.map.in_bounds(pos) || pos.distance(center) > radius || damage <= 0 {
+                    continue;
+                }
+                let Some(hp) = self.wall_hp(pos) else { continue };
+                let left = hp - damage;
+                if left > 0 {
+                    *self.wall_damage.entry(pos).or_insert(0) += damage;
+                    events.push(GameEvent::WallDamaged { pos, hp: left });
+                    continue;
+                }
+                self.wall_damage.remove(&pos);
+                if self.map.terrain(pos) == Terrain::HighCover {
+                    self.map.set_terrain(pos, Terrain::LowCover);
+                    self.map.set_surface(pos, Surface::Rubble);
+                } else {
+                    self.map.set_terrain(pos, Terrain::Floor);
+                    self.map.set_surface(pos, Surface::Dirt);
+                }
+                self.map_version += 1;
+                events.push(GameEvent::WallDestroyed { pos });
+                events.push(GameEvent::TerrainChanged { pos });
+            }
+        }
     }
 
     pub(super) fn damage_props_in_area(&mut self, center: GridPos, radius: f32, damage: i32, events: &mut Vec<GameEvent>) {

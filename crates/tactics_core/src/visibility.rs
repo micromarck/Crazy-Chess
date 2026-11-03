@@ -96,10 +96,19 @@ pub fn can_see(map: &Map, from: GridPos, to: GridPos, sight_range: f32) -> bool 
 }
 
 /// All tiles visible from `from` within `sight_range`. Useful for fog of war.
+/// Only the square around `from` is searched, so it is cheap on huge maps.
 pub fn visible_tiles(map: &Map, from: GridPos, sight_range: f32) -> Vec<GridPos> {
-    map.positions()
-        .filter(|p| can_see(map, from, *p, sight_range))
-        .collect()
+    let r = sight_range.max(0.0).ceil() as i32;
+    let mut out = Vec::new();
+    for y in (from.y - r).max(0)..=(from.y + r).min(map.height() - 1) {
+        for x in (from.x - r).max(0)..=(from.x + r).min(map.width() - 1) {
+            let p = GridPos::new(x, y);
+            if can_see(map, from, p, sight_range) {
+                out.push(p);
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]

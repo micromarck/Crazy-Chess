@@ -108,6 +108,7 @@ TBSium/
         │   ├── input.rs       hover/pick tiles, clicks, shortcuts
         │   ├── enemy_turn.rs  runs the AI with pacing
         │   ├── playback.rs    animates the GameEvent queue
+        │   ├── fog.rs         fog of war shading (in sight / explored / unseen)
         │   ├── overlay.rs     gizmo overlays (range, path, cover, HP)
         │   ├── html_ui/       HTML+CSS engine: parser, cascade, styles, bindings, commands
         │   ├── hud.rs         log store, floating combat text, code-built UI helpers
@@ -156,6 +157,8 @@ TBSium/
   and hit **whoever is in the line of fire**, friend or foe. Cover soaks a
   share of the rounds. Machine guns can **suppress** (pin a target: −aim,
   +fear, reaction burst if it moves).
+* Explosions damage props and walls: walls crack, then collapse into rubble
+  (half cover); grenades throw traced shrapnel past the blast.
 * Magazines: bursts use 4–6 rounds of a larger clip, reloads use up spare
   magazines (an ammo pouch adds one).
 * Overwatch reaction fire that interrupts movement mid-path.

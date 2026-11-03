@@ -100,6 +100,15 @@ pub enum GameEvent {
     /// A soldier walked over a supply cache and took it (`text` says what,
     /// e.g. "+1 magazine"). The prop is gone.
     SupplyFound { unit: UnitId, prop: PropId, text: String },
+    /// A blast damaged a wall (or other terrain cover); `hp` is what's left.
+    WallDamaged { pos: GridPos, hp: i32 },
+    /// A blast broke a wall: high walls collapse into rubble (half cover),
+    /// low cover is flattened. A `TerrainChanged` follows.
+    WallDestroyed { pos: GridPos },
+    /// Grenade fragments flying out of a blast at `center` (grid x, grid y,
+    /// height in metres), one `Bullet` per fragment. Damage is applied
+    /// after this event, like a `Volley`.
+    Shrapnel { attacker: Option<UnitId>, center: [f32; 3], fragments: Vec<Bullet> },
     /// A tile's terrain, height or ladder changed; redraw it.
     TerrainChanged { pos: GridPos },
     /// A message from a mission script.

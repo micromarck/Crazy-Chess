@@ -37,9 +37,9 @@ const SIZE: f32 = 190.0;
 
 #[derive(Resource, Default)]
 struct MinimapState {
-    /// What the image was drawn for: (battle seed and size, alive props, open doors,
+    /// What the image was drawn for: (battle seed, size and terrain version, alive props, open doors,
     /// visible zones). Units are dots on top, so moves don't redraw it.
-    drawn: Option<(usize, usize, usize, usize)>,
+    drawn: Option<(u64, usize, usize, usize)>,
     /// `Some(on)` once the player pressed M (overrides the default).
     user_choice: Option<bool>,
     image: Handle<Image>,
@@ -161,7 +161,7 @@ fn redraw(
     let map = b.map();
     let alive = b.props().iter().filter(|p| p.alive).count();
     let open = b.props().iter().filter(|p| p.door.is_some_and(|d| d.open)).count();
-    let key = (battle.seed as usize ^ (map.width() as usize) << 20, alive, open, b.zones().iter().filter(|z| z.visible).count());
+    let key = (battle.seed ^ (map.width() as u64) << 20 ^ (b.map_version() as u64) << 40, alive, open, b.zones().iter().filter(|z| z.visible).count());
     if state.drawn == Some(key) {
         return;
     }

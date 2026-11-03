@@ -132,8 +132,13 @@ read `<layout>`. (Scripts use the same convention.)
 | `<tile>` | `x`, `y`: a 1×1 zone (same optional attributes) |
 | `<script>` | without `on`: shared functions for all scripts. With `on`: a hook (below). |
 
-Area attacks (grenades, `explode`) damage destructible props; a destroyed
-prop frees its tile. Prop kinds with their own look: `barrel`, `crate`,
+Area attacks (grenades, `explode`) damage destructible props and **walls**;
+a destroyed prop frees its tile. Terrain cover has hit points: walls 6
+(containers and metal 10), low cover 3, low rocks 8; tall rocks can't be
+broken. A broken high wall collapses into **rubble** (half cover, 3 HP, map
+character `u`); broken low cover becomes open ground. Grenades also throw
+**shrapnel**: fragments that fly past the blast and hit whoever is in their
+path (walls stop them). Prop kinds with their own look: `barrel`, `crate`,
 `console`/`terminal`, `beacon`/`uplink` (anything else is a crate or wall).
 
 **Supply caches** are props with `cover="none"` and kind `supply_ammo`
@@ -155,7 +160,7 @@ hand-made file. Same seed + settings = same mission; **Restart** replays it.
 | Urban | a street grid with lane markings; blocks with brick buildings (windows, doors, wooden floors, furniture), flat roofs with parapets and ladders, plazas with trees and hedges; parked cars, barrels, crates |
 | Industrial | an asphalt yard with concrete pads, warehouses, rows of coloured shipping containers (some stacked with ladders), fences, fuel-barrel clusters |
 | Wilds | grassland with stepped hills, a winding river with bridges, a dirt track, woods, rocks, hedgerows and a cabin |
-| **Outbreak** | a **500x500** zombie city (`gen:outbreak`, the *Outbreak* button): a full street grid; blocks of shops, **multi-storey towers** (a walled ground floor and up to three upper floors, each set back from the one below, joined by flights of stairs, with parapets), **split-level car parks** (decks 1.5 m apart joined by ramps), flat roofs with ladders and parks with ponds; wrecked cars and barricades; about 230 **supply caches** (more of them indoors and upstairs); about 350 **zombies** in dormant hordes of 3-10 (two packs awake from the start). Objective: get the squad to the EVAC far to the north. |
+| **Outbreak** | a **500x500** zombie city (`gen:outbreak`, the *Outbreak* button): a full street grid; blocks of shops, **multi-storey towers** (a walled ground floor and up to three upper floors, each set back from the one below, joined by flights of stairs, with parapets), **split-level car parks** (decks 1.5 m apart joined by ramps), flat roofs with ladders and parks with ponds; wrecked cars and barricades; about 230 **supply caches** (more of them indoors and upstairs); about 350 **zombies** (2 HP each; they fall together in the background instead of one death sequence at a time) in dormant hordes of 3-10 (two packs awake from the start). Objective: get the squad to the EVAC far to the north. |
 
 | objective | win | lose |
 |---|---|---|
@@ -184,7 +189,7 @@ from scripts. They live in `tactics_core/src/battle/stealth.rs` (rules) and
 | **Patrols** | a patrolling unit is dormant and walks its waypoints in a loop, one AP per turn, through doors. | `<unit patrol="10,4 10,20 3,20">` | |
 | **Concealment** | unalerted enemies notice a soldier only within `detection` tiles **with line of sight** (red rings in the game). Being noticed or attacking raises the alarm: concealment ends, every enemy wakes, `alarm` hooks run. Without concealment there is no alarm unless a script raises it. | `<mission concealment="true" detection="4.5">` | `concealed()`, `alarm()`, `raise_alarm()`, `on="alarm"` |
 | **Doors** | a closed door blocks movement and sight (full cover). Any unit stepping next to it opens it unless it's locked. Multi-tile doors open together. The AI paths through unlocked doors. | `<door tag="vault" x y width height locked="true">` | `open_door(tag)`, `close_door(tag)`, `lock_door(tag, bool)`, `on="opened"` on the door |
-| **Fog of war** | enemies outside the squad's sight are hidden, their moves fast-forwarded; the HUD counts only hostiles in sight. | `<mission fog="true">` | |
+| **Fog of war** | enemies outside the squad's sight are hidden, their moves fast-forwarded; the HUD counts only hostiles in sight. The board is shaded: tiles in sight are clear, tiles seen before are dimmed, tiles never seen are dark (walls and cover too). | `<mission fog="true">` | |
 | **AI goals** | while no enemy is in sight, a team's AI walks (by real path, through doors) towards its goal instead of hunting: attack a beacon, reach an evac pad. | | `ai_goal("enemy", x, y)`, `clear_ai_goal(team)` |
 | **Objective** | text in the HUD's mission panel. | | `objective(text)` |
 | **Area counts** | how many units of a team stand in a rectangle (whole squad at the evac pad? aliens on the beacon?). | | `count_in_area(x, y, w, h, team)` (`""` = any team) |
