@@ -50,7 +50,8 @@ multi-storey towers and split-level car parks (stairs and ramps between
 floors), supply caches everywhere and hundreds of slow zombies that come
 running at the sound of gunfire. Maps are painted with surfaces (asphalt, grass,
 brick, containers, trees, water...), and hand-made missions get the same
-look automatically.
+look automatically. Each mission can set its **sky** in the file: a colour, a
+gradient or a panorama image (`<sky>`).
 
 New to the controls? Play *Basic Training* from the Missions list. Bundled large levels: *Proving Grounds*
 (sandbox), *Hold the Beacon* (defend and extract), *Clear the Complex*

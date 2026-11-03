@@ -9,6 +9,9 @@
 <mission id="scrapyard" name="Scrapyard" seed="5150" fog="true">
   <description>Corrupted machines roam a junkyard. They break down a little more every turn: destroy them, or survive 8 turns until they grind to a halt.</description>
 
+  <!-- Sky: a panorama image (equirectangular, 2:1) from assets/skies/. -->
+  <sky image="skies/dusk.png" rotation="200" horizon="#c98a5a" top="#1d2140"/>
+
   <layout>
     ..............................
     ..............................

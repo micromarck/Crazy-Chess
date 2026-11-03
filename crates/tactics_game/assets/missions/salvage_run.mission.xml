@@ -9,6 +9,9 @@
 <mission id="salvage_run" name="Salvage Run" seed="9024" fog="true" win="script">
   <description>A merc salvage crew is hauling corrupted robots out of a warehouse. Steal the robot core from inside and bring it back to the evac point.</description>
 
+  <!-- Sky: a solid colour (an overcast night). -->
+  <sky color="#2b3138"/>
+
   <layout>
     ..................................
     ..................................

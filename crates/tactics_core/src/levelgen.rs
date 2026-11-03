@@ -65,6 +65,17 @@ impl Theme {
             Theme::Outbreak => "Outbreak",
         }
     }
+    /// The sky over this theme's missions (a gradient).
+    pub fn sky(self) -> crate::mission::SkyDef {
+        let (top, horizon) = match self {
+            Theme::Urban => ([0x4a, 0x6f, 0x9c], [0xc9, 0xd6, 0xe3]),
+            Theme::Industrial => ([0x5b, 0x5f, 0x66], [0xd8, 0xc3, 0x9a]),
+            Theme::Wilds => ([0x3d, 0x7f, 0xc9], [0xe2, 0xef, 0xf7]),
+            Theme::Outbreak => ([0x1d, 0x1f, 0x2b], [0x7a, 0x4e, 0x3c]),
+        };
+        crate::mission::SkyDef { top: Some(top), horizon: Some(horizon), ..Default::default() }
+    }
+
     pub fn parse(s: &str) -> Option<Self> {
         Self::ALL.into_iter().chain([Theme::Outbreak]).find(|t| t.name().eq_ignore_ascii_case(s.trim()))
     }
@@ -1202,6 +1213,7 @@ impl Gen {
             library: self.library,
             seed: Some(self.p.seed),
             eliminate_to_win: eliminate,
+            sky: self.p.theme.sky(),
         }
     }
 }

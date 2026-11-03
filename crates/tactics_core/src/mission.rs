@@ -179,6 +179,39 @@ impl ZoneDef {
     }
 }
 
+/// What fills the background behind the level (`<sky>` in a mission file).
+/// Nothing set = the game's default sky colour.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SkyDef {
+    /// A solid colour (sRGB).
+    pub color: Option<[u8; 3]>,
+    /// A vertical gradient: the colour straight up...
+    pub top: Option<[u8; 3]>,
+    /// ...and at the horizon (and below).
+    pub horizon: Option<[u8; 3]>,
+    /// A panorama image (equirectangular, 2:1), asset path such as
+    /// `skies/dusk.png`. Wins over the colours, which still show while it loads.
+    pub image: Option<String>,
+    /// Turns the image around the vertical axis, degrees.
+    pub rotation: f32,
+}
+
+impl SkyDef {
+    /// Parses `#rgb` or `#rrggbb`.
+    pub fn parse_color(text: &str) -> Option<[u8; 3]> {
+        let h = text.trim().strip_prefix('#')?;
+        let byte = |s: &str| u8::from_str_radix(s, 16).ok();
+        match h.len() {
+            3 => {
+                let c: Vec<u8> = h.chars().map(|c| byte(&c.to_string()).map(|v| v * 17)).collect::<Option<_>>()?;
+                Some([c[0], c[1], c[2]])
+            }
+            6 => Some([byte(&h[0..2])?, byte(&h[2..4])?, byte(&h[4..6])?]),
+            _ => None,
+        }
+    }
+}
+
 /// Everything a mission file defines.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MissionDef {
@@ -205,6 +238,8 @@ pub struct MissionDef {
     pub seed: Option<u64>,
     /// `true`: killing every enemy wins. `false`: only scripts (`win()`) can.
     pub eliminate_to_win: bool,
+    /// The background (`<sky>`).
+    pub sky: SkyDef,
 }
 
 #[cfg(feature = "missions")]
@@ -410,6 +445,7 @@ mod xml {
             library: String::new(),
             seed: root.attribute("seed").and_then(|s| s.trim().parse().ok()),
             eliminate_to_win: root.attribute("win").unwrap_or("eliminate") != "script",
+            sky: SkyDef::default(),
         };
 
         let pos = |n: Node| -> Result<GridPos, String> {
@@ -506,6 +542,26 @@ mod xml {
                         hidden: n.attribute("hidden") == Some("true"),
                     });
                 }
+                "sky" => {
+                    let color = |name: &str| -> Result<Option<[u8; 3]>, String> {
+                        match n.attribute(name) {
+                            None => Ok(None),
+                            Some(t) => SkyDef::parse_color(t)
+                                .map(Some)
+                                .ok_or_else(|| err(&doc, n, format!("bad {name} colour '{t}' (use #rgb or #rrggbb)"))),
+                        }
+                    };
+                    def.sky = SkyDef {
+                        color: color("color")?,
+                        top: color("top")?,
+                        horizon: color("horizon")?,
+                        image: n.attribute("image").map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+                        rotation: n.attribute("rotation").and_then(|r| r.trim().parse().ok()).unwrap_or(0.0),
+                    };
+                    if def.sky.top.is_some() != def.sky.horizon.is_some() {
+                        return Err(err(&doc, n, "a gradient sky needs both 'top' and 'horizon'"));
+                    }
+                }
                 "script" if n.attribute("on").is_none() => {
                     def.library.push_str(n.text().unwrap_or(""));
                     def.library.push('\n');
@@ -569,6 +625,20 @@ mod tests {
           <script on="turn_start">helper();</script>
         </mission>
     "#;
+
+    #[test]
+    fn sky_colour_gradient_and_image() {
+        let with = |sky: &str| parse_mission(&SAMPLE.replace("<layout>", &format!("{sky}\n<layout>")));
+        assert_eq!(parse_mission(SAMPLE).unwrap().sky, SkyDef::default(), "no <sky>: default");
+        assert_eq!(with(r##"<sky color="#88aacc"/>"##).unwrap().sky.color, Some([0x88, 0xaa, 0xcc]));
+        assert_eq!(with(r##"<sky color="#fa0"/>"##).unwrap().sky.color, Some([0xff, 0xaa, 0x00]), "short form");
+        let g = with(r##"<sky top="#000010" horizon="#ffffff"/>"##).unwrap().sky;
+        assert_eq!((g.top, g.horizon), (Some([0, 0, 0x10]), Some([255, 255, 255])));
+        let i = with(r##"<sky image="skies/dusk.png" rotation="90"/>"##).unwrap().sky;
+        assert_eq!((i.image.as_deref(), i.rotation), (Some("skies/dusk.png"), 90.0));
+        assert!(with(r##"<sky color="blue"/>"##).unwrap_err().contains("bad color colour"));
+        assert!(with(r##"<sky top="#000"/>"##).unwrap_err().contains("needs both"));
+    }
 
     #[test]
     fn parses_everything_with_top_down_coordinates() {

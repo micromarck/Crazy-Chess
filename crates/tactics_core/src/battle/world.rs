@@ -112,6 +112,7 @@ impl Battle {
             battle.add_hooks(HookOwner::Prop(id), &def.hooks);
         }
         battle.setup_mechanics(mission);
+        battle.sky = mission.sky.clone();
 
         for d in &mission.deploys {
             let members = battle.rules.squad(&d.squad).map(|s| s.members.clone()).unwrap_or_default();

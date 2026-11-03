@@ -81,6 +81,8 @@ pub struct Battle {
     wall_damage: std::collections::HashMap<GridPos, i32>,
     /// Bumped whenever terrain changes (renderers redraw maps on change).
     map_version: u32,
+    /// The mission's background (for renderers).
+    sky: crate::mission::SkyDef,
 }
 
 impl Battle {
@@ -110,7 +112,13 @@ impl Battle {
             zones: Vec::new(),
             wall_damage: Default::default(),
             map_version: 0,
+            sky: Default::default(),
         }
+    }
+
+    /// The mission's sky (`<sky>`; default = the game's own colour).
+    pub fn sky(&self) -> &crate::mission::SkyDef {
+        &self.sky
     }
 
     /// Changes every time terrain changes (walls broken, props destroyed).

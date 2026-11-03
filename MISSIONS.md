@@ -131,6 +131,7 @@ read `<layout>`. (Scripts use the same convention.)
 | `<zone>` | `tag`, `x`, `y`, `width`, `height`: an area for `enter` scripts. Optional `marker` (`evac`, `objective`, `danger`, or `none`), `label`, `hidden="true"` (see below) |
 | `<tile>` | `x`, `y`: a 1×1 zone (same optional attributes) |
 | `<script>` | without `on`: shared functions for all scripts. With `on`: a hook (below). |
+| `<sky>` | the background: `color="#88aacc"` (solid), `top="#2a5d9a" horizon="#e8c49a"` (vertical gradient), or `image="skies/dusk.png"` (a panorama, see below) with optional `rotation="90"` (degrees). Colours are `#rgb` or `#rrggbb`. No `<sky>`: the default dark sky. |
 
 Area attacks (grenades, `explode`) damage destructible props and **walls**;
 a destroyed prop frees its tile. Terrain cover has hit points: walls 6
@@ -146,6 +147,21 @@ path (walls stop them). Prop kinds with their own look: `barrel`, `crate`,
 (+1 grenade, or a magazine for soldiers without one). A soldier who steps on
 one takes it (`SupplyFound` event); they glow in the level and show as gold
 dots on the minimap.
+
+### Skies
+
+```xml
+<sky color="#2b3138"/>                              <!-- solid colour -->
+<sky top="#3b6aa8" horizon="#e9dcc0"/>              <!-- gradient: overhead, horizon -->
+<sky image="skies/dusk.png" rotation="200"/>        <!-- panorama image -->
+```
+
+An image sky is an **equirectangular panorama** (2:1, like a 360° photo:
+left to right goes once around, top is straight up, the middle row is the
+horizon) wrapped around the battlefield. Put it under `assets/skies/`
+(PNG or JPG); `rotation` turns it to place the sun. Colours given with an
+image show while it loads. The game ships `skies/dusk.png`. Generated
+missions get a gradient that suits their theme.
 
 ## Generated missions
 
