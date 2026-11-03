@@ -202,7 +202,11 @@ fn spawn_element(
     if is_button {
         let template = command.unwrap_or_default();
         e.insert((Button, Hovered::default()));
-        e.insert(observe(move |_: On<Activate>, data: Res<UiData>, mut out: MessageWriter<UiCommand>| {
+        e.insert(observe(move |_: On<Activate>, data: Res<UiData>, drag: Res<crate::touch::UiDrag>, mut out: MessageWriter<UiCommand>| {
+            // A finger that scrolled a panel doesn't press the button it started on.
+            if drag.dragged {
+                return;
+            }
             let cmd = render(&template, &Vec::new(), &data.values);
             if !cmd.is_empty() {
                 out.write(UiCommand(cmd));

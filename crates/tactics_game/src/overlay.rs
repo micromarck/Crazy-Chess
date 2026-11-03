@@ -47,16 +47,25 @@ fn tile_rect(gizmos: &mut Gizmos, map: &Map, pos: GridPos, scale: f32, color: Co
     gizmos.rect(iso, Vec2::splat(TILE_SIZE * scale), color);
 }
 
-fn draw_movement(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleState>, selection: Res<Selection>) {
+fn draw_movement(
+    mut gizmos: Gizmos,
+    time: Res<Time<Real>>,
+    state: Res<BattleState>,
+    selection: Res<Selection>,
+    touch: Res<crate::touch::TouchMode>,
+) {
     if selection.pending.is_some() {
         return; // targeting mode replaces the movement overlay
     }
+    // On a touchscreen, moving starts with the Move button: until then only
+    // the selected soldier is marked.
+    let show_moves = !touch.active || selection.move_mode;
     let (Some(id), Some(range)) = (selection.unit, selection.range.as_ref()) else { return };
     let battle = &state.battle;
     let Some(unit) = battle.unit(id) else { return };
 
     // Blue = move and still act; yellow = dash (uses every AP).
-    for (pos, cost) in range.iter() {
+    for (pos, cost) in range.iter().filter(|_| show_moves) {
         let color = if battle.move_cost_ap(id, cost) < unit.action_points {
             theme::MOVE_NEAR
         } else {
@@ -69,7 +78,7 @@ fn draw_movement(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleSta
     ground_circle(&mut gizmos, tile_top(battle.map(), unit.pos), 0.36 + 0.05 * pulse, theme::SELECTED.with_alpha(0.5 + 0.5 * pulse));
 
     // Path preview + cover shields at the hovered destination.
-    let Some(hover) = selection.hovered else { return };
+    let Some(hover) = selection.hovered.filter(|_| show_moves) else { return };
     if let Some(path) = range.path_to(hover) {
         // Blue while the soldier could still act afterwards, yellow for the dash.
         let mut prev = unit.pos;

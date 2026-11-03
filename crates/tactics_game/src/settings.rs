@@ -11,6 +11,7 @@
 //! | `edge_scroll` | on/off | pan when the mouse touches the window edge |
 //! | `invert_orbit` | on/off | flip right-drag tilt direction |
 //! | `action_camera` | on/off | frame shooter and target on attacks |
+//! | `ui_scale` | auto, 0.7 - 1.5 | size of the HUD and menus (auto: a little smaller on phones, see [`crate::touch`]) |
 //! | `difficulty` | easy, normal, hard | enemy AI: easy = no threat reading, flanking or focus fire; hard = braver and bolder |
 
 use bevy::prelude::*;
@@ -39,11 +40,22 @@ pub struct GameSettings {
     pub difficulty: u8,
     /// Soldiers who fall are lost for good (roster).
     pub permadeath: bool,
+    /// HUD / menu scale; 0 = automatic (see [`crate::touch`]).
+    pub ui_scale: f32,
 }
 
 impl Default for GameSettings {
     fn default() -> Self {
-        Self { anim_speed: 1.0, camera_speed: 1.0, edge_scroll: false, invert_orbit: false, action_camera: true, difficulty: 1, permadeath: false }
+        Self {
+            anim_speed: 1.0,
+            camera_speed: 1.0,
+            edge_scroll: false,
+            invert_orbit: false,
+            action_camera: true,
+            difficulty: 1,
+            permadeath: false,
+            ui_scale: 0.0,
+        }
     }
 }
 
@@ -84,6 +96,10 @@ impl GameSettings {
                 self.permadeath = !self.permadeath;
                 format!("Permadeath {}", on_off(self.permadeath))
             }
+            "ui_scale" => {
+                self.ui_scale = next_of(&[0.0, 0.7, 0.85, 1.0, 1.15, 1.3, 1.5], self.ui_scale);
+                format!("UI size: {}", self.ui_scale_name())
+            }
             "difficulty" => {
                 self.difficulty = (self.difficulty + 1) % 3;
                 format!("AI difficulty: {}", self.difficulty_name())
@@ -96,9 +112,14 @@ impl GameSettings {
 
     pub fn to_text(&self) -> String {
         format!(
-            "anim_speed = {}\ncamera_speed = {}\nedge_scroll = {}\ninvert_orbit = {}\naction_camera = {}\ndifficulty = {}\npermadeath = {}\n",
-            self.anim_speed, self.camera_speed, self.edge_scroll, self.invert_orbit, self.action_camera, self.difficulty, self.permadeath
+            "anim_speed = {}\ncamera_speed = {}\nedge_scroll = {}\ninvert_orbit = {}\naction_camera = {}\ndifficulty = {}\npermadeath = {}\nui_scale = {}\n",
+            self.anim_speed, self.camera_speed, self.edge_scroll, self.invert_orbit, self.action_camera, self.difficulty, self.permadeath, self.ui_scale
         )
+    }
+
+    /// "auto" or "x1.15".
+    pub fn ui_scale_name(&self) -> String {
+        if self.ui_scale <= 0.0 { "auto".into() } else { format!("x{}", self.ui_scale) }
     }
 
     pub fn difficulty_name(&self) -> &'static str {
@@ -143,6 +164,7 @@ impl GameSettings {
                 "invert_orbit" => s.invert_orbit = b.unwrap_or(s.invert_orbit),
                 "action_camera" => s.action_camera = b.unwrap_or(s.action_camera),
                 "permadeath" => s.permadeath = b.unwrap_or(s.permadeath),
+                "ui_scale" => s.ui_scale = v.parse::<f32>().ok().filter(|x| *x == 0.0 || (0.5..=2.0).contains(x)).unwrap_or(s.ui_scale),
                 "difficulty" => s.difficulty = v.parse::<u8>().ok().filter(|d| *d <= 2).unwrap_or(s.difficulty),
                 _ => {}
             }

@@ -173,6 +173,7 @@ fn rebuild_layout(
 /// | `apply_loadout` | restart the mission with the new loadouts |
 /// | `setting:<name>` | change a setting (see [`crate::settings`]) |
 /// | `roster:<command>` | Barracks: edit saved soldiers (see [`crate::roster`]) |
+/// | `move` | touchscreen: enter / leave move mode (then tap a tile, then confirm) |
 /// | `log:<text>` | print a message (handy while designing layouts) |
 #[allow(clippy::too_many_arguments)]
 pub fn run_ui_commands(
@@ -205,6 +206,9 @@ pub fn run_ui_commands(
             }
             "cancel" => {
                 player.write(PlayerCommand::CancelTargeting);
+            }
+            "move" => {
+                player.write(PlayerCommand::MoveMode);
             }
             "restart" => {
                 player.write(PlayerCommand::Restart);

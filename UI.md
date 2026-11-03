@@ -60,7 +60,8 @@ Any `<button>` (or element with `data-command`) is clickable/tappable:
 | command | effect |
 |---|---|
 | `end_turn`, `next_unit`, `prev_unit`, `cancel`, `restart` | same as the End Turn button / Tab / Shift+Tab / Esc / F5 |
-| `confirm` | fire the aimed ability (Space) |
+| `confirm` | fire the aimed ability (Space), or make the picked touch move |
+| `move` | touchscreen: enter / leave move mode (then tap a tile, then `confirm`) |
 | `roster:<command>` | Barracks: `select:<id>`, `squad`, `class`, `look:<field>`, `random_look`, `rename`, `recruit`, `dismiss` |
 | `gear:<what>:<member>[:<slot>]`, `apply_loadout` | edit squad loadouts (see the Loadout panel) |
 | `ability:<id>` | use the selected unit's ability (or start targeting it) |
@@ -90,6 +91,9 @@ Values (strings; booleans are `true`/`false`):
 | `busy` | animations or a cinematic are playing |
 | `unit.selected`, `unit.name`, `unit.class`, `unit.hp`, `unit.max_hp`, `unit.hp_percent`, `unit.ap`, `unit.max_ap`, `unit.weapon`, `unit.ammo`, `unit.clip`, `unit.aim`, `unit.mobility`, `unit.defense`, `unit.status`, `unit.gear`, `unit.morale`, `unit.morale_state` (`steady`/`shaken`/`panicked`/`fearless`) | selected unit |
 | `targeting`, `targeting.name`, `targeting.aimed` | an ability is waiting for a target / a target is aimed (show a Fire button) |
+| `ui.touch` | the player is on a touchscreen (show touch-only controls) |
+| `move.state`, `move.available`, `move.active`, `move.picked`, `move.info` | touch move: Move button state (`ready` / `active` / `disabled`), move mode on, a destination picked (show Confirm), the prompt or "Move here (1 AP)" |
+| `settings.ui_scale` | `auto` or `x1.15` (`setting:ui_scale` cycles it) |
 | `hover.info` | odds breakdown / move cost under the pointer (multi-line) |
 | `log.text`, `log.last` | combat log |
 | `editor.open`, `cinematics` | toggles |
@@ -146,6 +150,11 @@ names.
 
 Elements with no background (and all text) let clicks pass through to the
 battlefield; elements with a background or buttons capture them.
+
+Any element with `overflow: scroll` scrolls with the mouse wheel and by
+dragging it with a finger (with a fling); a drag that scrolls doesn't press
+the button it started on. Give long panels a `max-height` (e.g. `70vh`) so
+they fit small screens, and `z-index` to draw menus over the HUD.
 
 ## Not supported (yet)
 

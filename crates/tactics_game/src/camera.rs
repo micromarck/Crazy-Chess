@@ -7,11 +7,11 @@
 //!
 //! | Action | Desktop | Touch |
 //! |---|---|---|
-//! | Pan    | left- or middle-drag the ground (it stays under the cursor), WASD / arrows | one-finger drag |
-//! | Rotate / tilt | right-drag (horizontal / vertical), Q / E (45° steps) | two-finger twist |
-//! | Zoom   | mouse wheel (towards the cursor), Z / X | pinch |
+//! | Pan    | left- or middle-drag the ground (it stays under the cursor), WASD / arrows | one-finger drag (the ground stays under the finger; flick to glide) |
+//! | Rotate / tilt | right-drag (horizontal / vertical), Q / E (45° steps) | two-finger twist / two fingers dragged up or down |
+//! | Zoom   | mouse wheel (towards the cursor), Z / X | pinch (towards the fingers) |
 //! | Reset view | Home (default tilt and zoom) | |
-//! | Move a soldier | drag from the selected soldier to a tile and release | tap |
+//! | Move a soldier | drag from the selected soldier to a tile and release | Move button, tap a tile, confirm |
 //! | Cancel aiming | right-click (without dragging) | |
 //!
 //! ## Smoothness
@@ -365,6 +365,12 @@ pub struct TouchGesture {
     pub dragged: bool,
     /// The gesture started on a UI panel (it scrolls the UI, not the camera).
     pub over_ui: bool,
+    /// Ground point held under the finger while panning.
+    grab: Option<Vec3>,
+    /// Glide after a flick (world units per second).
+    velocity: Vec3,
+    /// Fingers down last frame (re-grab when going from two to one).
+    fingers: usize,
 }
 
 /// Pixels a pointer must travel before a press counts as a drag.
@@ -461,49 +467,101 @@ fn keyboard_mouse_controls(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn touch_controls(
+    time: Res<Time<Real>>,
     touches: Res<Touches>,
     hover_map: Res<HoverMap>,
     ui_nodes: Query<(), With<Node>>,
+    settings: Res<crate::settings::GameSettings>,
     mut gesture: ResMut<TouchGesture>,
     director: Res<CameraDirector>,
+    camera: Single<(&Camera, &GlobalTransform), With<CameraRig>>,
     mut rig: Single<&mut CameraRig>,
 ) {
     if director.is_active() {
+        gesture.velocity = Vec3::ZERO;
         return;
     }
-    if touches.any_just_pressed() && touches.iter().count() == 1 {
+    let dt = time.delta_secs();
+    let (cam, cam_tr) = *camera;
+    let plane = rig.focus.y;
+    let active: Vec<_> = touches.iter().collect();
+    if touches.any_just_pressed() && active.len() == 1 {
         gesture.dragged = false;
         gesture.over_ui = pointer_over_ui(&hover_map, &ui_nodes);
+        gesture.velocity = Vec3::ZERO;
+        gesture.grab = ground_point(cam, cam_tr, active[0].position(), plane);
     }
     if gesture.over_ui {
+        gesture.fingers = active.len();
         return;
     }
-    let active: Vec<_> = touches.iter().collect();
     match active.as_slice() {
         [one] => {
+            // Coming back from two fingers: hold the ground where this finger is now.
+            if gesture.fingers != 1 {
+                gesture.grab = ground_point(cam, cam_tr, one.position(), plane);
+            }
             if one.distance().length() > DRAG_THRESHOLD {
                 gesture.dragged = true;
             }
-            if gesture.dragged {
-                let k = rig.target_distance * 0.003;
-                let d = one.delta();
-                rig.pan(Vec2::new(-d.x, d.y) * k);
+            if gesture.dragged
+                && let (Some(grab), Some(now)) = (gesture.grab, ground_point(cam, cam_tr, one.position(), plane))
+            {
+                // The grabbed ground point stays under the finger.
+                let before = rig.target_focus;
+                rig.focus += Vec3::new(grab.x - now.x, 0.0, grab.z - now.z);
+                rig.target_focus = rig.focus;
+                rig.focus_velocity = Vec3::ZERO;
+                rig.clamp_focus();
+                let moved = rig.target_focus - before;
+                if dt > 0.0 {
+                    gesture.velocity = gesture.velocity.lerp(moved / dt, 0.5);
+                }
             }
         }
         [a, b, ..] => {
             gesture.dragged = true;
-            // Pinch: ratio of finger distances this frame vs last frame.
+            gesture.velocity = Vec3::ZERO;
             let now = a.position() - b.position();
             let before = a.previous_position() - b.previous_position();
-            if before.length() > 1.0 && now.length() > 1.0 {
+            let mid = (a.position() + b.position()) / 2.0;
+            let (da, db) = (a.delta(), b.delta());
+            // Both fingers sliding the same way vertically (and not apart):
+            // tilt the camera.
+            let parallel = da.y * db.y > 0.0 && da.y.abs() > da.x.abs() && db.y.abs() > db.x.abs();
+            if parallel && (now.length() - before.length()).abs() < 4.0 {
+                let tilt = if settings.invert_orbit { -1.0 } else { 1.0 };
+                let dy = (da.y + db.y) / 2.0;
+                rig.target_pitch = (rig.target_pitch + tilt * dy * 0.005).clamp(0.3, 1.45);
+            } else if before.length() > 1.0 && now.length() > 1.0 {
+                // Pinch: zoom towards the point between the fingers.
+                let old = rig.target_distance;
                 rig.zoom(before.length() / now.length());
-                // Twist: change of angle between the fingers.
+                let shrink = 1.0 - rig.target_distance / old;
+                if let Some(p) = ground_point(cam, cam_tr, mid, plane) {
+                    let toward = Vec3::new(p.x - rig.target_focus.x, 0.0, p.z - rig.target_focus.z);
+                    rig.target_focus += toward * shrink;
+                    rig.clamp_focus();
+                }
+                // Twist: rotate with the fingers.
                 rig.target_yaw -= before.angle_to(now);
             }
         }
-        [] => {}
+        [] => {
+            // Glide after a flick, slowing down.
+            if gesture.velocity.length_squared() > 0.01 {
+                let v = gesture.velocity;
+                rig.target_focus += v * dt;
+                rig.clamp_focus();
+                gesture.velocity *= (-5.0 * dt).exp();
+            } else {
+                gesture.velocity = Vec3::ZERO;
+            }
+        }
     }
+    gesture.fingers = active.len();
 }
 
 /// Eases the rig towards its targets and writes the camera transform.

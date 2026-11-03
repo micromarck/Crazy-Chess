@@ -54,6 +54,7 @@ pub mod settings;
 pub mod state;
 pub mod theme;
 pub mod tooltip;
+pub mod touch;
 pub mod units;
 
 use bevy::prelude::*;
@@ -100,7 +101,7 @@ impl Plugin for TacticsPlugin {
             editor::EditorPlugin,
         ))
         .add_plugins((characters::CharactersPlugin, lab::LabPlugin, tooltip::TooltipPlugin, cutaway::CutawayPlugin, minimap::MinimapPlugin, settings::SettingsPlugin, looks::LooksPlugin, roster::RosterPlugin))
-            .add_plugins(fog::FogPlugin);
+            .add_plugins((fog::FogPlugin, touch::TouchPlugin));
     }
 }
 

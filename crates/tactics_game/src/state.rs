@@ -196,6 +196,12 @@ pub struct Selection {
     /// Target picked for `pending`, waiting for confirmation (second click,
     /// Space, or pressing the ability again).
     pub aim: Option<Target>,
+    /// Touchscreen move mode: the **Move** button was pressed, so tapping a
+    /// reachable tile picks a destination (see `input.rs`).
+    pub move_mode: bool,
+    /// The destination picked in move mode, waiting for confirmation (tap it
+    /// again or press Confirm).
+    pub move_target: Option<GridPos>,
     /// Cached movement range of `unit`.
     pub range: Option<ReachableSet>,
     range_key: Option<(UnitId, u64)>,
@@ -216,6 +222,8 @@ impl Selection {
         if unit != self.unit {
             self.pending = None;
             self.aim = None;
+            self.move_mode = false;
+            self.move_target = None;
         }
         self.unit = unit;
     }
@@ -231,8 +239,10 @@ pub enum PlayerCommand {
     Select(UnitId),
     /// Centre the camera on the selected unit.
     FocusSelected,
-    /// Fire the aimed ability.
+    /// Fire the aimed ability, or make the confirmed move (touch).
     Confirm,
+    /// Touchscreen: enter / leave move mode for the selected soldier.
+    MoveMode,
     /// Enter: confirm if aiming, otherwise end the turn.
     ConfirmOrEndTurn,
     /// Use (self-targeted) or start targeting (others) an ability of the
