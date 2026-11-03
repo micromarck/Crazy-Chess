@@ -247,7 +247,7 @@ NativeActivity, so it can be packaged without a Java/Gradle project:
 # Requires the Android SDK + NDK, with ANDROID_HOME and ANDROID_NDK_ROOT set.
 rustup target add aarch64-linux-android
 cargo install --locked cargo-apk
-cargo apk run -p tactics_game --release      # builds, installs & launches on a connected device
+cargo apk run -p tactics_game --release --lib   # builds, installs & launches on a connected device
 ```
 
 No NDK at hand? The **Android APK** GitHub Actions workflow
