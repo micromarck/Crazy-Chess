@@ -170,7 +170,7 @@ TBSium/
   aim-then-confirm attacks; turn and alarm banners; enemy turns skip hidden and
   idle units instantly so big maps stay brisk; move look-ahead (who you could
   shoot or flank from a tile, overwatch on the way); damage preview on HP
-  pips; glowing, labelled evac pads and objectives; a minimap.
+  pips; glowing, labelled evac pads and objectives; a minimap (with a vague enemy heatmap once only a few hidden hostiles are left).
 * Hand-made demo map + procedural skirmishes ("New Battle").
 
 ## Controls
