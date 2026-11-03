@@ -38,7 +38,8 @@ pub struct PlaybackPlugin;
 
 impl Plugin for PlaybackPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Playback>().add_systems(Update, run_playback.in_set(FrameSet::Playback));
+        app.init_resource::<Playback>()
+            .add_systems(Update, (run_playback, run_background_deaths).in_set(FrameSet::Playback));
     }
 }
 
@@ -77,6 +78,29 @@ pub enum Anim {
     Death { entity: Entity, t: f32, duration: f32, topple: bool },
     /// Do nothing for a while (wind-ups, banners).
     Wait { remaining: f32 },
+}
+
+/// A death playing alongside everything else (weak horde enemies): same
+/// look as [`Anim::Death`], but playback doesn't wait for it.
+#[derive(Component, Debug)]
+pub struct BackgroundDeath {
+    t: f32,
+    duration: f32,
+    topple: bool,
+}
+
+fn run_background_deaths(time: Res<Time>, mut commands: Commands, mut q: Query<(Entity, &mut BackgroundDeath, &mut Transform)>) {
+    for (entity, mut d, mut tr) in &mut q {
+        d.t += time.delta_secs();
+        let k = (d.t / d.duration).min(1.0);
+        if d.topple {
+            tr.rotation = Quat::from_rotation_z(k * std::f32::consts::FRAC_PI_2);
+            tr.translation.y = -k * 0.4;
+        }
+        if d.t >= d.duration {
+            commands.entity(entity).despawn();
+        }
+    }
 }
 
 /// One bullet of an [`Anim::Volley`].
@@ -533,22 +557,30 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
 
             // Stop turning so the death animation owns the rotation.
             p.commands.entity(entity).insert(crate::units::FaceTarget(None));
+            p.anim.write(AnimCommand::Died { unit: *unit });
+            let model = battle.unit(*unit).map(|u| u.model.clone()).unwrap_or_default();
+            let clip_len = p.library.animation_length(&model, "death", &p.clips);
+            let (duration, topple) = match clip_len {
+                Some(len) => (len + 0.4, false),
+                None => (DEATH_TIME, true),
+            };
+
+            // Weak horde enemies (zombies) die in the background: no kill
+            // camera and no waiting, so everyone a burst or a grenade drops
+            // falls together and the action keeps going.
+            if battle.unit(*unit).is_some_and(|u| u.ai.horde) {
+                p.commands.entity(entity).insert(BackgroundDeath { t: 0.0, duration, topple });
+                return vec![];
+            }
 
             // Kill camera: actor = killer, target = victim.
             let settings = battle.rules().presentation.clone();
             let killer = playback.last_attacker.and_then(pos_of).unwrap_or(victim);
             play_camera(battle.rules(), &mut p.director, settings.kill_camera.as_ref(), settings.kill_camera_chance, killer, victim);
 
-            // The model's death clip if it has one, else the procedural topple.
-            p.anim.write(AnimCommand::Died { unit: *unit });
-            let model = battle.unit(*unit).map(|u| u.model.clone()).unwrap_or_default();
             // The model's death animation (glTF clip or skeleton) if it has
-            // one, else the procedural topple.
-            let clip_len = p.library.animation_length(&model, "death", &p.clips);
-            vec![match clip_len {
-                Some(len) => Anim::Death { entity, t: 0.0, duration: len + 0.4, topple: false },
-                None => Anim::Death { entity, t: 0.0, duration: DEATH_TIME, topple: true },
-            }]
+            // one, else the procedural topple; playback waits for it.
+            vec![Anim::Death { entity, t: 0.0, duration, topple }]
         }
 
         GameEvent::TurnStarted { team, round } => {
