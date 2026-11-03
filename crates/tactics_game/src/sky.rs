@@ -78,7 +78,7 @@ fn apply_sky(
         let turn = Quat::from_rotation_y(sky.rotation.to_radians());
         let transform = Transform::from_rotation(turn).with_scale(Vec3::new(-DOME_RADIUS, DOME_RADIUS, DOME_RADIUS));
         let material = StandardMaterial { base_color_texture: Some(assets.load(path.clone())), ..base };
-        dome(Sphere::new(1.0).mesh().uv(64, 32), material, transform, &mut commands, &mut meshes, &mut materials);
+        dome(dome_mesh(64, 32), material, transform, &mut commands, &mut meshes, &mut materials);
     } else if let (Some(top), Some(horizon)) = (sky.top, sky.horizon) {
         let mesh = gradient_dome(srgb(top), srgb(horizon));
         let material = StandardMaterial { base_color: Color::WHITE, ..base };
@@ -86,10 +86,17 @@ fn apply_sky(
     }
 }
 
+/// A unit UV sphere with its poles on Y (up), so an equirectangular image's
+/// top row is straight up and its middle row the horizon. (Bevy's UV
+/// sphere has its poles on Z.)
+fn dome_mesh(sectors: u32, stacks: u32) -> Mesh {
+    Sphere::new(1.0).mesh().uv(sectors, stacks).rotated_by(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2))
+}
+
 /// A unit sphere whose vertex colours fade from `horizon` (at and below the
 /// horizon) to `top` (straight up).
 fn gradient_dome(top: Color, horizon: Color) -> Mesh {
-    let mut mesh = Sphere::new(1.0).mesh().uv(48, 24);
+    let mut mesh = dome_mesh(48, 24);
     mesh.asset_usage = RenderAssetUsages::default();
     let (top, horizon) = (top.to_linear(), horizon.to_linear());
     let colors: Vec<[f32; 4]> = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
@@ -119,6 +126,26 @@ fn follow_camera(camera: Query<&GlobalTransform, With<CameraRig>>, mut domes: Qu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The image's top row (v = 0) is straight up, its middle row (v = 0.5)
+    /// the horizon: the panorama stands upright.
+    #[test]
+    fn dome_image_is_upright() {
+        let mesh = dome_mesh(16, 8);
+        let (Some(VertexAttributeValues::Float32x3(pos)), Some(VertexAttributeValues::Float32x2(uv))) =
+            (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.attribute(Mesh::ATTRIBUTE_UV_0))
+        else {
+            panic!("missing attributes")
+        };
+        for (p, t) in pos.iter().zip(uv) {
+            if t[1] == 0.0 {
+                assert!(p[1] > 0.99, "top row is overhead: {p:?}");
+            }
+            if (t[1] - 0.5).abs() < 1e-4 {
+                assert!(p[1].abs() < 1e-4, "middle row is the horizon: {p:?}");
+            }
+        }
+    }
 
     #[test]
     fn gradient_runs_from_horizon_to_top() {
