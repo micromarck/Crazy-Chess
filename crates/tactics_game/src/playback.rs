@@ -69,7 +69,9 @@ pub enum Anim {
     Shot { shooter: Vec3, target: Vec3, target_unit: UnitId, outcome: ShotOutcome, style: ProjectileStyle, t: f32 },
     /// A ballistic volley: each traced bullet flies from `muzzle` to its end,
     /// rounds `interval` apart (pellets of one round together).
-    Volley { muzzle: Vec3, bullets: Vec<VolleyBullet>, style: ProjectileStyle, interval: f32, per_round: usize, t: f32 },
+    /// Rounds (or grenade fragments) leaving `muzzle` after `aim` seconds,
+    /// `per_round` at a time, `interval` apart.
+    Volley { muzzle: Vec3, bullets: Vec<VolleyBullet>, style: ProjectileStyle, aim: f32, interval: f32, per_round: usize, t: f32 },
     /// A lobbed projectile (grenade) from `from` to `to`.
     Projectile { from: Vec3, to: Vec3, t: f32 },
     /// Expanding blast ring (drawn by the overlay).
@@ -120,8 +122,8 @@ pub const BULLET_TIME_PER_TILE: f32 = 0.025;
 
 impl VolleyBullet {
     /// When bullet `i` leaves the muzzle and when it lands.
-    pub fn timing(&self, i: usize, per_round: usize, interval: f32, muzzle: Vec3) -> (f32, f32) {
-        let fire = AIM_TIME + (i / per_round.max(1)) as f32 * interval;
+    pub fn timing(&self, i: usize, per_round: usize, interval: f32, muzzle: Vec3, aim: f32) -> (f32, f32) {
+        let fire = aim + (i / per_round.max(1)) as f32 * interval;
         (fire, fire + (self.end.distance(muzzle) * BULLET_TIME_PER_TILE).max(0.05))
     }
 }
@@ -305,11 +307,11 @@ fn run_playback(
             }
             *t >= land + 0.2
         }
-        Anim::Volley { muzzle, bullets, interval, per_round, t, .. } => {
+        Anim::Volley { muzzle, bullets, interval, per_round, aim, t, .. } => {
             *t += dt;
             let mut last = 0.0f32;
             for (i, b) in bullets.iter_mut().enumerate() {
-                let (_, land) = b.timing(i, *per_round, *interval, *muzzle);
+                let (_, land) = b.timing(i, *per_round, *interval, *muzzle, *aim);
                 last = last.max(land);
                 if !b.landed && *t >= land {
                     b.landed = true;
@@ -500,7 +502,7 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
                     landed: false,
                 })
                 .collect();
-            vec![Anim::Volley { muzzle, bullets, style, interval, per_round, t: 0.0 }]
+            vec![Anim::Volley { muzzle, bullets, style, aim: AIM_TIME, interval, per_round, t: 0.0 }]
         }
 
         GameEvent::AttackResolved { attacker, ability, target, hit_chance, outcome, reaction, origin } => {
@@ -658,6 +660,45 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
         GameEvent::TerrainChanged { pos } => {
             p.board.write(crate::board::BoardDirty(Some(*pos)));
             vec![]
+        }
+        GameEvent::WallDamaged { pos, hp } => {
+            let at = tile_top(battle.map(), *pos) + Vec3::Y * 1.2;
+            FloatingText::spawn(&mut p.commands, at, format!("wall {hp}"), theme::UI_DIM);
+            vec![]
+        }
+        GameEvent::WallDestroyed { pos } => {
+            let at = tile_top(battle.map(), *pos) + Vec3::Y * 1.0;
+            FloatingText::spawn(&mut p.commands, at, "BREACHED".into(), theme::EXPLOSION);
+            p.board.write(crate::board::BoardDirty(Some(*pos)));
+            vec![]
+        }
+        GameEvent::Shrapnel { center, fragments, .. } => {
+            let hits = fragments.iter().filter(|f| f.hit.is_some()).count();
+            if hits > 0 {
+                p.log.push(format!("  shrapnel: {hits} hit{}", if hits == 1 { "" } else { "s" }));
+            }
+            let bullets = fragments
+                .iter()
+                .map(|b| VolleyBullet {
+                    end: Vec3::new(b.end[0], b.end[2], -b.end[1]),
+                    hit: b.hit,
+                    damage: b.damage,
+                    critical: false,
+                    blocked: false,
+                    landed: false,
+                })
+                .collect::<Vec<_>>();
+            let n = bullets.len().max(1);
+            // All fragments at once, no aiming.
+            vec![Anim::Volley {
+                muzzle: Vec3::new(center[0], center[2], -center[1]),
+                bullets,
+                style: ProjectileStyle::Tracer,
+                aim: 0.0,
+                interval: 0.0,
+                per_round: n,
+                t: 0.0,
+            }]
         }
         GameEvent::SupplyFound { unit, prop, text } => {
             p.log.push(format!("  {} picks up supplies: {text}", name(*unit)));

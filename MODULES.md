@@ -295,9 +295,10 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `flank_crit_bonus` | `40` | Extra crit vs. flanked (uncovered) targets. |
 | `damage` | `Weapon` | Or `Fixed(min: 2, max: 4)`. |
 | `damage_bonus` | `0` | Flat damage added on hit. |
-| `area_radius` | `0.0` | > 0 = hits every unit within that many tiles (friendly fire!). Cover is checked from the blast centre. |
+| `area_radius` | `0.0` | > 0 = hits every unit within that many tiles (friendly fire!), and damages destructible props and **walls** there too. Cover is checked from the blast centre. |
 | `rounds` | weapon `burst` | Rounds fired per use (e.g. `Some(12)` for suppression). |
 | `melee` | `false` | A strike in reach (claws, blades): rolled, not traced as a bullet. |
+| `shrapnel` | `0` | Area attacks: fragments thrown out of the blast in every direction, traced like bullets up to `area_radius + 5` tiles; 1 damage each to the first unit hit (friend or foe, outside the blast); walls stop them. The Frag Grenade throws 16. |
 
 Hit chance:
 

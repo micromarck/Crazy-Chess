@@ -115,6 +115,16 @@ impl MissionStats {
                         }
                     }
                 }
+                // Grenade fragments: damage to whoever they hit.
+                GameEvent::Shrapnel { fragments, .. } => {
+                    for f in fragments {
+                        match f.hit.and_then(team) {
+                            Some(Team::Enemy) => self.damage_dealt += f.damage,
+                            Some(Team::Player) => self.damage_taken += f.damage,
+                            None => {}
+                        }
+                    }
+                }
                 GameEvent::UnitDamaged { unit, amount } => match team(*unit) {
                     Some(Team::Player) => self.damage_taken += amount,
                     Some(Team::Enemy) => self.damage_dealt += amount,

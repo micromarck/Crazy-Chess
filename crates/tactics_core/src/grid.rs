@@ -190,10 +190,12 @@ pub enum Surface {
     Sandbags,
     Fence,
     Water,
+    /// Broken wall: a heap of debris (half cover).
+    Rubble,
 }
 
 impl Surface {
-    pub const ALL: [Surface; 17] = [
+    pub const ALL: [Surface; 18] = [
         Surface::Default,
         Surface::Concrete,
         Surface::Asphalt,
@@ -211,6 +213,7 @@ impl Surface {
         Surface::Sandbags,
         Surface::Fence,
         Surface::Water,
+        Surface::Rubble,
     ];
 
     /// The character used in mission `<surfaces>` grids.
@@ -233,6 +236,7 @@ impl Surface {
             Surface::Sandbags => 'S',
             Surface::Fence => 'F',
             Surface::Water => 'W',
+            Surface::Rubble => 'u',
         }
     }
 

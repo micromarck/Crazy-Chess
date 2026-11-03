@@ -77,6 +77,10 @@ pub struct Battle {
     objective: String,
     /// Zones drawn on the board.
     zones: Vec<stealth::MarkedZone>,
+    /// Damage taken so far by walls and other terrain cover (blasts).
+    wall_damage: std::collections::HashMap<GridPos, i32>,
+    /// Bumped whenever terrain changes (renderers redraw maps on change).
+    map_version: u32,
 }
 
 impl Battle {
@@ -104,7 +108,14 @@ impl Battle {
             ai_goals: [None, None],
             objective: String::new(),
             zones: Vec::new(),
+            wall_damage: Default::default(),
+            map_version: 0,
         }
+    }
+
+    /// Changes every time terrain changes (walls broken, props destroyed).
+    pub fn map_version(&self) -> u32 {
+        self.map_version
     }
 
     /// Places a new unit of class `class` with its default gear on the map
@@ -607,6 +618,10 @@ impl Battle {
                     };
                     let damage = self.rng.range_inclusive(lo, hi) + profile.damage_bonus;
                     self.damage_props_in_area(point, profile.area_radius, damage, events);
+                    self.damage_walls_in_area(point, profile.area_radius, damage, events);
+                    if profile.shrapnel > 0 && !self.is_over() {
+                        self.shrapnel(Some(unit), point, profile.area_radius, profile.shrapnel, events);
+                    }
                 }
             }
             AbilityEffect::Overwatch(_) => self.unit_mut(unit).status.overwatch = Some(def.id.clone()),

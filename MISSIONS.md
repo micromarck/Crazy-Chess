@@ -132,8 +132,13 @@ read `<layout>`. (Scripts use the same convention.)
 | `<tile>` | `x`, `y`: a 1×1 zone (same optional attributes) |
 | `<script>` | without `on`: shared functions for all scripts. With `on`: a hook (below). |
 
-Area attacks (grenades, `explode`) damage destructible props; a destroyed
-prop frees its tile. Prop kinds with their own look: `barrel`, `crate`,
+Area attacks (grenades, `explode`) damage destructible props and **walls**;
+a destroyed prop frees its tile. Terrain cover has hit points: walls 6
+(containers and metal 10), low cover 3, low rocks 8; tall rocks can't be
+broken. A broken high wall collapses into **rubble** (half cover, 3 HP, map
+character `u`); broken low cover becomes open ground. Grenades also throw
+**shrapnel**: fragments that fly past the blast and hit whoever is in their
+path (walls stop them). Prop kinds with their own look: `barrel`, `crate`,
 `console`/`terminal`, `beacon`/`uplink` (anything else is a crate or wall).
 
 **Supply caches** are props with `cover="none"` and kind `supply_ammo`

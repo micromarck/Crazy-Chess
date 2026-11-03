@@ -163,6 +163,9 @@ pub struct AttackProfile {
     /// A strike in arm's reach (claws, bites, blades): rolled, not traced,
     /// so nothing in between can be hit.
     pub melee: bool,
+    /// Area attacks: fragments thrown out of the blast in every direction,
+    /// each traced like a bullet (1 damage; friend or foe; walls stop them).
+    pub shrapnel: u32,
 }
 
 impl AttackProfile {
@@ -190,6 +193,7 @@ impl Default for AttackProfile {
             area_radius: 0.0,
             rounds: None,
             melee: false,
+            shrapnel: 0,
         }
     }
 }

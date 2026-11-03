@@ -359,8 +359,8 @@ fn draw_tracer(mut gizmos: Gizmos, playback: Res<Playback>) {
             gizmos.linestrip((0..=12).map(|i| at(k * i as f32 / 12.0)), theme::EXPLOSION.with_alpha(0.6));
             gizmos.sphere(Isometry3d::from_translation(at(k)), 0.09, theme::TRACER);
         }
-        Some(Anim::Volley { muzzle, bullets, style, interval, per_round, t }) => {
-            if *t < AIM_TIME {
+        Some(Anim::Volley { muzzle, bullets, style, aim, interval, per_round, t }) => {
+            if *t < *aim {
                 // Aim line to where the first round is going.
                 if let Some(b) = bullets.first() {
                     gizmos.line(*muzzle, b.end, theme::TARGET.with_alpha(0.25));
@@ -368,7 +368,7 @@ fn draw_tracer(mut gizmos: Gizmos, playback: Res<Playback>) {
                 return;
             }
             for (i, b) in bullets.iter().enumerate() {
-                let (fire, land) = b.timing(i, *per_round, *interval, *muzzle);
+                let (fire, land) = b.timing(i, *per_round, *interval, *muzzle, *aim);
                 if *t < fire {
                     continue;
                 }
