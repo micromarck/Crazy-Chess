@@ -108,6 +108,7 @@ TBSium/
         │   ├── input.rs       hover/pick tiles, clicks, shortcuts
         │   ├── enemy_turn.rs  runs the AI with pacing
         │   ├── playback.rs    animates the GameEvent queue
+        │   ├── fog.rs         fog of war shading (in sight / explored / unseen)
         │   ├── overlay.rs     gizmo overlays (range, path, cover, HP)
         │   ├── html_ui/       HTML+CSS engine: parser, cascade, styles, bindings, commands
         │   ├── hud.rs         log store, floating combat text, code-built UI helpers
