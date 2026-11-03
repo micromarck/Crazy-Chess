@@ -113,6 +113,8 @@ pub enum GameEvent {
     TerrainChanged { pos: GridPos },
     /// A message from a mission script.
     Message { text: String },
+    /// A short callout over a unit from a script (`say`), e.g. "SYSTEM FAULT".
+    Callout { unit: UnitId, text: String },
     /// A mission script failed (syntax/runtime error, limit reached).
     ScriptError { message: String },
     /// The alarm was raised: the squad lost concealment and every enemy is

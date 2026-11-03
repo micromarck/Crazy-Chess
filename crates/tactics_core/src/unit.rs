@@ -195,6 +195,25 @@ impl Body {
     }
 }
 
+/// A script every unit of a class carries, wherever it is spawned (missions,
+/// generated maps, `spawn_unit`). Same language and API as mission unit
+/// scripts; `unit` is the unit itself. Events: `turn_start` (its team's
+/// turn), `damaged` (`amount` = damage), `death`, `spotted`, `enter`.
+///
+/// ```ron
+/// hooks: [(on: "turn_start", code: "add_stat(unit, \"defense\", -5);")]
+/// ```
+#[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
+pub struct ClassHook {
+    /// Event name (`turn_start`, `damaged`, `death`, `spotted`, `enter`).
+    pub on: String,
+    /// Run at most once per unit.
+    pub once: bool,
+    /// Rhai source code.
+    pub code: String,
+}
+
 /// A unit archetype: stats, weapon and the abilities it knows.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
@@ -220,6 +239,8 @@ pub struct UnitClass {
     /// Hitbox and hover height (see [`Body`]); e.g. drones
     /// `body: (hover: 0.8, height: 0.6)`.
     pub body: Body,
+    /// Scripts every unit of this class runs (see [`ClassHook`]).
+    pub hooks: Vec<ClassHook>,
     /// Default loadout preset (see [`LoadoutDef`](crate::content::LoadoutDef)).
     pub loadout: Option<String>,
 }

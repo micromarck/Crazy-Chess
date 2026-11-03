@@ -244,6 +244,9 @@ pub struct Ruleset {
     skeletons: BTreeMap<String, SkeletonDef>,
     /// Keyed by (skeleton, slot).
     animations: BTreeMap<(String, String), AnimationDef>,
+    /// Shared script functions from modules (`script_library`), available
+    /// to every script (class scripts and missions alike).
+    pub script_library: String,
     modules: Vec<ModuleInfo>,
     // FUTURE module types slot in here as additional maps, e.g.
     //   status_effects: BTreeMap<String, StatusEffectDef>,
@@ -529,6 +532,11 @@ impl Ruleset {
             for a in &class.abilities {
                 if !self.abilities.contains_key(a) {
                     problems.push(format!("class '{}' lists unknown ability '{a}'", class.id));
+                }
+            }
+            for h in &class.hooks {
+                if crate::mission::HookEvent::parse(&h.on).is_none() {
+                    problems.push(format!("class '{}' has a script on unknown event '{}'", class.id, h.on));
                 }
             }
         }

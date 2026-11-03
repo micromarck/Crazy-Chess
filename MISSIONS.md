@@ -252,6 +252,10 @@ wraps script bodies in CDATA for you.
 Options on `<script>`: `team="player|enemy"` (only for that team's units /
 turns) and `once="true"` (run at most once).
 
+Modules can also give a whole **class** scripts (`hooks` on a class, see
+MODULES.md): every unit of the class carries them, in any mission. They
+work exactly like `<unit>` scripts above.
+
 ### Variables
 
 `round`, `team` (whose turn: `"player"`/`"enemy"`), `unit` (id or -1),
@@ -282,6 +286,12 @@ turns) and `once="true"` (run at most once).
 | `open_door(tag)`, `close_door(tag)`, `lock_door(tag, locked)` | doors |
 | `ai_goal(team, x, y)`, `clear_ai_goal(team)` | where a team's AI heads when nobody is in sight |
 | `show_zone(tag, on)`, `zone_label(tag, text)` | show/hide or relabel a marked zone |
+| `unit_stat(unit, stat)`, `set_stat(unit, stat, n)`, `add_stat(unit, stat, n)` | read / change `"aim"`, `"defense"`, `"mobility"` (tiles per AP), `"sight"`, `"max_hp"` (permanent for the battle) |
+| `unit_class(unit)`, `unit_max_hp(unit)` | |
+| `units("player"/"enemy"/"any")` | array of living unit ids (loop with `for id in units("enemy") { ... }`) |
+| `distance(a, b)` | tiles between two units |
+| `chance(percent)`, `rand(lo, hi)` | random numbers from the battle's seed (deterministic: same battle, same rolls) |
+| `say(unit, text)` | short callout floating over the unit (shown only if the squad can see it) |
 
 Example: a door that opens when a switch is used.
 
@@ -310,7 +320,8 @@ Example: a door that opens when a switch is used.
 * Any error (syntax, unknown function, bad team name...) is shown in the
   combat log as `Script error: ...`; the battle continues.
 * Script **functions** (`fn name(...)`) can't see trigger variables like
-  `round` or `unit`: pass them as arguments.
+  `round` or `unit`: pass them as arguments. Modules can provide functions
+  for every script with `script_library` (see MODULES.md).
 * `Battle::dry_run_scripts()` runs every hook once without applying
   anything; the mission tests use it to catch typos in hooks a test game
   never reaches.
