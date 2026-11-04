@@ -4,15 +4,49 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
     <title>Tactics</title>
-    <!-- Trunk: build the `tactics_game` binary for wasm32 (wasm-opt shrinks the release output). -->
-    <link data-trunk rel="rust" data-bin="tactics_game" data-wasm-opt="z" />
+    <!-- Trunk: build the `tactics_game` binary for wasm32 (wasm-opt shrinks the release output);
+         loader.js shows download progress on the loading screen (#tbs-loading). -->
+    <link data-trunk rel="rust" data-bin="tactics_game" data-wasm-opt="z" data-initializer="loader.js" />
     <!-- Ship the assets folder alongside the wasm. -->
     <link data-trunk rel="copy-dir" href="assets" />
     <style>
       html, body { margin: 0; height: 100%; background: #0f1217; overflow: hidden; }
       /* Bevy attaches its <canvas> to <body>; fit_canvas_to_parent makes it fill it. */
       canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
+
+      /* Loading screen: shown until the game removes it (first mission on screen). */
+      #tbs-loading {
+        position: fixed; inset: 0; z-index: 10;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+        background: radial-gradient(ellipse at center, #1b2230 0%, #0f1217 70%);
+        color: #d8dee9; font: 15px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace;
+        transition: opacity 0.5s ease;
+      }
+      #tbs-loading.done { opacity: 0; pointer-events: none; }
+      #tbs-loading h1 { margin: 0; font-size: 34px; letter-spacing: 0.35em; color: #f0c674; font-weight: 700; }
+      #tbs-loading .sub { margin-top: -10px; color: #7f8a9a; letter-spacing: 0.2em; font-size: 12px; }
+      #tbs-loading .track { width: min(420px, 80vw); height: 8px; border-radius: 4px; background: #262d3a; overflow: hidden; }
+      #tbs-loading-bar { height: 100%; width: 0; background: linear-gradient(90deg, #4f8fd8, #7fb2ff); transition: width 0.2s; }
+      #tbs-loading-bar.indeterminate { width: 30%; animation: tbs-slide 1.2s ease-in-out infinite; }
+      @keyframes tbs-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+      #tbs-loading-status { min-height: 1.4em; color: #aab4c3; text-align: center; padding: 0 16px; }
+      #tbs-loading .tip { position: absolute; bottom: 28px; color: #5f6a7a; font-size: 12px; text-align: center; padding: 0 16px; }
+      #tbs-loading.failed #tbs-loading-status { color: #e06c75; }
+      #tbs-loading.failed .track { display: none; }
     </style>
   </head>
-  <body></body>
+  <body>
+    <div id="tbs-loading">
+      <h1>TBSIUM</h1>
+      <div class="sub">TURN-BASED TACTICS</div>
+      <div class="track"><div id="tbs-loading-bar"></div></div>
+      <div id="tbs-loading-status">Loading...</div>
+      <div class="tip">Tip: units at the end of a wall can peek around the corner to see and shoot.</div>
+      <noscript>This game needs JavaScript and WebAssembly.</noscript>
+    </div>
+    <script>
+      // Right-drag rotates the camera: no browser context menu over the game.
+      document.addEventListener("contextmenu", (e) => e.preventDefault());
+    </script>
+  </body>
 </html>

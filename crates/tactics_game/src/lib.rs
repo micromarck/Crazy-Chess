@@ -40,6 +40,7 @@ pub mod html_ui;
 pub mod hud;
 pub mod input;
 pub mod lab;
+pub mod loading;
 pub mod loadout;
 pub mod looks;
 pub mod minimap;
@@ -102,7 +103,7 @@ impl Plugin for TacticsPlugin {
             editor::EditorPlugin,
         ))
         .add_plugins((characters::CharactersPlugin, lab::LabPlugin, tooltip::TooltipPlugin, cutaway::CutawayPlugin, minimap::MinimapPlugin, settings::SettingsPlugin, looks::LooksPlugin, roster::RosterPlugin))
-            .add_plugins((fog::FogPlugin, touch::TouchPlugin, sky::SkyPlugin));
+            .add_plugins((fog::FogPlugin, touch::TouchPlugin, sky::SkyPlugin, loading::LoadingScreenPlugin));
     }
 }
 
