@@ -309,9 +309,13 @@ pub fn spawn_model(
             };
             let dress = |b: &tactics_core::content::BoneDef| looks.dress_bone(b, outfit);
             let (root, bones) = crate::rig::spawn_rig(commands, rig, &materials, &dress, unit_root, pivot);
-            // Height from the look (uniform, so animated limbs don't shear).
-            if let Some(a) = outfit.appearance {
-                commands.entity(root).insert(Transform::from_scale(Vec3::splat(a.height_scale())));
+            // Height from the look (uniform, so animated limbs don't shear),
+            // times the model's `scale` when the rig is the model itself
+            // (big machines); a glTF scene has its own scale.
+            let size = if model.scene.is_none() && model.def.scale > 0.0 { model.def.scale } else { 1.0 };
+            let size = size * outfit.appearance.map_or(1.0, |a| a.height_scale());
+            if size != 1.0 {
+                commands.entity(root).insert(Transform::from_scale(Vec3::splat(size)));
             }
             // Two-handed weapons: the left hand follows the foregrip (IK).
             if rig.skeleton.socket("weapon").is_some()

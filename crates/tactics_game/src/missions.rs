@@ -327,7 +327,7 @@ mod tests {
         use tactics_core::grid::{Climb, Terrain};
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(MISSION_DIR);
         let (rules, _) = crate::content::build_ruleset();
-        for f in ["merc_ambush.mission.xml", "scrapyard.mission.xml", "salvage_run.mission.xml"] {
+        for f in ["merc_ambush.mission.xml", "scrapyard.mission.xml", "salvage_run.mission.xml", "facility.mission.xml"] {
             let def = parse_mission(&std::fs::read_to_string(dir.join(f)).unwrap()).unwrap();
             let (b, warnings) = Battle::from_mission(rules.clone(), &def, 1);
             assert!(warnings.is_empty(), "{f}: {warnings:?}");
@@ -353,8 +353,65 @@ mod tests {
                 }
             }
             let classes: std::collections::BTreeSet<&str> = b.living(Team::Enemy).map(|u| u.class.as_str()).collect();
-            assert!(classes.iter().any(|c| c.starts_with("merc_") || c.starts_with("corrupted_")), "{f}: {classes:?}");
+            assert!(classes.iter().any(|c| ["merc_", "corrupted_", "fac_"].iter().any(|p| c.starts_with(p))), "{f}: {classes:?}");
         }
+    }
+
+    /// Ghost in the Machine: VESPER starts in its Prime chassis; destroying
+    /// its host freezes every machine for 2 enemy turns, then it comes back
+    /// in another machine; it seals doors near the squad, one at a time.
+    #[test]
+    fn facility_boss_jumps_freezes_and_locks_doors() {
+        use tactics_core::script::ScriptCommand;
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(MISSION_DIR);
+        let text = std::fs::read_to_string(dir.join("facility.mission.xml")).unwrap();
+        let def = parse_mission(&text).unwrap();
+        let (rules, _) = crate::content::build_ruleset();
+        let (mut b, warnings) = Battle::from_mission(rules.clone(), &def, 3);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let events = b.begin();
+        assert!(!events.iter().any(|e| matches!(e, GameEvent::ScriptError { .. })), "{events:?}");
+        let host = |b: &Battle| UnitId((b.flags().get("vesper_host").copied().unwrap_or(0) - 1) as u32);
+        let prime = host(&b);
+        assert_eq!(b.unit(prime).unwrap().class, "vesper_prime");
+        assert_eq!(b.unit_mark(prime), Some("VESPER"));
+        let enemies = b.living(Team::Enemy).count();
+
+        // Destroy the host: everything else freezes for 2 turns.
+        let mut ev = Vec::new();
+        b.apply_script_command(ScriptCommand::Kill { unit: prime.0 }, &mut ev);
+        assert!(!ev.iter().any(|e| matches!(e, GameEvent::ScriptError { .. })), "{ev:?}");
+        assert_eq!(b.living(Team::Enemy).count(), enemies - 1);
+        assert!(b.living(Team::Enemy).all(|u| u.status.stunned == 2), "all machines frozen");
+        assert_eq!(b.flags().get("vesper_reboot"), Some(&3));
+        for turn in 1..=3 {
+            let mut ev = b.apply(Action::EndTurn).unwrap();
+            assert_eq!(b.active_team(), Team::Enemy);
+            if turn < 3 {
+                assert!(b.living(Team::Enemy).all(|u| u.action_points == 0), "frozen on enemy turn {turn}");
+                assert!(b.living(Team::Enemy).all(|u| b.unit_mark(u.id).is_none()), "no host while rebooting");
+            } else {
+                let h = host(&b);
+                assert!(b.unit(h).is_some_and(|u| u.is_alive() && u.name.starts_with("VESPER // ")), "{:?}", b.unit(h));
+                assert_eq!(b.unit_mark(h), Some("VESPER"));
+                assert!(b.living(Team::Enemy).filter(|u| u.id != h).any(|u| u.action_points > 0), "machines run again");
+            }
+            ev.extend(b.apply(Action::EndTurn).unwrap());
+            assert!(!ev.iter().any(|e| matches!(e, GameEvent::ScriptError { .. })), "{ev:?}");
+        }
+
+        // Doors: deploy the squad in the lobby; on the enemy turn VESPER
+        // seals one door near them (only one at a time).
+        let moved = text.replace(r#"squad="player" x="12" y="43""#, r#"squad="player" x="12" y="28""#);
+        assert_ne!(moved, text);
+        let (mut b, _) = Battle::from_mission(rules, &parse_mission(&moved).unwrap(), 3);
+        b.begin();
+        b.apply(Action::EndTurn).unwrap();
+        let mut tags: Vec<&str> = b.props().iter().filter(|p| p.door.is_some_and(|d| d.locked)).map(|p| p.tag.as_str()).collect();
+        tags.dedup();
+        assert_eq!(tags.len(), 1, "one door sealed: {tags:?}");
+        assert!(tags[0].starts_with("lobby_"), "{tags:?}");
+        assert!(b.props().iter().filter(|p| p.tag == tags[0]).all(|p| p.door.is_some_and(|d| !d.open)));
     }
 
     /// Every mission in `assets/missions/index.xml` parses and builds a

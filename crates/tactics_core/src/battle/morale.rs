@@ -94,7 +94,7 @@ impl Battle {
             let flanked = watchers.iter().any(|&e| cover_against(&self.map, u.pos, e).flanked);
             let friends = self
                 .living(team)
-                .filter(|a| a.pos.distance(u.pos) <= m.near_radius && visibility::has_line_of_sight(&self.map, a.pos, u.pos))
+                .filter(|a| a.pos.distance(u.pos) <= m.near_radius && visibility::has_sight(&self.map, a.pos, u.pos))
                 .count() as i32; // includes itself
             let extra = (watchers.len() as i32 - friends).max(0);
             let mut delta = -m.recovery + extra * m.outnumbered;

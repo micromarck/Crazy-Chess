@@ -63,6 +63,8 @@ pub struct Battle {
     /// Enemies the player has already seen (for `spotted` hooks).
     spotted: std::collections::BTreeSet<UnitId>,
     unit_tags: std::collections::BTreeMap<UnitId, String>,
+    /// Labels scripts keep over units (`mark_unit`), e.g. a boss.
+    unit_marks: std::collections::BTreeMap<UnitId, String>,
     /// Killing every enemy wins (otherwise only scripts can win).
     eliminate_to_win: bool,
     mission_id: Option<String>,
@@ -102,6 +104,7 @@ impl Battle {
             flags: Default::default(),
             spotted: Default::default(),
             unit_tags: Default::default(),
+            unit_marks: Default::default(),
             eliminate_to_win: true,
             mission_id: None,
             script_depth: 0,
@@ -346,7 +349,7 @@ impl Battle {
         };
         let range = u.weapon.max_range.min(u.stats.sight);
         self.living(u.team.opponent())
-            .filter(|t| u.pos.distance(t.pos) <= range && visibility::has_line_of_sight(&self.map, u.pos, t.pos))
+            .filter(|t| u.pos.distance(t.pos) <= range && visibility::has_sight(&self.map, u.pos, t.pos))
             .map(|t| t.id)
             .collect()
     }
@@ -444,7 +447,7 @@ impl Battle {
         if user.pos.distance(point) > self.ability_range(user, def) {
             return Err(ActionError::OutOfRange);
         }
-        if def.requires_los && !visibility::has_line_of_sight(&self.map, user.pos, point) {
+        if def.requires_los && !visibility::has_sight(&self.map, user.pos, point) {
             return Err(ActionError::NoLineOfSight);
         }
         Ok(point)
@@ -675,10 +678,17 @@ impl Battle {
                 .map(|u| (u.id, point))
                 .collect()
         } else if let Target::Unit(id) = target {
-            vec![(id, user.pos)]
+            vec![(id, self.shot_line(user.pos, point).0)]
         } else {
-            self.unit_at(point).map(|u| vec![(u.id, user.pos)]).unwrap_or_default()
+            self.unit_at(point).map(|u| vec![(u.id, self.shot_line(user.pos, point).0)]).unwrap_or_default()
         }
+    }
+
+    /// Where a shot from `from` at `to` is fired from and aimed at: the
+    /// tiles themselves, or lean tiles when one of them peeks around a
+    /// corner ([`visibility::sight_line`]).
+    pub fn shot_line(&self, from: GridPos, to: GridPos) -> (GridPos, GridPos) {
+        visibility::sight_line(&self.map, from, to).unwrap_or((from, to))
     }
 
     /// Moves step by step so overwatchers can interrupt mid-path.
@@ -766,7 +776,7 @@ impl Battle {
             let ability = w.status.overwatch.clone()?;
             let def = self.rules.ability(&ability)?;
             let in_range = w.pos.distance(m.pos) <= self.ability_range(w, def).min(w.stats.sight);
-            (w.weapon.ammo > 0 && in_range && visibility::has_line_of_sight(&self.map, w.pos, m.pos))
+            (w.weapon.ammo > 0 && in_range && visibility::has_sight(&self.map, w.pos, m.pos))
                 .then_some((w.id, ability))
         })
     }
@@ -780,7 +790,7 @@ impl Battle {
             let u = self.unit_mut(shooter);
             u.weapon.ammo = (u.weapon.ammo - fired as i32).max(0);
         } else {
-            let pos = self.units[shooter.0 as usize].pos;
+            let pos = self.shot_line(self.units[shooter.0 as usize].pos, self.units[target.0 as usize].pos).0;
             self.unit_mut(shooter).weapon.ammo -= 1;
             self.resolve_attack(shooter, target, ability, pos, profile, true, events);
         }
@@ -871,6 +881,11 @@ impl Battle {
             // turn out without taking actions (hundreds of sleeping zombies
             // cost nothing). Woken during the turn, they act from the next.
             u.action_points = if u.ai.dormant && u.ai.patrol.is_empty() { 0 } else { ap };
+            if u.status.stunned > 0 {
+                // Knocked out: sits this turn out.
+                u.status.stunned -= 1;
+                u.action_points = 0;
+            }
             u.status.overwatch = None;
             u.status.defense_bonus = 0;
             u.cooldowns.retain(|_, turns| {

@@ -268,6 +268,9 @@ pub struct UnitStatus {
     /// Pinned by suppressive fire: (suppressor, its ability). Aim penalty;
     /// moving draws fire. Lasts until the suppressor's next turn.
     pub suppressed_by: Option<(UnitId, AbilityId)>,
+    /// Knocked out (script `stun`): the unit's team's next this-many turns
+    /// give it no action points.
+    pub stunned: u32,
 }
 
 /// Behaviour state of an AI-controlled unit (mission mechanics).

@@ -323,7 +323,10 @@ fn suppress_action(battle: &Battle, unit: &Unit, config: &AiConfig) -> Option<Ac
         .into_iter()
         .filter_map(|e| battle.unit(e))
         .filter(|e| e.status.suppressed_by.is_none())
-        .filter(|e| battle.units_in_line_of_fire(unit.pos, e.pos, unit.team).is_empty())
+        .filter(|e| {
+            let (from, to) = battle.shot_line(unit.pos, e.pos);
+            battle.units_in_line_of_fire(from, to, unit.team).iter().all(|u| *u == unit.id)
+        })
         .collect();
     targets.sort_by(|a, b| threat_of(battle, b).total_cmp(&threat_of(battle, a)).then(a.id.cmp(&b.id)));
     targets
@@ -378,9 +381,10 @@ fn attack_value_from(battle: &Battle, unit: &Unit, pos: GridPos, config: &AiConf
     let map = battle.map();
     battle
         .living(unit.team.opponent())
-        .filter(|e| pos.distance(e.pos) <= range && visibility::has_line_of_sight(map, pos, e.pos))
+        .filter(|e| pos.distance(e.pos) <= range && visibility::has_sight(map, pos, e.pos))
         .map(|e| {
-            let p = preview_attack(&battle.rules().combat, map, pos, &ghost, e, profile);
+            let from = battle.shot_line(pos, e.pos).0;
+            let p = preview_attack(&battle.rules().combat, map, from, &ghost, e, profile);
             target_value(battle, e, &p, config)
         })
         .fold(0.0, f32::max)
@@ -405,7 +409,7 @@ fn overwatch_risk(battle: &Battle, unit: &Unit, range: &ReachableSet, pos: GridP
             let def = battle.ability(w.status.overwatch.as_ref()?)?;
             let profile = def.effect.attack_profile()?;
             let reach = battle.ability_range(w, def).min(w.stats.sight);
-            let step = path.iter().find(|s| w.pos.distance(**s) <= reach && visibility::has_line_of_sight(map, w.pos, **s))?;
+            let step = path.iter().find(|s| w.pos.distance(**s) <= reach && visibility::has_sight(map, w.pos, **s))?;
             ghost.pos = *step;
             Some(preview_attack(&battle.rules().combat, map, w.pos, w, &ghost, profile).expected_damage())
         })
@@ -466,7 +470,8 @@ fn best_attack(battle: &Battle, unit: &Unit, config: &AiConfig) -> Option<(Actio
                 && let Target::Unit(t) = target
                 && let Some(tp) = battle.unit(t).map(|t| t.pos)
             {
-                let allies = battle.units_in_line_of_fire(unit.pos, tp, unit.team).len() as f32;
+                let (from, to) = battle.shot_line(unit.pos, tp);
+                let allies = battle.units_in_line_of_fire(from, to, unit.team).iter().filter(|u| **u != unit.id).count() as f32;
                 score -= allies * config.friendly_fire_weight * 3.0;
             }
             let mut main_hit = 0;
@@ -516,7 +521,7 @@ fn eval_tile(battle: &Battle, unit: &Unit, pos: GridPos, config: &AiConfig) -> T
     let mut flanks = false;
     for enemy in battle.living(unit.team.opponent()) {
         let d = pos.distance(enemy.pos);
-        let sees = d <= enemy.stats.sight.max(enemy.weapon.max_range) && visibility::has_line_of_sight(map, enemy.pos, pos);
+        let sees = d <= enemy.stats.sight.max(enemy.weapon.max_range) && visibility::has_sight(map, enemy.pos, pos);
         if !sees {
             continue;
         }

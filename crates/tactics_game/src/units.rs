@@ -39,6 +39,7 @@ impl Plugin for UnitsPlugin {
                     respawn_on_reset,
                     spawn_new_units,
                     snap_when_idle,
+                    lean_out,
                     turn_units,
                     fog_of_war,
                 )
@@ -189,6 +190,41 @@ fn spawn_new_units(
 
 /// When nothing is animating, make every visual match the authoritative state.
 /// This self-heals any drift (e.g. an animation skipped by a restart).
+/// Corner peeking: a unit firing from a lean tile (around a wall corner)
+/// leans its body part of the way there while the shot plays out. Removed
+/// once playback is idle (the unit then snaps back to its tile).
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Leaning {
+    /// World point of the lean tile.
+    pub toward: Vec3,
+    pub elapsed: f32,
+}
+
+/// How far towards the lean tile the body moves (tiles).
+const LEAN_FRACTION: f32 = 0.55;
+
+fn lean_out(
+    mut commands: Commands,
+    time: Res<Time>,
+    playback: Res<Playback>,
+    state: Res<BattleState>,
+    mut q: Query<(Entity, &UnitVisual, &mut Leaning, &mut Transform)>,
+) {
+    for (e, visual, mut lean, mut transform) in &mut q {
+        let Some(unit) = state.battle.unit(visual.id).filter(|u| u.is_alive() && playback.is_busy()) else {
+            commands.entity(e).remove::<Leaning>();
+            continue;
+        };
+        lean.elapsed += time.delta_secs();
+        let home = tile_top(state.battle.map(), unit.pos);
+        let k = (lean.elapsed / 0.18).min(1.0);
+        let k = k * k * (3.0 - 2.0 * k);
+        let mut to = lean.toward;
+        to.y = home.y;
+        transform.translation = home.lerp(to, LEAN_FRACTION * k);
+    }
+}
+
 fn snap_when_idle(playback: Res<Playback>, state: Res<BattleState>, mut q: Query<(&UnitVisual, &mut Transform)>) {
     if playback.is_busy() {
         return;

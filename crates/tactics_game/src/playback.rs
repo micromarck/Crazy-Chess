@@ -484,6 +484,11 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             }
             if let Some(e) = entity_of(*attacker) {
                 p.commands.entity(e).insert(crate::units::FaceTarget(Some(t)));
+                // Firing from a lean tile: peek around the corner.
+                let from = GridPos::new(origin[0].round() as i32, origin[1].round() as i32);
+                if battle.unit(*attacker).is_some_and(|u| u.pos != from) {
+                    p.commands.entity(e).insert(crate::units::Leaning { toward: tile_top(battle.map(), from), elapsed: 0.0 });
+                }
             }
             frame(&p.director, &mut p.rig, p.settings.action_camera, s, t);
             let style = battle.rules().presentation_of(ability).map_or(ProjectileStyle::Tracer, |pr| pr.projectile);

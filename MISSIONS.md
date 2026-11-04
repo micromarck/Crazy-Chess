@@ -301,6 +301,7 @@ work exactly like `<unit>` scripts above.
 | `raise_alarm()`, `alarm()`, `concealed()` | concealment / alarm |
 | `wake(unit)`, `wake_all()`, `unit_dormant(unit)` | dormant pods |
 | `open_door(tag)`, `close_door(tag)`, `lock_door(tag, locked)` | doors |
+| `doors()`, `door_open(tag)`, `door_locked(tag)`, `door_x(tag)`, `door_y(tag)`, `door_distance(unit, tag)` | list the mission's door tags and read their state / position (first panel) / distance from a unit to the nearest panel |
 | `ai_goal(team, x, y)`, `clear_ai_goal(team)` | where a team's AI heads when nobody is in sight |
 | `show_zone(tag, on)`, `zone_label(tag, text)` | show/hide or relabel a marked zone |
 | `unit_stat(unit, stat)`, `set_stat(unit, stat, n)`, `add_stat(unit, stat, n)` | read / change `"aim"`, `"defense"`, `"mobility"` (tiles per AP), `"sight"`, `"max_hp"` (permanent for the battle) |
@@ -309,6 +310,9 @@ work exactly like `<unit>` scripts above.
 | `distance(a, b)` | tiles between two units |
 | `chance(percent)`, `rand(lo, hi)` | random numbers from the battle's seed (deterministic: same battle, same rolls) |
 | `say(unit, text)` | short callout floating over the unit (shown only if the squad can see it) |
+| `stun(unit, turns)`, `unit_stunned(unit)` | knock a unit out: no action points (and no overwatch) for its team's next `turns` turns; `unit_stunned` = turns left |
+| `set_name(unit, name)` | rename a unit |
+| `mark_unit(unit, text)`, `unmark_unit(unit)` | a label that stays over the unit (e.g. a boss), shown when the squad can see it |
 
 Example: a door that opens when a switch is used.
 

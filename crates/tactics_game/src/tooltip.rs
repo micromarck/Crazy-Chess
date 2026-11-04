@@ -26,7 +26,7 @@ impl Plugin for TooltipPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<Banner>()
             .add_systems(Startup, spawn_widgets)
-            .add_systems(Update, (update_tooltip, show_banner, zone_labels).in_set(FrameSet::Present));
+            .add_systems(Update, (update_tooltip, show_banner, zone_labels, unit_mark_labels).in_set(FrameSet::Present));
     }
 }
 
@@ -432,6 +432,65 @@ fn zone_labels(
             Text::new(z.label.clone()),
             TextFont { font_size: FontSize::Px(16.0), ..default() },
             TextColor(theme::ZONE_EVAC),
+            TextShadow::default(),
+            Node { position_type: PositionType::Absolute, ..default() },
+            Visibility::Hidden,
+            GlobalZIndex(5),
+            Pickable::IGNORE,
+        ));
+    }
+}
+
+/// A label a script keeps over a unit (`mark_unit`, e.g. a boss).
+#[derive(Component)]
+struct UnitMarkText(UnitId);
+
+fn unit_mark_labels(
+    mut commands: Commands,
+    state: Res<BattleState>,
+    camera: Single<(&Camera, &GlobalTransform), With<crate::camera::CameraRig>>,
+    units: Query<(&crate::units::UnitVisual, &GlobalTransform, &Visibility), Without<UnitMarkText>>,
+    mut labels: Query<(Entity, &UnitMarkText, &mut Text, &mut Node, &mut Visibility)>,
+) {
+    let (cam, cam_tr) = *camera;
+    let battle = &state.battle;
+    let mut seen = Vec::new();
+    for (e, mark, mut text, mut node, mut vis) in &mut labels {
+        let label = battle.unit_mark(mark.0).filter(|_| battle.unit(mark.0).is_some_and(|u| u.is_alive()));
+        let Some(label) = label else {
+            commands.entity(e).despawn();
+            continue;
+        };
+        seen.push(mark.0);
+        let Some((_, tr, unit_vis)) = units.iter().find(|(v, ..)| v.id == mark.0) else {
+            *vis = Visibility::Hidden;
+            continue;
+        };
+        // Over the unit's head (big machines are taller).
+        let at = tr.translation() + Vec3::Y * 2.6;
+        let in_front = (at - cam_tr.translation()).dot(*cam_tr.forward()) > 0.0;
+        match cam.world_to_viewport(cam_tr, at).ok().filter(|_| in_front && *unit_vis != Visibility::Hidden) {
+            Some(p) => {
+                node.left = px(p.x - 4.5 * label.chars().count() as f32);
+                node.top = px(p.y - 10.0);
+                *vis = Visibility::Inherited;
+            }
+            None => *vis = Visibility::Hidden,
+        }
+        if text.0 != label {
+            text.0 = label.to_string();
+        }
+    }
+    for (visual, ..) in &units {
+        if seen.contains(&visual.id) || battle.unit_mark(visual.id).is_none() {
+            continue;
+        }
+        seen.push(visual.id);
+        commands.spawn((
+            UnitMarkText(visual.id),
+            Text::new(String::new()),
+            TextFont { font_size: FontSize::Px(15.0), ..default() },
+            TextColor(theme::TARGET),
             TextShadow::default(),
             Node { position_type: PositionType::Absolute, ..default() },
             Visibility::Hidden,
