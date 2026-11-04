@@ -74,7 +74,10 @@ impl Battle {
     ) -> u32 {
         let shooter = self.units[attacker.0 as usize].clone();
         let aimed = self.units[target.0 as usize].clone();
-        let preview = preview_attack(&self.rules.combat, &self.map, shooter.pos, &shooter, &aimed, profile);
+        // Corner peeking: the shooter may lean out (and the target may be
+        // leaning out) past a wall corner.
+        let (from, at) = self.shot_line(shooter.pos, aimed.pos);
+        let preview = preview_attack(&self.rules.combat, &self.map, from, &shooter, &aimed, profile);
         let per_round = match profile.damage {
             crate::content::DamageSource::Weapon => shooter.weapon.pellets.max(1),
             crate::content::DamageSource::Fixed { .. } => 1,
@@ -82,8 +85,8 @@ impl Battle {
         let rounds = (preview.rounds / per_round).max(1);
         let rounds = rounds_cap.map_or(rounds, |cap| rounds.min(cap)).max(1);
 
-        let origin = [shooter.pos.x as f32, shooter.pos.y as f32, self.map.elevation(shooter.pos) as f32 * LEVEL_M + shooter.body.muzzle()];
-        let aim = [aimed.pos.x as f32, aimed.pos.y as f32, self.map.elevation(aimed.pos) as f32 * LEVEL_M + aimed.body.aim_point()];
+        let origin = [from.x as f32, from.y as f32, self.map.elevation(from) as f32 * LEVEL_M + shooter.body.muzzle()];
+        let aim = [at.x as f32, at.y as f32, self.map.elevation(at) as f32 * LEVEL_M + aimed.body.aim_point()];
         let max_range = shooter.weapon.max_range.max(preview.distance) * 1.4 + 2.0;
         let block = preview.cover_block as f32 / 100.0;
 
@@ -95,7 +98,7 @@ impl Battle {
         let mut whizzed: Vec<UnitId> = Vec::new();
         for _ in 0..rounds * per_round {
             let (dx, dy) = (gaussian(&mut self.rng) * preview.sigma, gaussian(&mut self.rng) * preview.sigma);
-            let (stop, end, passed) = self.trace(attacker, target, origin, aim, dx, dy, max_range, block, &hp);
+            let (stop, end, passed) = self.trace(attacker, target, (from, at), origin, aim, dx, dy, max_range, block, &hp);
             for u in passed {
                 if !whizzed.contains(&u) {
                     whizzed.push(u);
@@ -166,6 +169,9 @@ impl Battle {
         &mut self,
         shooter: UnitId,
         target: UnitId,
+        // Where the shooter and the target are for this shot (lean tiles
+        // when peeking around a corner).
+        (shooter_pos, target_pos): (GridPos, GridPos),
         origin: [f32; 3],
         aim: [f32; 3],
         yaw_err: f32,
@@ -181,8 +187,6 @@ impl Battle {
         let pitch = vz.atan2(horiz) + pitch_err;
         let dir = [yaw.cos() * pitch.cos(), yaw.sin() * pitch.cos(), pitch.sin()];
 
-        let shooter_pos = self.units[shooter.0 as usize].pos;
-        let target_pos = self.units[target.0 as usize].pos;
         // Candidate units near the line (cheap pre-filter).
         // (id, x, y, hitbox bottom, hitbox top)
         let candidates: Vec<(UnitId, f32, f32, f32, f32)> = self
@@ -190,9 +194,11 @@ impl Battle {
             .iter()
             .filter(|u| u.id != shooter && hp[u.id.0 as usize] > 0)
             .map(|u| {
-                let ground = self.map.elevation(u.pos) as f32 * LEVEL_M;
+                // A target leaning out of cover is hit where it leans.
+                let pos = if u.id == target { target_pos } else { u.pos };
+                let ground = self.map.elevation(pos) as f32 * LEVEL_M;
                 let (lo, hi) = u.body.span();
-                (u.id, u.pos.x as f32, u.pos.y as f32, ground + lo, ground + hi)
+                (u.id, pos.x as f32, pos.y as f32, ground + lo, ground + hi)
             })
             .filter(|(_, x, y, _, _)| {
                 // Distance from the infinite line in the horizontal plane.
@@ -377,6 +383,45 @@ mod tests {
 
     fn shoot(b: &mut Battle, a: UnitId, t: UnitId) -> Vec<GameEvent> {
         b.apply(Action::ability(a, "shoot", Target::Unit(t))).unwrap()
+    }
+
+    /// Corner peeking: at the end of a wall a soldier leans out and shoots
+    /// past the corner (the rounds leave from the lean tile); in the middle
+    /// of the wall there's no shot.
+    #[test]
+    fn soldiers_peek_around_corners() {
+        let art = "
+            ...E..
+            ......
+            HHHH..
+            ...A..
+        ";
+        let mut hits = 0;
+        for seed in 0..20 {
+            let mut b = Battle::new(Map::from_ascii(art), rules(), seed);
+            let a = b.spawn("rifleman", "A", Team::Player, Map::find_markers(art, 'A')[0]).unwrap();
+            let e = b.spawn("sectoid", "E", Team::Enemy, Map::find_markers(art, 'E')[0]).unwrap();
+            assert!(!crate::visibility::has_line_of_sight(b.map(), GridPos::new(3, 0), GridPos::new(3, 3)));
+            assert_eq!(b.visible_enemies(a), vec![e], "sees it by leaning out");
+            assert_eq!(b.visible_enemies(e), vec![a], "and is seen");
+            let ev = shoot(&mut b, a, e);
+            let origin = ev.iter().find_map(|x| if let GameEvent::Volley { origin, .. } = x { Some(*origin) } else { None }).unwrap();
+            assert_eq!((origin[0], origin[1]), (4.0, 0.0), "fired from the lean tile");
+            hits += bullets(&ev).iter().filter(|x| x.hit == Some(e)).count();
+        }
+        assert!(hits > 5, "peeking shots land ({hits})");
+
+        let art = "
+            .E....
+            ......
+            HHHH..
+            .A....
+        ";
+        let mut b = Battle::new(Map::from_ascii(art), rules(), 1);
+        let a = b.spawn("rifleman", "A", Team::Player, Map::find_markers(art, 'A')[0]).unwrap();
+        let e = b.spawn("sectoid", "E", Team::Enemy, Map::find_markers(art, 'E')[0]).unwrap();
+        assert!(b.visible_enemies(a).is_empty(), "nothing to lean around mid-wall");
+        assert!(b.apply(Action::ability(a, "shoot", Target::Unit(e))).is_err());
     }
 
     #[test]

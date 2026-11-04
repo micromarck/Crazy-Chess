@@ -39,7 +39,7 @@ grenade clusters and walking into overwatch, and changes behaviour with fear
 
 Levels are **XML mission files** in one folder (`assets/missions/`): grid
 layout with cut-outs, a height map (units climb 1 level unless a ladder or
-their class allows more; 3D line of sight, high-ground bonus), units, props
+their class allows more; 3D line of sight with corner peeking, high-ground bonus), units, props
 and zones, with **scripts** attached to any of them. Modular mission
 mechanics: **dormant pods, patrols, concealment and alarms, doors, fog of
 war, AI goals and objectives**. **Generated missions**: urban streets with enterable buildings and
@@ -78,7 +78,7 @@ TBSium/
     │       ├── modules/       base game, standard humanoid skeleton, example "grenadier" module
     │       ├── grid.rs        tiles, terrain, coordinates, ASCII maps
     │       ├── pathfinding.rs Dijkstra movement range + A*
-    │       ├── visibility.rs  symmetric line of sight
+    │       ├── visibility.rs  symmetric line of sight, corner peeking
     │       ├── cover.rs       directional cover & flanking
     │       ├── unit.rs        units, weapons, classes
     │       ├── combat.rs      hit / crit / damage formulas with breakdown
