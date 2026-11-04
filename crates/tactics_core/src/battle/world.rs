@@ -192,6 +192,11 @@ impl Battle {
         &self.flags
     }
 
+    /// The label a script keeps over a unit (`mark_unit`), if any.
+    pub fn unit_mark(&self, id: UnitId) -> Option<&str> {
+        self.unit_marks.get(&id).map(String::as_str)
+    }
+
     /// Id of the mission this battle was built from, if any.
     pub fn mission_id(&self) -> Option<&str> {
         self.mission_id.as_deref()
@@ -315,9 +320,10 @@ impl Battle {
                     defense: u.stats.defense,
                     mobility: (u.stats.mobility / 2) as i32,
                     sight: u.stats.sight.round() as i32,
+                    stunned: u.status.stunned,
                 })
                 .collect(),
-            props: self.props.iter().map(|p| WorldProp { tag: p.tag.clone(), pos: p.pos, hp: p.hp, alive: p.alive }).collect(),
+            props: self.props.iter().map(|p| WorldProp { tag: p.tag.clone(), pos: p.pos, hp: p.hp, alive: p.alive, door: p.door.map(|d| (d.open, d.locked)) }).collect(),
             map: Some(self.map.clone()),
             flags: self.flags.clone(),
             zones: {
@@ -454,7 +460,30 @@ impl Battle {
             }
             ScriptCommand::OpenDoor { tag } => self.set_door_open(&tag, true, events),
             ScriptCommand::CloseDoor { tag } => self.set_door_open(&tag, false, events),
-            ScriptCommand::LockDoor { tag, locked } => self.lock_door(&tag, locked),
+            ScriptCommand::LockDoor { tag, locked } => self.lock_door(&tag, locked, events),
+            ScriptCommand::Stun { unit, turns } => {
+                if let Some(u) = self.units.get_mut(unit as usize).filter(|u| u.is_alive()) {
+                    u.status.stunned = turns;
+                    if turns > 0 {
+                        u.action_points = 0;
+                        u.status.overwatch = None;
+                        events.push(GameEvent::ActionPointsChanged { unit: UnitId(unit), remaining: 0 });
+                    }
+                }
+            }
+            ScriptCommand::SetName { unit, name } => {
+                if let Some(u) = self.units.get_mut(unit as usize) {
+                    u.name = name;
+                }
+            }
+            ScriptCommand::MarkUnit { unit, text } => match text {
+                Some(t) => {
+                    self.unit_marks.insert(UnitId(unit), t);
+                }
+                None => {
+                    self.unit_marks.remove(&UnitId(unit));
+                }
+            },
             ScriptCommand::AiGoal { team, pos } => self.ai_goals[team_index(team)] = Some(pos),
             ScriptCommand::ClearAiGoal { team } => self.ai_goals[team_index(team)] = None,
             ScriptCommand::Win => self.decide(Team::Player, events),

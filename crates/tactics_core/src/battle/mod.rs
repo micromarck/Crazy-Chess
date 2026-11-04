@@ -63,6 +63,8 @@ pub struct Battle {
     /// Enemies the player has already seen (for `spotted` hooks).
     spotted: std::collections::BTreeSet<UnitId>,
     unit_tags: std::collections::BTreeMap<UnitId, String>,
+    /// Labels scripts keep over units (`mark_unit`), e.g. a boss.
+    unit_marks: std::collections::BTreeMap<UnitId, String>,
     /// Killing every enemy wins (otherwise only scripts can win).
     eliminate_to_win: bool,
     mission_id: Option<String>,
@@ -102,6 +104,7 @@ impl Battle {
             flags: Default::default(),
             spotted: Default::default(),
             unit_tags: Default::default(),
+            unit_marks: Default::default(),
             eliminate_to_win: true,
             mission_id: None,
             script_depth: 0,
@@ -871,6 +874,11 @@ impl Battle {
             // turn out without taking actions (hundreds of sleeping zombies
             // cost nothing). Woken during the turn, they act from the next.
             u.action_points = if u.ai.dormant && u.ai.patrol.is_empty() { 0 } else { ap };
+            if u.status.stunned > 0 {
+                // Knocked out: sits this turn out.
+                u.status.stunned -= 1;
+                u.action_points = 0;
+            }
             u.status.overwatch = None;
             u.status.defense_bonus = 0;
             u.cooldowns.retain(|_, turns| {

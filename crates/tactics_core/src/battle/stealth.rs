@@ -329,10 +329,13 @@ impl Battle {
         }
     }
 
-    pub(super) fn lock_door(&mut self, tag: &str, locked: bool) {
+    pub(super) fn lock_door(&mut self, tag: &str, locked: bool, events: &mut Vec<GameEvent>) {
         for id in self.door_ids(tag) {
-            if let Some(d) = self.props[id.0 as usize].door.as_mut() {
+            let p = &mut self.props[id.0 as usize];
+            if let Some(d) = p.door.as_mut().filter(|d| d.locked != locked) {
                 d.locked = locked;
+                // Redraw (locked doors look different).
+                events.push(GameEvent::TerrainChanged { pos: p.pos });
             }
         }
     }

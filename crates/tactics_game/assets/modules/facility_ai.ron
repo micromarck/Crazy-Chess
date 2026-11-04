@@ -1,0 +1,436 @@
+// Facility AI: the machines of an abandoned research building and VESPER,
+// the rogue AI that runs them. Written entirely as a module (classes, gear,
+// looks, and the boss logic in `script_library`), using these modding API
+// functions: stun, set_name, mark_unit / unmark_unit, doors, door_distance,
+// lock_door, close_door, unit_stunned.
+//
+// Machines:
+//   * Security Bot (fac_secbot)  - small and common, SMG, in pods everywhere;
+//   * Patrol Drone (fac_drone)   - hovering, fragile, sees far;
+//   * Warden (fac_warden)        - large, armoured, heavy cannon, roams;
+//   * VESPER Prime (vesper_prime) - the AI's own chassis: the boss.
+//
+// VESPER (the boss, all in script functions any mission can call):
+//   * lives in ONE machine at a time (the "host": marked VESPER, renamed,
+//     +15 aim, +15 defence, +3 sight while it's inside);
+//   * every 3 turns it MAY jump to another awake machine: it does when its
+//     host is badly hurt, or when another machine is much closer to the squad;
+//   * every turn it seals the door nearest the squad (one door at a time;
+//     the previous one unlocks). Missions need 2+ exits per room;
+//   * when its host is destroyed, EVERY machine freezes for 2 turns, then
+//     VESPER comes back in the machine closest to the squad;
+//   * `vesper_purge()` (e.g. a core terminal) stops it jumping: the next
+//     host it loses kills it for good (the machines still freeze 2 turns).
+//
+// Mission hookup:
+//   <script on="start">vesper_init(unit_by_tag("vesper"), round);</script>
+//   <script on="turn_start" team="enemy">vesper_turn(round);</script>
+// Flags it keeps: vesper_on, vesper_host (id + 1), vesper_since, vesper_reboot,
+// vesper_door (index + 1 into doors()), vesper_purged.
+(
+    info: (
+        id: "facility_ai",
+        name: "Facility AI",
+        version: "1.0",
+        author: "Tactics",
+        description: "Security machines of an abandoned facility and VESPER, the rogue AI that jumps between them and locks doors.",
+    ),
+
+    script_library: r#"
+        // The machine VESPER is in (-1: none).
+        fn vesper_host() { flag("vesper_host") - 1 }
+
+        // A machine's name without the "VESPER // " prefix.
+        fn vesper_plain(u) {
+            let n = unit_name(u);
+            if n.starts_with("VESPER // ") { n.sub_string(10) } else { n }
+        }
+
+        // Distance from unit u to the closest soldier.
+        fn vesper_to_squad(u) {
+            let best = 1.0e9;
+            for s in units("player") {
+                let d = distance(u, s);
+                if d < best { best = d; }
+            }
+            best
+        }
+
+        fn vesper_init(u, round) {
+            set_flag("vesper_on", 1);
+            set_flag("vesper_door", 0);
+            set_flag("vesper_reboot", 0);
+            if u >= 0 { vesper_take(u, round); }
+        }
+
+        // VESPER moves into machine u.
+        fn vesper_take(u, round) {
+            set_flag("vesper_host", u + 1);
+            set_flag("vesper_since", round);
+            if !unit_name(u).starts_with("VESPER") { set_name(u, "VESPER // " + unit_name(u)); }
+            mark_unit(u, "VESPER");
+            add_stat(u, "aim", 15);
+            add_stat(u, "defense", 15);
+            add_stat(u, "sight", 3);
+            if unit_hp(u) < unit_max_hp(u) { heal(u, 3); }
+        }
+
+        // VESPER leaves machine u (it stays a normal machine).
+        fn vesper_leave(u) {
+            if !unit_alive(u) { return; }
+            add_stat(u, "aim", -15);
+            add_stat(u, "defense", -15);
+            add_stat(u, "sight", -3);
+            if unit_class(u) == "vesper_prime" { set_name(u, "Empty Prime Chassis"); }
+            else { set_name(u, vesper_plain(u)); }
+            unmark_unit(u);
+            say(u, "SIGNAL LOST");
+        }
+
+        // The awake, working machine VESPER would rather be in (-1: none):
+        // close to the squad, and healthy.
+        fn vesper_pick(except) {
+            let best = -1;
+            let best_score = 1.0e9;
+            for id in units("enemy") {
+                if id == except || unit_stunned(id) > 0 || unit_dormant(id) { continue; }
+                let score = vesper_to_squad(id) - unit_hp(id) * 0.5;
+                if score < best_score { best_score = score; best = id; }
+            }
+            best
+        }
+
+        // Seals the door nearest the squad (1.5-7 tiles away, nobody in
+        // the doorway); the previously sealed door unlocks.
+        fn vesper_doors(host) {
+            let all = doors();
+            let cur = flag("vesper_door");
+            let best = -1;
+            let best_d = 1.0e9;
+            for i in 0..all.len() {
+                let t = all[i];
+                let blocked = false;
+                for id in units("any") {
+                    if door_distance(id, t) < 0.5 { blocked = true; }
+                }
+                if blocked { continue; }
+                let d = 1.0e9;
+                for s in units("player") {
+                    let dd = door_distance(s, t);
+                    if dd < d { d = dd; }
+                }
+                if d >= 1.5 && d <= 7.0 && d < best_d { best_d = d; best = i; }
+            }
+            if best < 0 || best + 1 == cur { return; }
+            if cur > 0 { lock_door(all[cur - 1], false); }
+            close_door(all[best]);
+            lock_door(all[best], true);
+            set_flag("vesper_door", best + 1);
+            if host >= 0 { say(host, "DOOR SEALED"); }
+        }
+
+        fn vesper_release_door() {
+            let cur = flag("vesper_door");
+            if cur > 0 {
+                lock_door(doors()[cur - 1], false);
+                set_flag("vesper_door", 0);
+            }
+        }
+
+        // Call at the start of every enemy turn.
+        fn vesper_turn(round) {
+            if flag("vesper_on") == 0 { return; }
+            let r = flag("vesper_reboot");
+            if r > 0 {
+                r -= 1;
+                set_flag("vesper_reboot", r);
+                if r > 0 {
+                    message("VESPER is rebooting - every machine is frozen this turn.");
+                    return;
+                }
+                let next = vesper_pick(-1);
+                if next < 0 {
+                    // Nothing awake: settle for any machine at all.
+                    for id in units("enemy") { if next < 0 { next = id; } }
+                }
+                if next < 0 {
+                    message("VESPER comes back online and finds no machine left to run in. The facility goes quiet.");
+                    set_flag("vesper_on", 0);
+                    return;
+                }
+                vesper_take(next, round);
+                wake(next);
+                say(next, "I'M BACK");
+                message("VESPER is back online - it has taken over " + unit_name(next) + "!");
+                vesper_doors(next);
+                return;
+            }
+            let h = vesper_host();
+            if h < 0 || !unit_alive(h) { return; }
+            // Every 3 turns it may jump: when hurt, or when another machine
+            // is much closer to the squad.
+            if flag("vesper_purged") == 0 && round - flag("vesper_since") >= 3 {
+                let next = vesper_pick(h);
+                let hurt = unit_hp(h) * 2 <= unit_max_hp(h);
+                if next >= 0 && (hurt || vesper_to_squad(next) + 4.0 < vesper_to_squad(h)) {
+                    message("VESPER jumps out of " + vesper_plain(h) + " into " + unit_name(next) + "!");
+                    vesper_leave(h);
+                    vesper_take(next, round);
+                    wake(next);
+                    say(next, "UPLINK ESTABLISHED");
+                    h = next;
+                }
+            }
+            vesper_doors(h);
+        }
+
+        // Every machine runs this when it dies (class hook).
+        fn vesper_on_death(u) {
+            if flag("vesper_on") == 0 || u != vesper_host() { return; }
+            set_flag("vesper_host", 0);
+            vesper_release_door();
+            for id in units("enemy") {
+                if id != u {
+                    stun(id, 2);
+                    say(id, "OFFLINE");
+                }
+            }
+            if flag("vesper_purged") == 1 {
+                set_flag("vesper_on", 0);
+                message("VESPER's last body is destroyed and its core is purged - VESPER is gone for good! The machines freeze for 2 turns, then fight on blind.");
+            } else {
+                set_flag("vesper_reboot", 3);
+                message("VESPER's host is destroyed! Every machine freezes for 2 turns while it reboots - move!");
+            }
+        }
+
+        // Wipes VESPER's core: it can't jump any more, and losing its
+        // current body ends it.
+        fn vesper_purge() {
+            if flag("vesper_purged") == 1 { return; }
+            set_flag("vesper_purged", 1);
+            message("Core purged! VESPER is trapped in its current body - destroy it and VESPER is finished.");
+            let h = vesper_host();
+            if h >= 0 { say(h, "WHAT HAVE YOU DONE"); }
+        }
+    "#,
+
+    weapons: [
+        (
+            id: "sec_smg",
+            name: "Security SMG",
+            damage_min: 1,
+            damage_max: 2,
+            crit_chance: 5,
+            crit_bonus: 1,
+            optimal_range: 5.0,
+            max_range: 12.0,
+            burst: 3,
+            spread: 1.1,
+            clip_size: 15,
+            magazines: 3,
+            look: Smg,
+        ),
+        (
+            id: "spot_laser",
+            name: "Spot Laser",
+            damage_min: 1,
+            damage_max: 2,
+            crit_chance: 5,
+            optimal_range: 7.0,
+            max_range: 14.0,
+            burst: 2,
+            spread: 0.8,
+            clip_size: 10,
+            magazines: 2,
+            look: None,
+        ),
+        (
+            id: "warden_cannon",
+            name: "Warden Cannon",
+            damage_min: 2,
+            damage_max: 3,
+            crit_chance: 10,
+            crit_bonus: 1,
+            optimal_range: 6.0,
+            max_range: 14.0,
+            burst: 3,
+            spread: 1.3,
+            clip_size: 12,
+            magazines: 3,
+            look: Lmg,
+        ),
+        (
+            id: "vesper_lance",
+            name: "Arc Lance",
+            damage_min: 3,
+            damage_max: 5,
+            crit_chance: 20,
+            crit_bonus: 2,
+            optimal_range: 9.0,
+            max_range: 18.0,
+            burst: 2,
+            spread: 0.5,
+            clip_size: 8,
+            magazines: 4,
+            look: Plasma,
+        ),
+    ],
+
+    classes: [
+        (
+            id: "fac_secbot",
+            name: "Security Bot",
+            stats: (max_hp: 4, mobility: 12, aim: 52, defense: 5, sight: 12.0, bravery: 100),
+            weapon: "sec_smg",
+            abilities: ["shoot", "overwatch", "reload"],
+            model: "fac_secbot",
+            fearless: true,
+            body: (height: 1.05),
+            hooks: [(on: "death", code: "vesper_on_death(unit);")],
+        ),
+        (
+            id: "fac_drone",
+            name: "Patrol Drone",
+            stats: (max_hp: 3, mobility: 14, aim: 56, defense: 15, sight: 16.0, bravery: 100),
+            weapon: "spot_laser",
+            abilities: ["shoot", "reload"],
+            model: "drone",
+            fearless: true,
+            body: (hover: 1.6, height: 0.55, muzzle: Some(1.65)),
+            hooks: [(on: "death", code: "vesper_on_death(unit);")],
+        ),
+        (
+            id: "fac_warden",
+            name: "Warden",
+            stats: (max_hp: 14, mobility: 8, aim: 56, defense: 10, sight: 12.0, bravery: 100),
+            weapon: "warden_cannon",
+            abilities: ["shoot", "suppress", "overwatch", "reload"],
+            model: "fac_warden",
+            fearless: true,
+            hearing: 8.0,
+            body: (height: 1.75),
+            hooks: [
+                (on: "death", code: r#"
+                    vesper_on_death(unit);
+                    say(unit, "CRITICAL FAILURE");
+                    explode(x, y, 1.5, 2);
+                "#),
+            ],
+        ),
+        (
+            id: "vesper_prime",
+            name: "VESPER Prime",
+            stats: (max_hp: 22, mobility: 9, aim: 60, defense: 10, sight: 13.0, bravery: 100),
+            weapon: "vesper_lance",
+            abilities: ["shoot", "overwatch", "hunker", "reload"],
+            model: "vesper_prime",
+            fearless: true,
+            hearing: 10.0,
+            body: (height: 1.95),
+            hooks: [
+                (on: "spotted", once: true, code: r#"
+                    if unit + 1 == flag("vesper_host") { say(unit, "YOU SHOULDN'T BE HERE"); }
+                "#),
+                (on: "death", code: r#"
+                    vesper_on_death(unit);
+                    explode(x, y, 2.0, 3);
+                "#),
+            ],
+        ),
+    ],
+
+    squads: [
+        (
+            id: "facility",
+            members: [
+                (class: "vesper_prime", name: "VESPER Prime"),
+                (class: "fac_warden", name: "Warden W-1"),
+                (class: "fac_secbot", name: "Security Bot 1"),
+                (class: "fac_secbot", name: "Security Bot 2"),
+                (class: "fac_secbot", name: "Security Bot 3"),
+                (class: "fac_drone", name: "Patrol Drone"),
+            ],
+        ),
+    ],
+
+    // ---------------------------------------------------------------------
+    // Look: clean white office machines; the Warden is a hulking frame; the
+    // Prime chassis has a halo of sensor fins and a glowing core.
+    // ---------------------------------------------------------------------
+    skeletons: [
+        (
+            id: "fac_bot",
+            extends: "humanoid",
+            bones: [
+                (name: "head", parent: "neck", offset: (0.0, 0.03, 0.0),
+                 shape: Box(size: (0.24, 0.15, 0.2)), shape_offset: (0.0, 0.09, 0.0), color: Light),
+                (name: "chest", parent: "spine", offset: (0.0, 0.22, 0.0),
+                 shape: Box(size: (0.4, 0.22, 0.24)), shape_offset: (0.0, 0.08, 0.0), color: Light),
+                (name: "visor", parent: "head", offset: (0.0, 0.1, -0.1),
+                 shape: Box(size: (0.2, 0.04, 0.02)), color: Accent),
+                (name: "stripe", parent: "chest", offset: (0.0, 0.08, -0.125),
+                 shape: Box(size: (0.08, 0.2, 0.01)), color: Team),
+            ],
+        ),
+        (
+            id: "fac_warden",
+            extends: "fac_bot",
+            bones: [
+                (name: "chest", parent: "spine", offset: (0.0, 0.22, 0.0),
+                 shape: Box(size: (0.62, 0.34, 0.36)), shape_offset: (0.0, 0.1, 0.0), color: Dark),
+                (name: "head", parent: "neck", offset: (0.0, 0.05, -0.04),
+                 shape: Box(size: (0.2, 0.12, 0.2)), shape_offset: (0.0, 0.06, 0.0), color: Dark),
+                (name: "pod_l", parent: "chest", offset: (-0.36, 0.2, 0.0),
+                 shape: Box(size: (0.18, 0.14, 0.26)), color: Team),
+                (name: "pod_r", parent: "chest", offset: (0.36, 0.2, 0.0),
+                 shape: Box(size: (0.18, 0.14, 0.26)), color: Team),
+                (name: "forearm_l", parent: "upper_arm_l", offset: (0.0, -0.26, 0.0),
+                 shape: Box(size: (0.15, 0.26, 0.15)), shape_offset: (0.0, -0.12, 0.0), color: Dark),
+                (name: "forearm_r", parent: "upper_arm_r", offset: (0.0, -0.26, 0.0),
+                 shape: Box(size: (0.15, 0.26, 0.15)), shape_offset: (0.0, -0.12, 0.0), color: Dark),
+                (name: "vent", parent: "chest", offset: (0.0, 0.12, 0.19),
+                 shape: Box(size: (0.3, 0.12, 0.04)), color: Accent),
+            ],
+        ),
+        (
+            id: "vesper_prime",
+            extends: "fac_warden",
+            bones: [
+                (name: "head", parent: "neck", offset: (0.0, 0.05, 0.0),
+                 shape: Sphere(radius: 0.15), shape_offset: (0.0, 0.12, 0.0), color: Light),
+                (name: "visor", parent: "head", offset: (0.0, 0.13, -0.13),
+                 shape: Sphere(radius: 0.06), color: Accent),
+                (name: "core", parent: "chest", offset: (0.0, 0.1, -0.19),
+                 shape: Sphere(radius: 0.09), color: Accent),
+                (name: "fin_l", parent: "head", offset: (-0.2, 0.16, 0.0), rotation: (0.0, 0.0, 30.0),
+                 shape: Box(size: (0.03, 0.26, 0.12)), shape_offset: (0.0, 0.1, 0.0), color: Team),
+                (name: "fin_r", parent: "head", offset: (0.2, 0.16, 0.0), rotation: (0.0, 0.0, -30.0),
+                 shape: Box(size: (0.03, 0.26, 0.12)), shape_offset: (0.0, 0.1, 0.0), color: Team),
+                (name: "fin_b", parent: "head", offset: (0.0, 0.2, 0.14), rotation: (-30.0, 0.0, 0.0),
+                 shape: Box(size: (0.12, 0.26, 0.03)), shape_offset: (0.0, 0.1, 0.0), color: Team),
+            ],
+        ),
+    ],
+
+    animations: [
+        // The Prime's fins sweep slowly while it idles: it is listening.
+        (
+            skeleton: "vesper_prime",
+            slot: "idle",
+            duration: 3.0,
+            looping: true,
+            rotations: {
+                "fin_l": [(0.0, (0.0, 0.0, 0.0)), (1.5, (0.0, 0.0, 12.0)), (3.0, (0.0, 0.0, 0.0))],
+                "fin_r": [(0.0, (0.0, 0.0, 0.0)), (1.5, (0.0, 0.0, -12.0)), (3.0, (0.0, 0.0, 0.0))],
+                "head":  [(0.0, (0.0, -10.0, 0.0)), (1.5, (0.0, 10.0, 0.0)), (3.0, (0.0, -10.0, 0.0))],
+            },
+        ),
+    ],
+
+    models: [
+        (id: "fac_secbot", skeleton: "fac_bot", fallback: Soldier, scale: 0.85),
+        (id: "fac_warden", skeleton: "fac_warden", fallback: Soldier, scale: 1.4),
+        (id: "vesper_prime", skeleton: "vesper_prime", fallback: Soldier, scale: 1.55),
+    ],
+)

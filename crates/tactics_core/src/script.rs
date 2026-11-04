@@ -61,6 +61,13 @@ pub enum ScriptCommand {
     OpenDoor { tag: String },
     CloseDoor { tag: String },
     LockDoor { tag: String, locked: bool },
+    /// Knocks a unit out for its team's next `turns` turns (no action points,
+    /// overwatch cancelled). 0 wakes it again.
+    Stun { unit: u32, turns: u32 },
+    /// Renames a unit.
+    SetName { unit: u32, name: String },
+    /// A label that stays over a unit (`None` removes it), e.g. a boss.
+    MarkUnit { unit: u32, text: Option<String> },
     /// AI units of `team` head here while no enemy is in sight.
     AiGoal { team: Team, pos: GridPos },
     ClearAiGoal { team: Team },
@@ -130,6 +137,8 @@ pub struct WorldUnit {
     /// Tiles per action point.
     pub mobility: i32,
     pub sight: i32,
+    /// Turns left stunned (see [`ScriptCommand::Stun`]).
+    pub stunned: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +147,8 @@ pub struct WorldProp {
     pub pos: GridPos,
     pub hp: Option<i32>,
     pub alive: bool,
+    /// Door panels: (open, locked).
+    pub door: Option<(bool, bool)>,
 }
 
 /// The trigger's variables.
@@ -278,6 +289,12 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
     cmd!("open_door", |tag: &str| Ok(ScriptCommand::OpenDoor { tag: tag.into() }));
     cmd!("close_door", |tag: &str| Ok(ScriptCommand::CloseDoor { tag: tag.into() }));
     cmd!("lock_door", |tag: &str, locked: bool| Ok(ScriptCommand::LockDoor { tag: tag.into(), locked }));
+    cmd!("stun", |unit: INT, turns: INT| Ok(ScriptCommand::Stun { unit: unit as u32, turns: turns.clamp(0, 99) as u32 }));
+    cmd!("set_name", |unit: INT, name: &str| Ok(ScriptCommand::SetName { unit: unit as u32, name: name.to_string() }));
+    cmd!("mark_unit", |unit: INT, text: &str| {
+        Ok(ScriptCommand::MarkUnit { unit: unit as u32, text: Some(text.to_string()).filter(|t| !t.is_empty()) })
+    });
+    cmd!("unmark_unit", |unit: INT| Ok(ScriptCommand::MarkUnit { unit: unit as u32, text: None }));
     cmd!("ai_goal", |team: &str, x: INT, y: INT| {
         let team = parse_team(team).ok_or_else(|| fail(format!("unknown team '{team}'")))?;
         Ok(ScriptCommand::AiGoal { team, pos: grid(x, y) })
@@ -429,6 +446,35 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
     engine.register_fn("alarm", move || alarm);
     engine.register_fn("concealed", move || concealed);
     let w = world.clone();
+    engine.register_fn("unit_stunned", move |id: INT| -> INT { w.units.iter().find(|u| u.id as INT == id).map_or(0, |u| u.stunned as INT) });
+    // Doors: tags (one entry per door), state and the first panel's tile.
+    let w = world.clone();
+    engine.register_fn("doors", move || -> rhai::Array {
+        let mut tags: Vec<&str> = Vec::new();
+        for p in w.props.iter().filter(|p| p.door.is_some()) {
+            if !tags.contains(&p.tag.as_str()) {
+                tags.push(&p.tag);
+            }
+        }
+        tags.into_iter().map(|t| rhai::Dynamic::from(t.to_string())).collect()
+    });
+    let w = world.clone();
+    engine.register_fn("door_open", move |tag: &str| w.props.iter().any(|p| p.tag == tag && p.door.is_some_and(|d| d.0)));
+    let w = world.clone();
+    engine.register_fn("door_locked", move |tag: &str| w.props.iter().any(|p| p.tag == tag && p.door.is_some_and(|d| d.1)));
+    let w = world.clone();
+    engine.register_fn("door_x", move |tag: &str| -> INT { w.props.iter().find(|p| p.tag == tag && p.door.is_some()).map_or(-1, |p| p.pos.x as INT) });
+    let w = world.clone();
+    engine.register_fn("door_y", move |tag: &str| -> INT {
+        w.props.iter().find(|p| p.tag == tag && p.door.is_some()).map_or(-1, |p| (h - 1 - p.pos.y) as INT)
+    });
+    // Tile distance from unit `id` to door `tag` (nearest panel).
+    let w = world.clone();
+    engine.register_fn("door_distance", move |id: INT, tag: &str| -> FLOAT {
+        let Some(u) = w.units.iter().find(|u| u.id as INT == id) else { return 1.0e9 };
+        w.props.iter().filter(|p| p.tag == tag && p.door.is_some()).map(|p| p.pos.distance(u.pos) as FLOAT).fold(1.0e9, FLOAT::min)
+    });
+    let w = world.clone();
     engine.register_fn("prop_alive", move |tag: &str| w.props.iter().any(|p| p.tag == tag && p.alive));
     let w = world.clone();
     engine.register_fn("height", move |x: INT, y: INT| -> INT { w.map.as_ref().map_or(0, |m| m.elevation(grid(x, y)) as INT) });
@@ -469,6 +515,7 @@ mod tests {
                 defense: 20,
                 mobility: 5,
                 sight: 12,
+                stunned: 0,
             }],
             props: vec![],
             map: Some(Map::new(5, 5)),
