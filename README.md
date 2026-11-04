@@ -262,6 +262,12 @@ wasm and asset loading from `file://`. In the browser, the roster and
 settings are saved in localStorage. User module and HUD files (`modules/`,
 `ui/`) are desktop-only.
 
+The same workflow publishes the game on **GitHub Pages** at
+`https://<owner>.github.io/<repo>/`. One-time setup: Settings -> Pages ->
+Source: **GitHub Actions** (and, if you build from a branch other than the
+default one, allow it under Settings -> Environments -> github-pages ->
+Deployment branches).
+
 ### Android
 
 The library target (`tactics`, i.e. `libtactics.so`) is built as a `cdylib` with a

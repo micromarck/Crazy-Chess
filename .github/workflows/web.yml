@@ -4,6 +4,13 @@
 # browsers block wasm/asset loading from file://), e.g.
 #   python3 -m http.server -d tactics-web 8080
 # Run it from the Actions tab (Run workflow) or by pushing to a listed branch.
+#
+# It also publishes the site on GitHub Pages (job "pages"). One-time setup in
+# the repository: Settings -> Pages -> Build and deployment -> Source:
+# "GitHub Actions". The game is then at https://<owner>.github.io/<repo>/
+# (the link is shown on each run). Pages deploys only from allowed branches:
+# if this branch isn't the default one, add it under Settings ->
+# Environments -> github-pages -> Deployment branches.
 name: Web (WASM)
 
 on:
@@ -11,6 +18,16 @@ on:
   push:
     branches: [ccr-bdc572a0-4i31t2, claude/chess-game-html-FlsMY]
     paths: ["crates/**", "Cargo.toml", "Cargo.lock", ".cargo/**", ".github/workflows/web.yml"]
+
+# Publishing to Pages needs these; one deploy at a time, the newest wins.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   web:
@@ -44,3 +61,18 @@ jobs:
           name: tactics-web
           path: crates/tactics_game/dist
           if-no-files-found: error
+
+      # The same folder, packaged for GitHub Pages.
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: crates/tactics_game/dist
+
+  pages:
+    needs: web
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
