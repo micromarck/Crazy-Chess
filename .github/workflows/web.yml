@@ -7,7 +7,8 @@
 #
 # It also publishes the site on GitHub Pages (job "pages"). One-time setup in
 # the repository: Settings -> Pages -> Build and deployment -> Source:
-# "GitHub Actions". The game is then at https://<owner>.github.io/<repo>/
+# "GitHub Actions" (NOT "Deploy from a branch": that publishes the repository
+# itself, i.e. the README). The game is then at https://<owner>.github.io/<repo>/
 # (the link is shown on each run). Pages deploys only from allowed branches:
 # if this branch isn't the default one, add it under Settings ->
 # Environments -> github-pages -> Deployment branches.
@@ -25,8 +26,9 @@ permissions:
   pages: write
   id-token: write
 
+# Own group name: GitHub's built-in "pages build and deployment" uses "pages".
 concurrency:
-  group: pages
+  group: web-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

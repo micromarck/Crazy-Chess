@@ -26,5 +26,6 @@ inherits = "release"
 opt-level = "z"
 lto = "fat"
 codegen-units = 1
-# Only debug info: wasm-bindgen needs the `target_features` section.
-strip = "debuginfo"
+# Halves the .wasm. (wasm-bindgen then warns that the `target_features`
+# section is missing; harmless, the game runs fine.)
+strip = true
