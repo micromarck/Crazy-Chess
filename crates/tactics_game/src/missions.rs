@@ -90,6 +90,11 @@ pub struct MissionCatalog {
 }
 
 impl MissionCatalog {
+    /// The first mission has been started.
+    pub fn started(&self) -> bool {
+        self.started
+    }
+
     pub fn get(&self, id: &str) -> Option<&MissionEntry> {
         self.missions.iter().find(|m| m.def.id == id)
     }

@@ -253,6 +253,21 @@ trunk build --release     # static files in crates/tactics_game/dist/
 To use WebGPU instead of WebGL2, add the `webgpu` Bevy feature in the wasm
 section of `crates/tactics_game/Cargo.toml`.
 
+No Rust toolchain at hand? The **Web (WASM)** GitHub Actions workflow
+(`.github/workflows/web.yml`) runs `trunk build --release --public-url ./`
+and attaches the finished site as the `tactics-web` artifact. Serve that
+folder with any static server (`python3 -m http.server -d tactics-web 8080`);
+opening `index.html` straight from disk doesn't work, because browsers block
+wasm and asset loading from `file://`. In the browser, the roster and
+settings are saved in localStorage. User module and HUD files (`modules/`,
+`ui/`) are desktop-only.
+
+The same workflow publishes the game on **GitHub Pages** at
+`https://<owner>.github.io/<repo>/`. One-time setup: Settings -> Pages ->
+Source: **GitHub Actions** (and, if you build from a branch other than the
+default one, allow it under Settings -> Environments -> github-pages ->
+Deployment branches).
+
 ### Android
 
 The library target (`tactics`, i.e. `libtactics.so`) is built as a `cdylib` with a

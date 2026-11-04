@@ -5202,6 +5202,7 @@ dependencies = [
  "ron",
  "serde",
  "tactics_core",
+ "web-sys",
 ]
 
 [[package]]
