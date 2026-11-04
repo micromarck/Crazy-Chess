@@ -26,4 +26,5 @@ inherits = "release"
 opt-level = "z"
 lto = "fat"
 codegen-units = 1
-strip = true
+# Only debug info: wasm-bindgen needs the `target_features` section.
+strip = "debuginfo"

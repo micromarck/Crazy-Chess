@@ -1,0 +1,46 @@
+# Builds the web version (WebAssembly + WebGL2) with Trunk and uploads the
+# static site as an artifact ("tactics-web"). Unzip it and serve the folder
+# with any static web server (opening index.html from disk won't work:
+# browsers block wasm/asset loading from file://), e.g.
+#   python3 -m http.server -d tactics-web 8080
+# Run it from the Actions tab (Run workflow) or by pushing to a listed branch.
+name: Web (WASM)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ccr-bdc572a0-4i31t2, claude/chess-game-html-FlsMY]
+    paths: ["crates/**", "Cargo.toml", "Cargo.lock", ".cargo/**", ".github/workflows/web.yml"]
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: web
+
+      # Prebuilt Trunk; it fetches the matching wasm-bindgen and wasm-opt itself.
+      - name: Install Trunk
+        run: |
+          curl -sSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C "$HOME/.cargo/bin"
+          trunk --version
+
+      - name: Build the site
+        working-directory: crates/tactics_game
+        # --public-url ./ : relative links, so the folder works from any path
+        # (a sub-folder, GitHub Pages, itch.io...).
+        run: trunk build --release --public-url ./
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tactics-web
+          path: crates/tactics_game/dist
+          if-no-files-found: error
