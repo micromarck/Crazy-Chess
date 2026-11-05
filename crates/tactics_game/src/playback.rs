@@ -482,6 +482,7 @@ fn default_slot(def: &AbilityDef) -> &'static str {
         AbilityEffect::Cool { .. } => "reload",
         AbilityEffect::Overclock => "reload",
         AbilityEffect::Leap { .. } => "walk",
+        AbilityEffect::Idle => "idle",
     }
 }
 
@@ -583,6 +584,12 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             p.log.push(format!("  {} sweeps {} tiles with flame", name(*unit), tiles.len()));
             p.commands.spawn(crate::fire::FlameBurst { tiles: fire, t: 0.0 });
             vec![Anim::Wait { remaining: 0.55 }]
+        }
+        GameEvent::ChargeArmed { unit, pos, turns } => {
+            p.log.push(format!("  {}'s charge is armed: it goes off in {turns} turn{}", name(*unit), if *turns == 1 { "" } else { "s" }));
+            let at = tile_top(battle.map(), *pos) + Vec3::Y * 1.2;
+            FloatingText::spawn(&mut p.commands, at, format!("ARMED ({turns})"), theme::TARGET);
+            vec![Anim::Wait { remaining: 0.3 }]
         }
         GameEvent::FireStarted { tiles, turns } => {
             p.log.push(format!("  {} tile{} catch fire ({turns} rounds)", tiles.len(), if tiles.len() == 1 { "" } else { "s" }));

@@ -159,7 +159,8 @@ TBSium/
 * Arsenal (data module): laser rifles, a laser lance and scatter laser (beams),
   minigun, autocannon, a rocket launcher (straight-flying rockets that go off
   at the first thing in the way), a flamethrower (a cone of fire) and
-  incendiary grenades, and the Heavy Gunner class.
+  incendiary grenades, a particle grenade (short throw, goes off two turns
+  later: 5 damage in a 5x5 square plus shrapnel), and the Heavy Gunner class.
 * Fire: flamethrowers, incendiaries and exploding fuel barrels leave tiles
   burning for a few rounds; standing or walking in fire burns (machines heat
   up), props in it cook off, and the AI keeps out of it.
@@ -172,7 +173,8 @@ TBSium/
   laser, plasma cannon, missile pod). Build them in the Barracks. Striders
   can **overclock** (3 a mission: an extra shot, double heat); frames can
   carry **boost thrusters** (a long straight-line rush that walls stop),
-  soldiers a **jump pack** (a shorter leap that clears walls).
+  soldiers a **jump pack** (a shorter leap that clears walls). **Idle** ends a
+  frame's turn without making any heat.
 * 2 action points per unit; move (1 AP) or dash (2 AP), blue/yellow range overlay.
 * Directional half/full cover, flanking (+crit), cover shields on hover.
 * Hit chance = aim − defence − cover − hunker ± range falloff, shown with a full breakdown.

@@ -177,6 +177,12 @@ pub struct AttackProfile {
     /// Area attacks: flies **straight** from the user (a rocket) and
     /// detonates at the first wall or unit in the way, not over them.
     pub direct: bool,
+    /// Blasts: a **square** reaching `area_radius` tiles out from the centre
+    /// on every side (radius 2 = 5x5) instead of a circle.
+    pub square: bool,
+    /// Blasts: goes off this many of the thrower's turns later (at the start
+    /// of its turn), not at once. 0 = immediately.
+    pub fuse: u32,
 }
 
 impl AttackProfile {
@@ -213,6 +219,8 @@ impl Default for AttackProfile {
             cone: 0.0,
             ignite: 0,
             direct: false,
+            square: false,
+            fuse: 0,
         }
     }
 }
@@ -253,6 +261,8 @@ pub enum AbilityEffect {
     /// on the line stop it (boost thrusters). Overwatch can fire at the
     /// landing; landing in fire burns.
     Leap { reach: f32, over_walls: bool },
+    /// Do nothing and end the turn (robots idling to cool off: no heat).
+    Idle,
 }
 
 impl Default for AbilityEffect {
@@ -292,6 +302,7 @@ impl AbilityEffect {
             AbilityEffect::Cool { .. } => "Cool down",
             AbilityEffect::Overclock => "Overclock",
             AbilityEffect::Leap { .. } => "Leap",
+            AbilityEffect::Idle => "Idle",
         }
     }
 }

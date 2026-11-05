@@ -89,6 +89,8 @@ pub struct Battle {
     sky: crate::mission::SkyDef,
     /// Burning tiles: rounds of fire left (see fire.rs).
     fires: std::collections::BTreeMap<GridPos, u32>,
+    /// Charges waiting to go off (delayed grenades, see fire.rs).
+    charges_armed: Vec<fire::ArmedCharge>,
 }
 
 impl Battle {
@@ -121,6 +123,7 @@ impl Battle {
             map_version: 0,
             sky: Default::default(),
             fires: Default::default(),
+            charges_armed: Vec::new(),
         }
     }
 
@@ -697,6 +700,12 @@ impl Battle {
                     }
                 }
             }
+            AbilityEffect::Attack(profile) if profile.fuse > 0 && profile.is_area() => {
+                // A delayed charge: it lands now and goes off later.
+                let team = self.units[unit.0 as usize].team;
+                self.charges_armed.push(fire::ArmedCharge { unit, team, ability: def.id.clone(), pos: point, turns: profile.fuse });
+                events.push(GameEvent::ChargeArmed { unit, pos: point, turns: profile.fuse });
+            }
             AbilityEffect::Attack(profile) => {
                 let user = self.units[unit.0 as usize].clone();
                 // Rockets go off at the first thing in their way.
@@ -754,6 +763,7 @@ impl Battle {
                 events.push(GameEvent::Shutdown { unit, shut_down: true });
             }
             AbilityEffect::Cool { amount } => self.add_heat(unit, -amount, events),
+            AbilityEffect::Idle => {}
             AbilityEffect::Overclock => {
                 let u = self.unit_mut(unit);
                 u.status.overclocked = true;
@@ -1049,6 +1059,7 @@ impl Battle {
         events.push(GameEvent::TurnStarted { team, round: self.round });
         self.heat_turn_start(team, events);
         self.fire_turn_start(team, events);
+        self.charges_turn_start(team, events);
         self.morale_turn_start(team, events);
         self.on_turn_start(events);
         self.check_victory(events);

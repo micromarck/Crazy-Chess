@@ -284,6 +284,7 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `Shutdown(turns: n)` | int | Machines only: offline for the user's next `n` turns, then reboots with **all heat vented**. Any damage while shut down destroys it. |
 | `Cool(amount: n)` | int | Machines only: sheds `n` heat (coolant). |
 | `Overclock` | — | For the rest of the user's turn: its next turn-ending attack costs only 1 AP (an extra shot) and all heat it makes is doubled. |
+| `Idle` | — | Does nothing (with `cost: EndsTurn`, ends the turn): robots idling to cool off without making heat. |
 | `Leap(reach: r, over_walls: b)` | float, bool | Target a tile: move there in a straight line, up to `r` times the unit's normal move. `over_walls: true` flies over anything (jump pack); `false` is stopped by walls, holes, units and steep steps (boost thrusters). Overwatch can fire at the landing. |
 
 ### Attack stats (`AttackProfile`)
@@ -307,6 +308,8 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `cone` | `0.0` | > 0 = a **cone** this many degrees wide from the user towards the target tile, reaching that far (flamethrowers). Hits everyone in it the user can see, friend or foe; cover counts from the user. |
 | `ignite` | `0` | Sets the blast or cone **on fire** for this many rounds: a unit starting its turn in fire takes `combat.fire_damage` (2), each burning tile walked into `combat.fire_step_damage` (1); props there take 1 a round; walls don't burn. |
 | `direct` | `false` | Area attacks: the projectile flies **straight** (a rocket) and goes off at the first wall or unit in the way. Pair with `projectile: Rocket` in the presentation. |
+| `square` | `false` | Blasts: a **square** reaching `area_radius` tiles out on every side (radius 2 = 5x5) instead of a circle. |
+| `fuse` | `0` | Blasts: goes off this many of the thrower's turns later (at the start of its turn) where it landed, not at once: the Particle Grenade (2). The area shows on the board while it ticks; the AI keeps out of it. |
 
 Hit chance:
 

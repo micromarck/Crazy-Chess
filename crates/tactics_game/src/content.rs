@@ -230,9 +230,19 @@ mod tests {
         assert!(b.unit(light).unwrap().has_ability(&"coolant_flush".into()));
         assert!(b.unit(light).unwrap().has_ability(&"overclock".into()) && b.unit(light).unwrap().has_ability(&"boost".into()));
         assert!(!b.unit(heavy).unwrap().has_ability(&"overclock".into()), "only the small frames overclock");
+        // Particle grenades: short throw, delayed, square.
+        let pg = b.rules().ability(&"particle_grenade".into()).unwrap();
+        assert_eq!(pg.range, tactics_core::content::AbilityRange::Fixed(5.0));
+        let p = pg.effect.attack_profile().unwrap();
+        assert!(p.square && p.fuse == 2 && p.area_radius == 2.0);
         assert_eq!(b.unit(gunner).unwrap().weapon.id, "minigun");
         assert!(b.unit(gunner).unwrap().has_ability(&"fire_rocket".into()));
         assert!(b.unit(gunner).unwrap().heat.is_none());
+        // Idle: no heat, and the frame's turn is over.
+        assert_eq!(b.heat_cost(&Action::ability(light, "idle", Target::None)), 0);
+        b.apply(Action::ability(light, "idle", Target::None)).unwrap();
+        assert_eq!(b.unit(light).unwrap().action_points, 0);
+        assert_eq!(b.unit(light).unwrap().heat(), 0);
         // Missile salvo: +8 heat; the gatling laser: +6.
         let target = b.unit(e).unwrap().pos;
         assert_eq!(b.heat_cost(&Action::ability(heavy, "missile_salvo", Target::Tile(target))), 8);
