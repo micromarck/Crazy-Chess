@@ -254,6 +254,7 @@ mod tests {
             fear: 0,
             heat: None,
             no_half_cover: false,
+            size: 1,
             fearless: false,
             body: Default::default(),
             gear: Default::default(),

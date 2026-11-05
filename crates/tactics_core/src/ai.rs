@@ -738,7 +738,7 @@ fn horde_action(battle: &Battle, unit: &Unit) -> Action {
     // 2. Close in on the nearest enemy.
     let Some(prey) = foes.first() else { return Action::Wait { unit: id } };
     let goal = prey.pos;
-    if unit.pos.chebyshev(goal) <= 1 {
+    if unit.nearest_tile(goal).chebyshev(prey.nearest_tile(unit.pos)) <= 1 {
         return Action::Wait { unit: id }; // in reach but can't strike (no AP)
     }
     let range = battle.movement_range(id);

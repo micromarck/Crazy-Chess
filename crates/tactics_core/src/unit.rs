@@ -297,6 +297,10 @@ pub struct UnitClass {
     /// Too big to hide behind low cover: half cover gives it nothing (full
     /// cover still does). Robot frames.
     pub no_half_cover: bool,
+    /// Tiles it takes up: `size` x `size` (0/1 = one tile, 2 = 2x2, 3 =
+    /// 3x3: big monsters). The unit's `pos` is the footprint's corner with
+    /// the lowest x and y.
+    pub size: u8,
     /// May only use weapons and items that name this class in their
     /// `classes` (gear open to everyone is off limits): robot frames have
     /// their own arsenal.
@@ -380,6 +384,8 @@ pub struct Unit {
     pub heat: Option<HeatRules>,
     /// Copied from the class: half cover doesn't protect it.
     pub no_half_cover: bool,
+    /// Copied from the class: footprint `size` x `size` from `pos`.
+    pub size: u8,
     /// What the unit carries (resolved at spawn).
     pub gear: crate::content::Loadout,
     /// Looks (`None` = derived from the name by the frontend).
@@ -394,6 +400,35 @@ impl Unit {
     /// Can this unit still do something this turn?
     pub fn can_act(&self) -> bool {
         self.is_alive() && self.action_points > 0
+    }
+
+    /// Footprint side in tiles (at least 1).
+    pub fn side(&self) -> i32 {
+        self.size.max(1) as i32
+    }
+
+    /// Every tile the unit stands on.
+    pub fn tiles(&self) -> impl Iterator<Item = GridPos> + '_ {
+        let s = self.side();
+        (0..s).flat_map(move |dy| (0..s).map(move |dx| GridPos::new(self.pos.x + dx, self.pos.y + dy)))
+    }
+
+    /// Does the unit stand on `p`?
+    pub fn occupies(&self, p: GridPos) -> bool {
+        let s = self.side();
+        p.x >= self.pos.x && p.x < self.pos.x + s && p.y >= self.pos.y && p.y < self.pos.y + s
+    }
+
+    /// The tile of its footprint closest to `p`.
+    pub fn nearest_tile(&self, p: GridPos) -> GridPos {
+        let s = self.side();
+        GridPos::new(p.x.clamp(self.pos.x, self.pos.x + s - 1), p.y.clamp(self.pos.y, self.pos.y + s - 1))
+    }
+
+    /// Centre of the footprint in grid coordinates.
+    pub fn center(&self) -> (f32, f32) {
+        let k = (self.side() - 1) as f32 / 2.0;
+        (self.pos.x as f32 + k, self.pos.y as f32 + k)
     }
 
     /// Current heat (0 for units that don't run on heat).

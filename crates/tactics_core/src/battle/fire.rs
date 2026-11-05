@@ -210,7 +210,7 @@ impl Battle {
             }
         }
         let damage = self.rules.combat.fire_damage;
-        let burning: Vec<UnitId> = self.living(team).filter(|u| self.fires.contains_key(&u.pos)).map(|u| u.id).collect();
+        let burning: Vec<UnitId> = self.living(team).filter(|u| u.tiles().any(|p| self.fires.contains_key(&p))).map(|u| u.id).collect();
         for id in burning {
             if self.is_over() {
                 return;

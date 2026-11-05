@@ -37,6 +37,8 @@ use crate::unit::{Team, Unit, UnitId};
 use crate::visibility;
 
 mod ballistics;
+#[cfg(test)]
+mod big_tests;
 mod fire;
 mod heat;
 mod morale;
@@ -174,11 +176,9 @@ impl Battle {
             .weapon(&weapon_id)
             .ok_or_else(|| format!("class '{}' uses unknown weapon '{weapon_id}'", class.id))?
             .clone();
-        if !self.map.is_walkable(pos) {
-            return Err(format!("cannot spawn on non-walkable tile {pos}"));
-        }
-        if self.unit_at(pos).is_some() {
-            return Err(format!("tile {pos} already occupied"));
+        // Every tile of the footprint must be free.
+        if !self.footprint_free(pos, class.size.max(1) as i32, None) {
+            return Err(format!("no room for a {} ({}x{}) at {pos}", class.name, class.size.max(1), class.size.max(1)));
         }
         weapon.ammo = weapon.clip_size;
         weapon.spare = weapon.magazines;
@@ -235,6 +235,7 @@ impl Battle {
             body: class.body,
             heat: class.heat,
             no_half_cover: class.no_half_cover,
+            size: class.size.max(1),
             gear: Loadout { weapon: Some(weapon_id), ..gear },
             appearance: None,
         };
@@ -317,9 +318,54 @@ impl Battle {
         self.units.iter().filter(move |u| u.team == team && u.is_alive())
     }
 
-    /// The living unit standing on `pos`, if any.
+    /// The living unit standing on `pos` (any tile of its footprint), if any.
     pub fn unit_at(&self, pos: GridPos) -> Option<&Unit> {
-        self.units.iter().find(|u| u.is_alive() && u.pos == pos)
+        self.units.iter().find(|u| u.is_alive() && u.occupies(pos))
+    }
+
+    /// Can a `side` x `side` unit stand with its corner on `pos`: every tile
+    /// walkable, free (but for `ignore`) and roughly level?
+    pub fn footprint_free(&self, pos: GridPos, side: i32, ignore: Option<UnitId>) -> bool {
+        let base = self.map.elevation(pos);
+        (0..side).all(|dy| {
+            (0..side).all(|dx| {
+                let p = GridPos::new(pos.x + dx, pos.y + dy);
+                self.map.is_walkable(p)
+                    && (self.map.elevation(p) - base).abs() <= 1
+                    && self.unit_at(p).is_none_or(|u| Some(u.id) == ignore)
+            })
+        })
+    }
+
+    /// The closest pair of tiles (one of each footprint) between `a` and
+    /// `b` that can see each other, or with `need_sight` false just the
+    /// closest pair. Big units are seen, shot and reached at their nearest
+    /// visible tile.
+    pub fn sight_between(&self, a: &Unit, b: &Unit, need_sight: bool) -> Option<(GridPos, GridPos)> {
+        if a.side() == 1 && b.side() == 1 {
+            return (!need_sight || visibility::has_sight(&self.map, a.pos, b.pos)).then_some((a.pos, b.pos));
+        }
+        let mut best: Option<(f32, GridPos, GridPos)> = None;
+        for from in a.tiles() {
+            for to in b.tiles() {
+                let d = from.distance(to);
+                if best.is_some_and(|(bd, ..)| bd <= d) {
+                    continue;
+                }
+                if !need_sight || visibility::has_sight(&self.map, from, to) {
+                    best = Some((d, from, to));
+                }
+            }
+        }
+        best.map(|(_, f, t)| (f, t))
+    }
+
+    /// Is any tile of `u` in sight of `team`?
+    pub fn team_sees_unit(&self, team: Team, u: &Unit) -> bool {
+        if u.side() == 1 {
+            return self.team_can_see(team, u.pos);
+        }
+        u.tiles().any(|p| self.team_can_see(team, p))
     }
 
     /// Every tile `unit` could move to with its remaining action points.
@@ -332,8 +378,22 @@ impl Battle {
         let climb = crate::grid::Climb { max_up: unit.stats.climb };
         // Occupied tiles once (not a scan of every unit per neighbour: big
         // maps have hundreds of units).
-        let occupied: std::collections::HashSet<GridPos> = self.units.iter().filter(|u| u.is_alive()).map(|u| u.pos).collect();
-        pathfinding::reachable(&self.map, unit.pos, budget, climb, |p| !occupied.contains(&p))
+        let occupied: std::collections::HashSet<GridPos> =
+            self.units.iter().filter(|u| u.is_alive() && u.id != id).flat_map(|u| u.tiles().collect::<Vec<_>>()).collect();
+        let side = unit.side();
+        if side == 1 {
+            return pathfinding::reachable(&self.map, unit.pos, budget, climb, |p| !occupied.contains(&p));
+        }
+        // A big unit: its whole footprint has to fit at every step.
+        pathfinding::reachable(&self.map, unit.pos, budget, climb, |p| {
+            let base = self.map.elevation(p);
+            (0..side).all(|dy| {
+                (0..side).all(|dx| {
+                    let q = GridPos::new(p.x + dx, p.y + dy);
+                    self.map.is_walkable(q) && !occupied.contains(&q) && (self.map.elevation(q) - base).abs() <= 1
+                })
+            })
+        })
     }
 
     /// How many action points moving `movement_cost` points costs this unit.
@@ -359,7 +419,7 @@ impl Battle {
         };
         let range = u.weapon.max_range.min(u.stats.sight);
         self.living(u.team.opponent())
-            .filter(|t| u.pos.distance(t.pos) <= range && visibility::has_sight(&self.map, u.pos, t.pos))
+            .filter(|t| self.sight_between(u, t, true).is_some_and(|(a, b)| a.distance(b) <= range))
             .map(|t| t.id)
             .collect()
     }
@@ -454,6 +514,16 @@ impl Battle {
                 let wants_enemy = def.targeting == Targeting::Enemy;
                 if (t.team != user.team) != wants_enemy {
                     return Err(ActionError::InvalidTarget(id));
+                }
+                // Big units (either side): range and sight between the
+                // nearest tiles that can see each other.
+                if user.side() > 1 || t.side() > 1 {
+                    let pair = self.sight_between(user, t, def.requires_los);
+                    let Some((from, to)) = pair else { return Err(ActionError::NoLineOfSight) };
+                    if from.distance(to) > self.ability_range(user, def) {
+                        return Err(ActionError::OutOfRange);
+                    }
+                    return Ok(t.pos);
                 }
                 t.pos
             }
@@ -811,7 +881,7 @@ impl Battle {
             let tiles = self.area_tiles(user.pos, profile, point);
             self.units
                 .iter()
-                .filter(|u| u.is_alive() && tiles.contains(&u.pos))
+                .filter(|u| u.is_alive() && u.tiles().any(|p| tiles.contains(&p)))
                 .map(|u| (u.id, origin))
                 .collect()
         } else if let Target::Unit(id) = target {
@@ -872,14 +942,15 @@ impl Battle {
         let mut segment: Vec<GridPos> = Vec::new();
         for step in path {
             // A script may have spawned something in the way: stop there.
-            if self.unit_at(step).is_some_and(|u| u.id != id) {
+            let side = self.units[id.0 as usize].side();
+            if !self.footprint_free(step, side, Some(id)) && side > 1 || self.unit_at(step).is_some_and(|u| u.id != id) {
                 break;
             }
             self.unit_mut(id).pos = step;
             segment.push(step);
 
             // Walking into fire burns.
-            if self.on_fire(step) {
+            if self.units[id.0 as usize].tiles().any(|p| self.on_fire(p)) {
                 events.push(GameEvent::UnitMoved { unit: id, from: segment_start, path: std::mem::take(&mut segment) });
                 segment_start = step;
                 if !self.burn_step(id, events) || self.is_over() {
@@ -952,9 +1023,9 @@ impl Battle {
         self.living(m.team.opponent()).find_map(|w| {
             let ability = w.status.overwatch.clone()?;
             let def = self.rules.ability(&ability)?;
-            let in_range = w.pos.distance(m.pos) <= self.ability_range(w, def).min(w.stats.sight);
-            (w.weapon.ammo > 0 && in_range && visibility::has_sight(&self.map, w.pos, m.pos))
-                .then_some((w.id, ability))
+            let reach = self.ability_range(w, def).min(w.stats.sight);
+            let in_sight = self.sight_between(w, m, true).is_some_and(|(a, b)| a.distance(b) <= reach);
+            (w.weapon.ammo > 0 && in_sight).then_some((w.id, ability))
         })
     }
 

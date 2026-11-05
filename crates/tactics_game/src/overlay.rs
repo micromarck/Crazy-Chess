@@ -76,7 +76,7 @@ fn draw_movement(
     }
     tile_rect(&mut gizmos, state.battle.map(), unit.pos, 0.95, theme::SELECTED);
     let pulse = 0.5 + 0.5 * (time.elapsed_secs() * 3.0).sin();
-    ground_circle(&mut gizmos, tile_top(battle.map(), unit.pos), 0.36 + 0.05 * pulse, theme::SELECTED.with_alpha(0.5 + 0.5 * pulse));
+    ground_circle(&mut gizmos, crate::coords::unit_spot(battle.map(), unit), (0.36 + 0.05 * pulse) * unit.side() as f32, theme::SELECTED.with_alpha(0.5 + 0.5 * pulse));
 
     // Path preview + cover shields at the hovered destination.
     let Some(hover) = selection.hovered.filter(|_| show_moves) else { return };

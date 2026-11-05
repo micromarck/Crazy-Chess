@@ -17,5 +17,6 @@
   <mission file="facility.mission.xml"/>
   <mission file="hill.mission.xml"/>
   <mission file="hill_extreme.mission.xml"/>
+  <mission file="valley.mission.xml"/>
   <mission file="lab.mission.xml"/>
 </missions>

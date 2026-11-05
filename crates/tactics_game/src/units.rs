@@ -21,7 +21,7 @@ use tactics_core::prelude::*;
 
 use crate::FrameSet;
 use crate::animation::{UnitAnimator, UnitPivot};
-use crate::coords::tile_top;
+
 use crate::models::{ModelLibrary, PrimitiveAssets, spawn_model};
 use crate::playback::Playback;
 use crate::state::{BattleReset, BattleState};
@@ -120,7 +120,7 @@ fn spawn_unit(
             UnitAnimator::new(unit.model.clone()),
             FaceTarget::default(),
             Name::new(unit.name.clone()),
-            Transform::from_translation(tile_top(map, unit.pos)),
+            Transform::from_translation(crate::coords::unit_spot(map, unit)),
             Visibility::default(),
         ))
         .id();
@@ -216,7 +216,7 @@ fn lean_out(
             continue;
         };
         lean.elapsed += time.delta_secs();
-        let home = tile_top(state.battle.map(), unit.pos);
+        let home = crate::coords::unit_spot(state.battle.map(), unit);
         let k = (lean.elapsed / 0.18).min(1.0);
         let k = k * k * (3.0 - 2.0 * k);
         let mut to = lean.toward;
@@ -233,7 +233,7 @@ fn snap_when_idle(playback: Res<Playback>, state: Res<BattleState>, mut q: Query
         if let Some(unit) = state.battle.unit(visual.id)
             && unit.is_alive()
         {
-            transform.translation = tile_top(state.battle.map(), unit.pos);
+            transform.translation = crate::coords::unit_spot(state.battle.map(), unit);
         }
     }
 }

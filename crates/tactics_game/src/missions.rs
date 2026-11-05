@@ -476,7 +476,48 @@ mod tests {
         assert_eq!(b.winner(), Some(Team::Player), "{file}: round {}", b.round());
     }
 
-    /// Every mission in `assets/missions/index.xml` parses and builds a
+    /// Lost Valley: raptors and a 2x2 Hornback on the map; the 3x3 Tyrant
+    /// arrives at round 6 (with room for its whole footprint), can move, and
+    /// closes in on the squad.
+    #[test]
+    fn valley_dinosaurs() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(MISSION_DIR);
+        let def = parse_mission(&std::fs::read_to_string(dir.join("valley.mission.xml")).unwrap()).unwrap();
+        let (rules, _) = crate::content::build_ruleset();
+        let (mut b, warnings) = Battle::from_mission(rules, &def, 3);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        b.begin();
+        let class = |c: &str| b.living(Team::Enemy).filter(|u| u.class == c).count();
+        assert!(class("dino_raptor") >= 6 && class("dino_hornback") == 1 && class("dino_tyrant") == 0);
+        let horn = b.living(Team::Enemy).find(|u| u.class == "dino_hornback").unwrap();
+        assert_eq!(horn.tiles().count(), 4);
+        while b.round() < 6 {
+            let ev = b.apply(Action::EndTurn).unwrap();
+            assert!(!ev.iter().any(|e| matches!(e, GameEvent::ScriptError { .. })), "{ev:?}");
+        }
+        let t = b.living(Team::Enemy).find(|u| u.class == "dino_tyrant").expect("the Tyrant arrived").clone();
+        assert_eq!(t.tiles().count(), 9);
+        for p in t.tiles() {
+            assert!(b.map().is_walkable(p));
+            assert_eq!(b.unit_at(p).map(|u| u.id), Some(t.id));
+        }
+        // It hunts: over a few of its turns it gets closer to the squad.
+        let squad = b.living(Team::Player).next().unwrap().pos;
+        let start = t.pos.distance(squad);
+        let config = AiConfig::default();
+        for _ in 0..200 {
+            if b.round() >= 10 || b.is_over() {
+                break;
+            }
+            let action = if b.active_team() == Team::Player { Action::EndTurn } else { ai::next_team_action(&b, &config) };
+            b.apply(action).unwrap();
+        }
+        if let Some(t) = b.unit(t.id).filter(|u| u.is_alive()) {
+            assert!(t.pos.distance(squad) < start - 3.0, "the Tyrant closes in: {} -> {}", start, t.pos.distance(squad));
+        }
+    }
+
+        /// Every mission in `assets/missions/index.xml` parses and builds a
     /// battle with the game's modules, without warnings or script errors.
     #[test]
     fn bundled_missions_are_valid() {
