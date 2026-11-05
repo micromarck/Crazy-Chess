@@ -425,11 +425,19 @@ mod tests {
     /// chopper lands (turn 12).
     #[test]
     fn hill_horde_tides_and_evac() {
+        // The normal hill, and the extreme one (bigger, 2.5x the zombies).
+        for (file, cap, builds_to, first_wave) in [("hill.mission.xml", 30, 20, 11), ("hill_extreme.mission.xml", 75, 50, 28)] {
+            hill_check(file, cap, builds_to, first_wave);
+        }
+    }
+
+    fn hill_check(file: &str, cap: usize, builds_to: usize, first_wave: usize) {
         use tactics_core::grid::Climb;
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(MISSION_DIR);
-        let def = parse_mission(&std::fs::read_to_string(dir.join("hill.mission.xml")).unwrap()).unwrap();
+        let def = parse_mission(&std::fs::read_to_string(dir.join(file)).unwrap()).unwrap();
         let (rules, _) = crate::content::build_ruleset();
         let (mut b, warnings) = Battle::from_mission(rules, &def, 5);
+        assert_eq!(b.living(Team::Enemy).count(), first_wave, "{file}");
         assert!(warnings.is_empty(), "{warnings:?}");
         let ev = b.begin();
         assert!(!ev.iter().any(|e| matches!(e, GameEvent::ScriptError { .. })), "{ev:?}");
@@ -455,18 +463,17 @@ mod tests {
         for _ in 0..8 {
             b.apply(Action::EndTurn).unwrap(); // zombies' turn: the tide spawns
             most = most.max(b.living(Team::Enemy).count());
-            assert!(b.living(Team::Enemy).count() <= 30);
+            assert!(b.living(Team::Enemy).count() <= cap, "{file}");
             // Zombies don't act here (we only end turns), so nothing dies.
             b.apply(Action::EndTurn).unwrap();
         }
-        assert!(most >= 20, "they build up: {most}");
-        assert_eq!(b.living(Team::Enemy).count().min(30), b.living(Team::Enemy).count());
+        assert!(most >= builds_to, "{file}: they build up: {most}");
 
         // The squad (still on the pad) wins when the chopper lands.
         while b.round() < 12 && !b.is_over() {
             b.apply(Action::EndTurn).unwrap();
         }
-        assert_eq!(b.winner(), Some(Team::Player), "round {}", b.round());
+        assert_eq!(b.winner(), Some(Team::Player), "{file}: round {}", b.round());
     }
 
     /// Every mission in `assets/missions/index.xml` parses and builds a
