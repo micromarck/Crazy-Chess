@@ -262,7 +262,10 @@ pub fn collect_ui_data(
     v.set("cinematics", bool_str(director.enabled));
 
     // Loadouts of the player's squad (edited between missions).
-    v.lists.insert("loadout".into(), crate::loadout::rows(b.rules()));
+    v.lists.insert("loadout".into(), crate::loadout::rows(b.rules(), roster.loadout_selected));
+    for (k, val) in crate::loadout::detail(b.rules(), roster.loadout_selected) {
+        v.set(&k, val);
+    }
 
     // Lists.
     v.lists.insert("abilities".into(), unit.map(|u| abilities(b, u, &selection)).unwrap_or_default());

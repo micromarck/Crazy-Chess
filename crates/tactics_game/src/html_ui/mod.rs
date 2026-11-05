@@ -266,9 +266,11 @@ pub fn run_ui_commands(
             "lab_walk" => {
                 lab.write(crate::lab::LabCommand::ToggleWalk);
             }
-            "gear" => match crate::loadout::command(arg, state.battle.rules_mut()) {
+            "gear" => match crate::loadout::command(arg, state.battle.rules_mut(), &mut roster.loadout_selected) {
                 Some(msg) => {
-                    log.push(msg);
+                    if !msg.is_empty() {
+                        log.push(msg);
+                    }
                     roster.pull_gear(state.battle.rules());
                 }
                 None => log.push(format!("UI: bad gear command '{arg}'")),

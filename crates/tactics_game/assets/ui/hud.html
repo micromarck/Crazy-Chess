@@ -89,7 +89,17 @@
   .help-row { flex-direction: row; margin-bottom: 3px; }
   .help-key { color: #f2d24a; width: 160px; font-size: 13px; }
   .help-text { font-size: 13px; max-width: 360px; }
-  #loadout { top: 140px; left: 190px; padding: 8px; max-width: 760px; max-height: 70vh; overflow: scroll; z-index: 10; }
+  #loadout { top: 140px; left: 190px; padding: 10px; max-width: 820px; max-height: 75vh; overflow: scroll; z-index: 10; background: #0d1117f2; }
+  .lo-head { flex-direction: column; margin-bottom: 6px; }
+  .lo-body { flex-direction: row; }
+  .lo-list { flex-direction: column; min-width: 190px; max-height: 62vh; overflow: scroll; margin-right: 12px; }
+  .lo-detail { flex-direction: column; min-width: 520px; max-width: 580px; }
+  .lo-row { flex-direction: row; align-items: center; margin-bottom: 4px; }
+  .lo-label { width: 84px; font-size: 13px; color: #9aa1ad; }
+  .lo-arrow { width: 44px; min-width: 44px; height: 44px; margin-left: 0px; margin-right: 4px; font-size: 18px; justify-content: center; }
+  .lo-value { flex-direction: column; width: 360px; min-height: 44px; padding: 3px 8px; margin-right: 4px; background: #1b212b; border-radius: 4px; justify-content: center; }
+  .lo-value .key { max-width: 350px; }
+  .lo-apply { background: #2f5e44; }
   .gear-row { flex-direction: column; margin-bottom: 8px; }
   .gear-name { font-size: 14px; }
   .gear-buttons { flex-direction: row; flex-wrap: wrap; }
@@ -341,24 +351,71 @@
   <span class="dim" style="font-size: 12px; margin-top: 6px">Hover a tile: gold diamonds = enemies you'd flank, red = in sight, yellow lines = overwatch on the way. Hover an enemy: red tiles = where it can move next turn.</span>
 </div>
 
-<!-- Squad loadouts: click a piece of gear to cycle it; applies on restart -->
+<!-- Loadout: pick a soldier on the left, step through each choice with the
+     arrows on the right; applies when the mission restarts -->
 <div id="loadout" class="panel" data-if="ui.loadout and !lab.active">
-  <span class="dim" style="font-size: 11px; margin-bottom: 4px">LOADOUT - click to change, then apply (restarts the mission)</span>
-  <div data-for="m in loadout">
-    <div class="gear-row">
-      <span class="gear-name">{{ m.name }} - {{ m.class }}</span>
-      <div class="gear-buttons">
-        <button class="gear" data-command="gear:preset:{{ m.index }}"><span class="key">preset</span><span>{{ m.preset }}</span></button>
-        <button class="gear" data-command="gear:weapon:{{ m.index }}"><span class="key">weapon</span><span>{{ m.weapon }}</span></button>
-        <button class="gear" data-command="gear:armor:{{ m.index }}"><span class="key">armor</span><span>{{ m.armor }}</span></button>
-        <button class="gear" data-command="gear:item:{{ m.index }}:0"><span class="key">item 1</span><span>{{ m.item0 }}</span></button>
-        <button class="gear" data-command="gear:item:{{ m.index }}:1"><span class="key">item 2</span><span>{{ m.item1 }}</span></button>
+  <div class="lo-head">
+    <span class="title" style="font-size: 16px">Loadout</span>
+    <span class="dim" style="font-size: 12px">Pick a soldier, then use the arrows. Changes apply when the mission restarts.</span>
+  </div>
+  <div class="lo-body">
+    <div class="lo-list" data-for="m in loadout">
+      <button class="member {{ m.state }}" data-command="gear:select:{{ m.index }}">
+        <span>{{ m.name }}</span>
+        <span class="key">{{ m.class }}</span>
+      </button>
+    </div>
+    <div class="lo-detail">
+      <span class="title" style="font-size: 15px">{{ lo.name }}</span>
+      <span class="dim" style="font-size: 12px; margin-bottom: 6px">{{ lo.stats }}</span>
+
+      <div class="lo-row">
+        <span class="lo-label">Class</span>
+        <button class="lo-arrow" data-command="gear:class:{{ lo.index }}:-1">&lt;</button>
+        <div class="lo-value"><span>{{ lo.class }}</span><span class="key">{{ lo.class_info }}</span></div>
+        <button class="lo-arrow" data-command="gear:class:{{ lo.index }}:1">&gt;</button>
       </div>
-      <span class="dim" style="font-size: 12px">{{ m.stats }}</span>
-      <span style="font-size: 12px; color: #ff8a7a">{{ m.problems }}</span>
+      <div class="lo-row">
+        <span class="lo-label">Weapon</span>
+        <button class="lo-arrow" data-command="gear:weapon:{{ lo.index }}:-1">&lt;</button>
+        <div class="lo-value"><span>{{ lo.weapon }}</span><span class="key">{{ lo.weapon_info }}</span></div>
+        <button class="lo-arrow" data-command="gear:weapon:{{ lo.index }}:1">&gt;</button>
+      </div>
+      <div class="lo-row">
+        <span class="lo-label">Armour</span>
+        <button class="lo-arrow" data-command="gear:armor:{{ lo.index }}:-1">&lt;</button>
+        <div class="lo-value"><span>{{ lo.armor }}</span><span class="key">{{ lo.armor_info }}</span></div>
+        <button class="lo-arrow" data-command="gear:armor:{{ lo.index }}:1">&gt;</button>
+      </div>
+      <div class="lo-row">
+        <span class="lo-label">Item 1</span>
+        <button class="lo-arrow" data-command="gear:item:{{ lo.index }}:0:-1">&lt;</button>
+        <div class="lo-value"><span>{{ lo.item0 }}</span><span class="key">{{ lo.item0_info }}</span></div>
+        <button class="lo-arrow" data-command="gear:item:{{ lo.index }}:0:1">&gt;</button>
+      </div>
+      <div class="lo-row">
+        <span class="lo-label">Item 2</span>
+        <button class="lo-arrow" data-command="gear:item:{{ lo.index }}:1:-1">&lt;</button>
+        <div class="lo-value"><span>{{ lo.item1 }}</span><span class="key">{{ lo.item1_info }}</span></div>
+        <button class="lo-arrow" data-command="gear:item:{{ lo.index }}:1:1">&gt;</button>
+      </div>
+      <div class="lo-row">
+        <span class="lo-label">Quick pick</span>
+        <button class="lo-arrow" data-command="gear:preset:{{ lo.index }}:-1">&lt;</button>
+        <div class="lo-value"><span>{{ lo.preset }}</span><span class="key">{{ lo.preset_info }}</span></div>
+        <button class="lo-arrow" data-command="gear:preset:{{ lo.index }}:1">&gt;</button>
+      </div>
+
+      <span class="dim" style="font-size: 12px; margin-top: 4px">Can: {{ lo.abilities }}</span>
+      <span style="font-size: 12px; color: #ff8a7a">{{ lo.problems }}</span>
+      <div class="gear-buttons" style="margin-top: 6px">
+        <button class="gear" data-command="gear:reset:{{ lo.index }}"><span class="key">this soldier</span><span>Reset to default</span></button>
+        <button class="gear" data-command="toggle:barracks"><span class="key">recruit, looks</span><span>Barracks</span></button>
+        <button class="gear lo-apply" data-command="apply_loadout"><span class="key">restarts the mission</span><span>Apply</span></button>
+        <button class="gear" data-command="toggle:loadout"><span class="key">keep editing later</span><span>Close</span></button>
+      </div>
     </div>
   </div>
-  <button class="mission" data-command="apply_loadout"><span>Apply and restart mission</span></button>
 </div>
 
 <!-- Squad roster: click a soldier to select them -->
