@@ -278,6 +278,9 @@ pub enum AbilityEffect {
     Leap { reach: f32, over_walls: bool },
     /// Do nothing and end the turn (robots idling to cool off: no heat).
     Idle,
+    /// An adrenaline shot: the user loses half its remaining health (rounded
+    /// down, so nothing at 1 HP) and gains this many action points.
+    Adrenaline { action_points: u8 },
 }
 
 impl Default for AbilityEffect {
@@ -318,6 +321,7 @@ impl AbilityEffect {
             AbilityEffect::Overclock => "Overclock",
             AbilityEffect::Leap { .. } => "Leap",
             AbilityEffect::Idle => "Idle",
+            AbilityEffect::Adrenaline { .. } => "Adrenaline",
         }
     }
 }

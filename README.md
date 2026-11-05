@@ -171,7 +171,8 @@ TBSium/
   incendiary grenades, a particle grenade (short throw, goes off two turns
   later: 5 damage in a 5x5 square plus shrapnel), melee weapons (combat
   knife, machete, sledgehammer), a **taser** (shorts out light and medium
-  robots on the spot, 9 damage to heavy ones, stuns people), and the Heavy
+  robots on the spot, 9 damage to heavy ones, stuns people), an **adrenaline
+  shot** (+2 AP now for half your remaining health; free at 1 HP), and the Heavy
   Gunner class. Big robots (Bastion frames, wardens, loaders) can **slam** the
   ground, hitting everyone next to them.
 * Fire: flamethrowers, incendiaries and exploding fuel barrels leave tiles

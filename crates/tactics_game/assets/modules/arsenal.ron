@@ -14,6 +14,8 @@
 //   (assault, rifleman), Sledgehammer (heavy gunners, grenadiers).
 // Taser (anyone): darts on wires (3 tiles) that short out light and medium
 //   robots outright, take 9 off heavy ones, and stun anyone else for a turn.
+// Adrenaline Shot (anyone): costs half your remaining health (nothing at
+//   1 HP) and gives 2 extra action points this turn. Free to use.
 // Fire: the Flamethrower main weapon (heavy gunners, assault: Shoot sweeps
 //   a cone of fire), the Flamethrower item (a cone of flame that leaves the ground
 //   burning; heavy gunners, assault) and Incendiary Grenades (anyone).
@@ -133,6 +135,15 @@
     ],
 
     abilities: [
+        (
+            id: "adrenaline",
+            name: "Adrenaline Shot",
+            description: "Jab yourself: lose half your remaining health (nothing if you're down to 1) and gain 2 action points right now. Costs no AP (needs at least 1). One shot per syringe.",
+            cost: Points(0),
+            charges: Some(1),
+            targeting: SelfOnly,
+            effect: Adrenaline(action_points: 2),
+        ),
         // --- Melee ---
         (
             id: "stab",
@@ -305,6 +316,7 @@
     ],
 
     presentations: [
+        (ability: "adrenaline", animation: "heal", projectile: None, windup: 0.2),
         (ability: "stab", animation: "throw", projectile: None, windup: 0.25),
         (ability: "hack", animation: "throw", projectile: None, windup: 0.3),
         (ability: "smash", animation: "throw", projectile: None, windup: 0.4),
@@ -317,6 +329,14 @@
     ],
 
     items: [
+        (
+            id: "adrenaline_shot",
+            name: "Adrenaline Shot",
+            description: "Grants Adrenaline Shot: +2 AP now, for half your remaining health.",
+            slot: Utility,
+            abilities: ["adrenaline"],
+            charges: Some(1),
+        ),
         (
             id: "combat_knife",
             name: "Combat Knife",

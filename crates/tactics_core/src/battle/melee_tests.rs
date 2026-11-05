@@ -109,3 +109,31 @@ fn a_slam_hits_everyone_around_the_user_but_the_user() {
     assert_eq!(hp(&b, ally), ally0 - 5, "friend or foe");
     assert_eq!(hp(&b, far), far0, "only those next to it");
 }
+
+#[test]
+fn an_adrenaline_shot_trades_half_your_health_for_two_action_points() {
+    let mut r = rules();
+    r.add_ability(
+        AbilityDef::new("adrenaline", "Adrenaline")
+            .with_cost(ApCost::Points(0))
+            .with_targeting(Targeting::SelfOnly, AbilityRange::Fixed(0.0))
+            .with_effect(AbilityEffect::Adrenaline { action_points: 2 }),
+    );
+    let mut c = r.class("rifleman").unwrap().clone();
+    c.abilities.push(AbilityId::new("adrenaline"));
+    r.add_class(c);
+    let mut b = Battle::new(Map::from_ascii(&"........\n".repeat(3)), r, 1);
+    let a = b.spawn("rifleman", "A", Team::Player, GridPos::new(1, 1)).unwrap();
+    b.spawn("rifleman", "E", Team::Enemy, GridPos::new(7, 1)).unwrap();
+    let hp = b.unit(a).unwrap().hp;
+    let ap = b.unit(a).unwrap().action_points;
+    b.apply(Action::ability(a, "adrenaline", Target::None)).unwrap();
+    let u = b.unit(a).unwrap();
+    assert_eq!(u.hp, hp - hp / 2, "half the remaining health, rounded down");
+    assert_eq!(u.action_points, ap + 2);
+    // At 1 HP it costs nothing.
+    b.units[a.0 as usize].hp = 1;
+    b.apply(Action::ability(a, "adrenaline", Target::None)).unwrap();
+    let u = b.unit(a).unwrap();
+    assert_eq!((u.hp, u.action_points), (1, ap + 4));
+}

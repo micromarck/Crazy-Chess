@@ -285,6 +285,7 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `Cool(amount: n)` | int | Machines only: sheds `n` heat (coolant). |
 | `Overclock` | — | For the rest of the user's turn: its next turn-ending attack costs only 1 AP (an extra shot) and all heat it makes is doubled. |
 | `Idle` | — | Does nothing (with `cost: EndsTurn`, ends the turn): robots idling to cool off without making heat. |
+| `Adrenaline` | `action_points` | An adrenaline shot (living units only): the user loses half its remaining health, rounded down (nothing at 1 HP), and gains `action_points` AP at once. Use `cost: Points(0)`. |
 | `Leap(reach: r, over_walls: b)` | float, bool | Target a tile: move there in a straight line, up to `r` times the unit's normal move. `over_walls: true` flies over anything (jump pack); `false` is stopped by walls, holes, units and steep steps (boost thrusters). Overwatch can fire at the landing. |
 
 ### Attack stats (`AttackProfile`)

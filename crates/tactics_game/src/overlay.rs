@@ -401,7 +401,7 @@ fn draw_health_bars(
         // Action points left (player's turn, own soldiers): small gold dots.
         if unit.team == Team::Player && state.battle.active_team() == Team::Player && !state.battle.is_over() {
             let ap = unit.action_points as i32;
-            let max_ap = state.battle.rules().combat.action_points as i32;
+            let max_ap = (state.battle.rules().combat.action_points as i32).max(ap); // more after an adrenaline shot
             for i in 0..max_ap {
                 let at = base + Vec3::Y * 0.12 + right * ((i as f32 - (max_ap - 1) as f32 / 2.0) * 0.12);
                 let c = if i < ap { theme::TRACER } else { Color::srgba(0.3, 0.3, 0.3, 0.6) };

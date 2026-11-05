@@ -584,6 +584,8 @@ impl Battle {
                     AbilityEffect::Suppress(_) if u.weapon.ammo <= 0 => return Err(ActionError::OutOfAmmo),
                     AbilityEffect::Suppress(_) if u.weapon.cone > 0.0 => return Err(ActionError::NotWithThisWeapon),
                     AbilityEffect::Overclock if u.status.overclocked => return Err(ActionError::AlreadyActive),
+                    // Flesh and blood only.
+                    AbilityEffect::Adrenaline { .. } if u.heat.is_some() => return Err(ActionError::CantHealMachine),
                     _ => {}
                 }
                 let point = self.check_target(u, def, *target)?;
@@ -841,6 +843,19 @@ impl Battle {
             }
             AbilityEffect::Cool { amount } => self.add_heat(unit, -amount, events),
             AbilityEffect::Idle => {}
+            AbilityEffect::Adrenaline { action_points } => {
+                let cost = self.units[unit.0 as usize].hp / 2;
+                if cost > 0 {
+                    self.apply_damage(unit, cost, true, events);
+                }
+                let u = self.unit_mut(unit);
+                if u.is_alive() {
+                    u.action_points = u.action_points.saturating_add(*action_points);
+                    let remaining = u.action_points;
+                    events.push(GameEvent::Callout { unit, text: format!("ADRENALINE +{action_points} AP") });
+                    events.push(GameEvent::ActionPointsChanged { unit, remaining });
+                }
+            }
             AbilityEffect::Overclock => {
                 let u = self.unit_mut(unit);
                 u.status.overclocked = true;

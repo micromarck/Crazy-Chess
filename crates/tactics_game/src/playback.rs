@@ -483,6 +483,7 @@ fn default_slot(def: &AbilityDef) -> &'static str {
         AbilityEffect::Overclock => "reload",
         AbilityEffect::Leap { .. } => "walk",
         AbilityEffect::Idle => "idle",
+        AbilityEffect::Adrenaline { .. } => "heal",
     }
 }
 
