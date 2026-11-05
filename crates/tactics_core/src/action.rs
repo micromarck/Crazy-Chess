@@ -81,6 +81,8 @@ pub enum ActionError {
     CantHealMachine,
     /// Cooling a unit that doesn't run on heat, or has none to shed.
     NoHeat,
+    /// The effect is already running (e.g. overclocked).
+    AlreadyActive,
 }
 
 impl fmt::Display for ActionError {
@@ -106,6 +108,7 @@ impl fmt::Display for ActionError {
             ActionError::NothingToHeal => write!(f, "target is at full health"),
             ActionError::CantHealMachine => write!(f, "medkits can't fix machines"),
             ActionError::NoHeat => write!(f, "no heat to shed"),
+            ActionError::AlreadyActive => write!(f, "already active"),
         }
     }
 }

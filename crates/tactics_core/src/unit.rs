@@ -308,6 +308,10 @@ pub struct UnitStatus {
     /// the unit's turns; offline (no AP) while above 1, and on reaching 0 it
     /// reboots with all heat vented. Any damage while shut down destroys it.
     pub shutdown: u32,
+    /// Overclocked this turn: all heat it generates is doubled.
+    pub overclocked: bool,
+    /// Overclock's extra shot: the next turn-ending attack costs 1 AP.
+    pub bonus_shot: bool,
     /// Knocked out (script `stun`): the unit's team's next this-many turns
     /// give it no action points.
     pub stunned: u32,

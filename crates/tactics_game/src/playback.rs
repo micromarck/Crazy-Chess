@@ -78,6 +78,8 @@ pub enum Anim {
     Projectile { from: Vec3, to: Vec3, t: f32 },
     /// A rocket flying straight from `from` to `to`, trailing smoke.
     Rocket { from: Vec3, to: Vec3, t: f32 },
+    /// A jump-pack hop (`arc`) or a boost-thruster rush straight to `to`.
+    Leap { entity: Entity, from: Vec3, to: Vec3, arc: bool, t: f32 },
     /// Expanding blast ring (drawn by the overlay).
     Explosion { center: Vec3, radius: f32, t: f32 },
     /// Death: topple + sink (primitive) or the model's death clip, then despawn.
@@ -340,6 +342,22 @@ fn run_playback(
             *t += dt;
             *t >= rocket_time(*from, *to)
         }
+        Anim::Leap { entity, from, to, arc, t } => {
+            // Jumps hang in the air; boosts are a quick rush.
+            let duration = if *arc { 0.75 } else { 0.35 };
+            *t += dt / duration;
+            let k = t.min(1.0);
+            if let Ok(mut tr) = transforms.get_mut(*entity) {
+                let eased = if *arc { k } else { 1.0 - (1.0 - k) * (1.0 - k) };
+                let mut pos = from.lerp(*to, eased);
+                if *arc {
+                    let height = (from.distance(*to) * 0.3).clamp(1.2, 3.5);
+                    pos.y += 4.0 * height * k * (1.0 - k);
+                }
+                tr.translation = pos;
+            }
+            *t >= 1.0
+        }
         Anim::Explosion { t, .. } => {
             *t += dt;
             *t >= EXPLOSION_TIME
@@ -381,6 +399,8 @@ fn default_slot(def: &AbilityDef) -> &'static str {
         AbilityEffect::Suppress(_) => "overwatch",
         AbilityEffect::Shutdown { .. } => "hunker",
         AbilityEffect::Cool { .. } => "reload",
+        AbilityEffect::Overclock => "reload",
+        AbilityEffect::Leap { .. } => "walk",
     }
 }
 
@@ -394,6 +414,14 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
     let pos_of = |id: UnitId| -> Option<Vec3> { entity_of(id).and_then(|e| transforms.get(e).ok()).map(|t| t.translation) };
 
     match event {
+        GameEvent::UnitLeaped { unit, from, to, over_walls } => {
+            let Some(entity) = entity_of(*unit) else { return vec![] };
+            p.log.push(format!("  {} {}", name(*unit), if *over_walls { "jumps" } else { "boosts" }));
+            let (from, to) = (tile_top(battle.map(), *from), tile_top(battle.map(), *to));
+            p.commands.entity(entity).insert(crate::units::FaceTarget(Some(to)));
+            look_at(&p.director, &mut p.rig, to);
+            vec![Anim::Leap { entity, from, to, arc: *over_walls, t: 0.0 }]
+        }
         GameEvent::UnitMoved { unit, from, path } => {
             let Some(entity) = entity_of(*unit) else { return vec![] };
             p.anim.write(AnimCommand::Walking { unit: *unit, on: true });

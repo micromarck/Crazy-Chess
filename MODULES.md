@@ -283,6 +283,8 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `Heal(amount: n)` | int | Restores HP, never above max. Not on machines (units that run on heat). |
 | `Shutdown(turns: n)` | int | Machines only: offline for the user's next `n` turns, then reboots with **all heat vented**. Any damage while shut down destroys it. |
 | `Cool(amount: n)` | int | Machines only: sheds `n` heat (coolant). |
+| `Overclock` | — | For the rest of the user's turn: its next turn-ending attack costs only 1 AP (an extra shot) and all heat it makes is doubled. |
+| `Leap(reach: r, over_walls: b)` | float, bool | Target a tile: move there in a straight line, up to `r` times the unit's normal move. `over_walls: true` flies over anything (jump pack); `false` is stopped by walls, holes, units and steep steps (boost thrusters). Overwatch can fire at the landing. |
 
 ### Attack stats (`AttackProfile`)
 

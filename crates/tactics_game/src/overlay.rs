@@ -220,6 +220,20 @@ fn draw_targeting(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleSt
         Some(Target::Tile(p)) => Some(p),
         _ => selection.hovered,
     };
+
+    // Jump / boost: the line (or arc) to the landing tile, green if it can land there.
+    if let (tactics_core::content::AbilityEffect::Leap { over_walls, .. }, Some(to)) = (&def.effect, area_at) {
+        let ok = battle.validate(&Action::UseAbility { unit: id, ability: ability.clone(), target: Target::Tile(to) }).is_ok();
+        let color = if ok { theme::SELECTED } else { theme::UI_DIM };
+        let from = tile_top(battle.map(), unit.pos) + Vec3::Y * 0.3;
+        let land = tile_top(battle.map(), to) + Vec3::Y * 0.3;
+        let height = if *over_walls { (from.distance(land) * 0.3).clamp(1.2, 3.5) } else { 0.0 };
+        let at = |k: f32| from.lerp(land, k) + Vec3::Y * (4.0 * height * k * (1.0 - k));
+        for i in (0..24).step_by(2) {
+            gizmos.line(at(i as f32 / 24.0), at((i + 1) as f32 / 24.0), color.with_alpha(0.85));
+        }
+        tile_rect(&mut gizmos, battle.map(), to, 0.9, color);
+    }
     if let (Some(profile), Some(hover)) = (def.effect.attack_profile(), area_at)
         && profile.is_area() {
             let ok = battle

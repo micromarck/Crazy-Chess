@@ -210,6 +210,12 @@ mod tests {
         assert!(rules.check_gear("heavy", &gear("minigun")).is_empty());
         assert!(rules.check_gear("grenadier", &gear("autocannon")).is_empty());
         assert!(!rules.check_gear("sniper", &gear("minigun")).is_empty());
+        // Jump packs for soldiers, boost thrusters for frames, not the other way round.
+        let item = |i: &str| Loadout { items: vec![i.into()], ..Default::default() };
+        assert!(rules.check_gear("rifleman", &item("jump_pack")).is_empty());
+        assert!(!rules.check_gear("frame_light", &item("jump_pack")).is_empty());
+        assert!(rules.check_gear("frame_heavy", &item("boost_thrusters")).is_empty());
+        assert!(!rules.check_gear("assault", &item("boost_thrusters")).is_empty());
 
         let mut b = Battle::new(Map::from_ascii(&"....................\n".repeat(8)), rules, 5);
         let light = b.spawn("frame_light", "S-07", Team::Player, GridPos::new(0, 0)).unwrap();
@@ -222,6 +228,8 @@ mod tests {
         assert_eq!(u.weapon.id, "gatling_laser");
         assert!(u.has_ability(&"missile_salvo".into()) && u.has_ability(&"coolant_flush".into()) && u.has_ability(&"shutdown".into()));
         assert!(b.unit(light).unwrap().has_ability(&"coolant_flush".into()));
+        assert!(b.unit(light).unwrap().has_ability(&"overclock".into()) && b.unit(light).unwrap().has_ability(&"boost".into()));
+        assert!(!b.unit(heavy).unwrap().has_ability(&"overclock".into()), "only the small frames overclock");
         assert_eq!(b.unit(gunner).unwrap().weapon.id, "minigun");
         assert!(b.unit(gunner).unwrap().has_ability(&"fire_rocket".into()));
         assert!(b.unit(gunner).unwrap().heat.is_none());

@@ -11,6 +11,10 @@
 //     with all heat vented. Any hit while shut down destroys it, so only do
 //     it out of sight.
 //   * COOLANT TANK (item): flush 6 heat for 1 AP, twice per battle.
+//   * OVERCLOCK (Strider, 3 per mission): this turn one extra shot, but all
+//     heat it makes is doubled.
+//   * BOOST THRUSTERS (item): rush in a straight line up to 3 moves; walls
+//     stop it (humans get the Arsenal's jump pack, which clears walls).
 //   * Its own arsenal (`restricted_gear`): frames can't carry soldiers'
 //     guns, and each frame has its own radical weapons:
 //       Strider (light)  - Twin Pulse Lasers, Needle Rail, Arc Thrower
@@ -49,6 +53,29 @@
             range: Fixed(0.0),
             requires_los: false,
             effect: Cool(amount: 6),
+        ),
+        (
+            id: "overclock",
+            name: "Overclock",
+            description: "Free action, 3 times a mission: this turn your next shot costs only 1 AP (one extra shot), but every bit of heat you make is DOUBLED.",
+            cost: Points(0),
+            charges: Some(3),
+            targeting: SelfOnly,
+            range: Fixed(0.0),
+            requires_los: false,
+            effect: Overclock,
+        ),
+        (
+            id: "boost",
+            name: "Boost",
+            description: "Thrusters: rush in a straight line up to 3 times your normal move. Walls, holes, units and steep steps stop you. 1 AP, +4 heat, 1 turn cooldown.",
+            cost: Points(1),
+            cooldown: 1,
+            targeting: Tile,
+            range: Fixed(0.0),
+            requires_los: false,
+            heat: 4,
+            effect: Leap(reach: 3.0, over_walls: false),
         ),
         (
             id: "inferno",
@@ -97,6 +124,8 @@
     presentations: [
         (ability: "missile_salvo", animation: "shoot", projectile: Rocket, windup: 0.35),
         (ability: "inferno", animation: "shoot", projectile: None, windup: 0.3),
+        (ability: "boost", projectile: None),
+        (ability: "overclock", projectile: None),
         (ability: "shutdown", animation: "hunker"),
     ],
 
@@ -220,6 +249,14 @@
             classes: ["frame_heavy"],
         ),
         (
+            id: "boost_thrusters",
+            name: "Boost Thrusters",
+            description: "Grants Boost: a straight-line rush of up to 3 moves (walls stop it). +4 heat.",
+            slot: Utility,
+            abilities: ["boost"],
+            classes: ["frame_light", "frame_heavy"],
+        ),
+        (
             id: "inferno_projector",
             name: "Inferno Projector",
             description: "Grants Inferno Projector: a cone of fire (+5 heat, 1 turn cooldown).",
@@ -252,7 +289,7 @@
             // max_hp = heat limit.
             stats: (max_hp: 12, mobility: 15, aim: 72, defense: 10, sight: 15.0, bravery: 100),
             weapon: "pulse_lasers",
-            abilities: ["shoot", "overwatch", "shutdown", "reload"],
+            abilities: ["shoot", "overclock", "overwatch", "shutdown", "reload"],
             model: "frame_light",
             fearless: true,
             body: (height: 1.2),
@@ -281,9 +318,9 @@
         (
             id: "strider_std",
             name: "Strider",
-            description: "Pulse lasers and a coolant tank.",
+            description: "Pulse lasers, a coolant tank and boost thrusters.",
             classes: ["frame_light"],
-            gear: (weapon: Some("pulse_lasers"), items: ["coolant_tank"]),
+            gear: (weapon: Some("pulse_lasers"), items: ["coolant_tank", "boost_thrusters"]),
         ),
         (
             id: "strider_rail",

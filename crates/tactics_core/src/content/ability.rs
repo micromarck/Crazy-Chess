@@ -243,6 +243,16 @@ pub enum AbilityEffect {
     Shutdown { turns: u32 },
     /// Shed `amount` heat (coolant flush). Only for units that run on heat.
     Cool { amount: i32 },
+    /// Overclock: for the rest of the user's turn its next turn-ending
+    /// attack costs only 1 AP (an extra shot), and all heat it generates is
+    /// doubled.
+    Overclock,
+    /// Jump/boost straight to the target tile, up to `reach` times the
+    /// unit's normal move (tiles per action point). `over_walls`: flies over
+    /// anything (jump pack); otherwise walls, holes, units and steep steps
+    /// on the line stop it (boost thrusters). Overwatch can fire at the
+    /// landing; landing in fire burns.
+    Leap { reach: f32, over_walls: bool },
 }
 
 impl Default for AbilityEffect {
@@ -280,6 +290,8 @@ impl AbilityEffect {
             AbilityEffect::Suppress(_) => "Suppress",
             AbilityEffect::Shutdown { .. } => "Shutdown",
             AbilityEffect::Cool { .. } => "Cool down",
+            AbilityEffect::Overclock => "Overclock",
+            AbilityEffect::Leap { .. } => "Leap",
         }
     }
 }

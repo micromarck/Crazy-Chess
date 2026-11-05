@@ -7,6 +7,7 @@
 // Heavy: Minigun (heavy gunners), Autocannon (heavy gunners, grenadiers) and
 //   the Rocket Launcher item (a straight-flying rocket that goes off at the
 //   first thing in its way; heavy gunners, grenadiers).
+// Mobility: the Jump Pack item (a straight-line leap over walls, any soldier).
 // Fire: the Flamethrower item (a cone of flame that leaves the ground
 //   burning; heavy gunners, assault) and Incendiary Grenades (anyone).
 (
@@ -148,6 +149,17 @@
             ),
         ),
         (
+            id: "jump",
+            name: "Jump",
+            description: "Jump pack: leap in a straight line up to 2 times your normal move, over walls, gaps and heads. 1 AP, 2 turn cooldown.",
+            cost: Points(1),
+            cooldown: 2,
+            targeting: Tile,
+            range: Fixed(0.0),
+            requires_los: false,
+            effect: Leap(reach: 2.0, over_walls: true),
+        ),
+        (
             id: "incendiary_grenade",
             name: "Incendiary Grenade",
             description: "Throw at a tile: 1-2 damage within 1.5 tiles and the area burns for 3 rounds (2 damage to anyone starting a turn in it, 1 per burning tile walked through).",
@@ -172,6 +184,7 @@
     presentations: [
         (ability: "fire_rocket", animation: "shoot", projectile: Rocket, windup: 0.4),
         (ability: "flamethrower", animation: "shoot", projectile: None, windup: 0.3),
+        (ability: "jump", projectile: None),
         (ability: "incendiary_grenade", animation: "throw", projectile: Arc, windup: 0.3),
     ],
 
@@ -193,6 +206,13 @@
             abilities: ["flamethrower"],
             charges: Some(2),
             classes: ["heavy", "assault"],
+        ),
+        (
+            id: "jump_pack",
+            name: "Jump Pack",
+            description: "Grants Jump: a straight-line leap of up to 2 moves that clears walls.",
+            slot: Utility,
+            abilities: ["jump"],
         ),
         (
             id: "incendiary",

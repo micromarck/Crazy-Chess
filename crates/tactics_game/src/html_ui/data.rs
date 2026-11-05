@@ -115,6 +115,9 @@ pub fn collect_ui_data(
         if u.status.defense_bonus > 0 {
             status.push(format!("Defending +{}", u.status.defense_bonus));
         }
+        if u.status.overclocked {
+            status.push(if u.status.bonus_shot { "OVERCLOCKED: extra shot ready, heat x2".into() } else { "OVERCLOCKED: heat x2".to_string() });
+        }
         if u.is_shut_down() {
             let turns = u.status.shutdown.saturating_sub(1);
             status.push(if turns > 0 {
@@ -325,8 +328,12 @@ fn abilities(b: &Battle, unit: &Unit, selection: &Selection) -> Vec<BTreeMap<Str
             } else {
                 "disabled"
             };
+            let attack = matches!(def.effect, AbilityEffect::Attack(_) | AbilityEffect::Suppress(_));
             let mut cost = match def.cost {
+                ApCost::Points(0) => "free".into(),
                 ApCost::Points(n) => format!("{n} AP"),
+                // Overclock's extra shot.
+                ApCost::EndsTurn if attack && unit.status.bonus_shot => "1 AP (overclock)".into(),
                 ApCost::EndsTurn => "ends turn".into(),
             };
             // Machines: what it does to the heat.

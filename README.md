@@ -169,7 +169,10 @@ TBSium/
   offline turns (but any hit while shut down destroys them); coolant tanks
   shed heat at once. Light Strider and heavy Bastion frames each have their
   own radical arsenal (pulse lasers, needle rail, arc thrower; gatling
-  laser, plasma cannon, missile pod). Build them in the Barracks.
+  laser, plasma cannon, missile pod). Build them in the Barracks. Striders
+  can **overclock** (3 a mission: an extra shot, double heat); frames can
+  carry **boost thrusters** (a long straight-line rush that walls stop),
+  soldiers a **jump pack** (a shorter leap that clears walls).
 * 2 action points per unit; move (1 AP) or dash (2 AP), blue/yellow range overlay.
 * Directional half/full cover, flanking (+crit), cover shields on hover.
 * Hit chance = aim − defence − cover − hunker ± range falloff, shown with a full breakdown.
