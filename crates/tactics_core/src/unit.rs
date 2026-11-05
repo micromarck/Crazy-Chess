@@ -305,6 +305,25 @@ pub struct UnitClass {
     /// `classes` (gear open to everyone is off limits): robot frames have
     /// their own arsenal.
     pub restricted_gear: bool,
+    /// A robot, and how big (`None` = flesh and blood). Shock weapons
+    /// (tasers) short out `Light` and `Medium` machines outright and hurt
+    /// `Heavy` ones badly.
+    pub machine: Machine,
+}
+
+/// What kind of machine a unit is, if any (see [`UnitClass::machine`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize))]
+pub enum Machine {
+    /// Not a machine.
+    #[default]
+    None,
+    /// Drones, sentry bots.
+    Light,
+    /// Man-sized robots (a Strider frame).
+    Medium,
+    /// Big walkers (a Bastion frame, wardens).
+    Heavy,
 }
 
 /// Temporary conditions on a unit. A future "status effect" module type will
@@ -386,6 +405,8 @@ pub struct Unit {
     pub no_half_cover: bool,
     /// Copied from the class: footprint `size` x `size` from `pos`.
     pub size: u8,
+    /// Copied from the class: a robot, and how big.
+    pub machine: Machine,
     /// What the unit carries (resolved at spawn).
     pub gear: crate::content::Loadout,
     /// Looks (`None` = derived from the name by the frontend).

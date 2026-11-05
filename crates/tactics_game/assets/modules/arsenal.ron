@@ -10,6 +10,10 @@
 // Particle Grenade (anyone): a short throw that arms where it lands and goes
 //   off two turns later: 5 damage in a 5x5 square plus shrapnel.
 // Mobility: the Jump Pack item (a straight-line leap over walls, any soldier).
+// Melee (items): Combat Knife (anyone: a quick 1 AP stab), Machete
+//   (assault, rifleman), Sledgehammer (heavy gunners, grenadiers).
+// Taser (anyone): darts on wires (3 tiles) that short out light and medium
+//   robots outright, take 9 off heavy ones, and stun anyone else for a turn.
 // Fire: the Flamethrower main weapon (heavy gunners, assault: Shoot sweeps
 //   a cone of fire), the Flamethrower item (a cone of flame that leaves the ground
 //   burning; heavy gunners, assault) and Incendiary Grenades (anyone).
@@ -19,7 +23,7 @@
         name: "Arsenal",
         version: "1.0",
         author: "Tactics",
-        description: "Laser rifles, a laser lance and scatter laser; the minigun, autocannon and rocket launcher; and the Heavy Gunner class.",
+        description: "Laser rifles, a laser lance and scatter laser; the minigun, autocannon and rocket launcher; melee weapons and a taser for robots; and the Heavy Gunner class.",
     ),
 
     weapons: [
@@ -129,6 +133,81 @@
     ],
 
     abilities: [
+        // --- Melee ---
+        (
+            id: "stab",
+            name: "Stab",
+            description: "Combat knife: 2-3 damage to an adjacent enemy, a big crit chance from the flank. 1 AP.",
+            cost: Points(1),
+            targeting: Enemy,
+            range: Fixed(1.5),
+            effect: Attack(
+                base_accuracy: 85,
+                half_cover_penalty: 10,
+                full_cover_penalty: 20,
+                range_falloff: false,
+                flank_crit_bonus: 40,
+                crit_bonus: 10,
+                damage: Fixed(min: 2, max: 3),
+                melee: true,
+            ),
+        ),
+        (
+            id: "hack",
+            name: "Hack",
+            description: "Machete: 3-5 damage to an adjacent enemy. Ends the turn.",
+            cost: EndsTurn,
+            targeting: Enemy,
+            range: Fixed(1.5),
+            effect: Attack(
+                base_accuracy: 80,
+                half_cover_penalty: 10,
+                full_cover_penalty: 20,
+                range_falloff: false,
+                flank_crit_bonus: 30,
+                crit_bonus: 15,
+                damage: Fixed(min: 3, max: 5),
+                melee: true,
+            ),
+        ),
+        (
+            id: "smash",
+            name: "Smash",
+            description: "Sledgehammer: 4-6 damage to an adjacent enemy, cover doesn't help it. Ends the turn.",
+            cost: EndsTurn,
+            targeting: Enemy,
+            range: Fixed(1.5),
+            effect: Attack(
+                base_accuracy: 75,
+                half_cover_penalty: 0,
+                full_cover_penalty: 0,
+                range_falloff: false,
+                flank_crit_bonus: 20,
+                damage: Fixed(min: 4, max: 6),
+                melee: true,
+            ),
+        ),
+        (
+            id: "tase",
+            name: "Tase",
+            description: "Taser darts (3 tiles): a light or medium robot is shorted out on the spot; a heavy robot takes 9 damage; anyone else takes 1 and is stunned for a turn. 1 AP, 2 cartridges.",
+            cost: Points(1),
+            charges: Some(2),
+            targeting: Enemy,
+            range: Fixed(3.0),
+            requires_los: true,
+            effect: Attack(
+                base_accuracy: 80,
+                half_cover_penalty: 15,
+                full_cover_penalty: 30,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                damage: Fixed(min: 1, max: 1),
+                melee: true,
+                shock: Some(9),
+                stun: 1,
+            ),
+        ),
         (
             id: "fire_rocket",
             name: "Fire Rocket",
@@ -226,6 +305,10 @@
     ],
 
     presentations: [
+        (ability: "stab", animation: "throw", projectile: None, windup: 0.25),
+        (ability: "hack", animation: "throw", projectile: None, windup: 0.3),
+        (ability: "smash", animation: "throw", projectile: None, windup: 0.4),
+        (ability: "tase", animation: "shoot", projectile: Beam, windup: 0.2),
         (ability: "fire_rocket", animation: "shoot", projectile: Rocket, windup: 0.4),
         (ability: "flamethrower", animation: "shoot", projectile: None, windup: 0.3),
         (ability: "jump", projectile: None),
@@ -234,6 +317,37 @@
     ],
 
     items: [
+        (
+            id: "combat_knife",
+            name: "Combat Knife",
+            description: "Grants Stab: a quick 1 AP knife strike (2-3, deadly from the flank).",
+            slot: Utility,
+            abilities: ["stab"],
+        ),
+        (
+            id: "machete",
+            name: "Machete",
+            description: "Grants Hack: a heavy blade (3-5 to an adjacent enemy).",
+            slot: Utility,
+            abilities: ["hack"],
+            classes: ["assault", "rifleman"],
+        ),
+        (
+            id: "sledgehammer",
+            name: "Sledgehammer",
+            description: "Grants Smash: 4-6 to an adjacent enemy, through cover.",
+            slot: Utility,
+            abilities: ["smash"],
+            classes: ["heavy", "grenadier"],
+        ),
+        (
+            id: "taser",
+            name: "Taser",
+            description: "Grants Tase (2 cartridges): shorts out light and medium robots outright, 9 damage to heavy ones, stuns anyone else.",
+            slot: Utility,
+            abilities: ["tase"],
+            charges: Some(2),
+        ),
         (
             id: "rocket_launcher",
             name: "Rocket Launcher",
@@ -317,6 +431,13 @@
             description: "Flamethrower as the main weapon, and an incendiary grenade.",
             classes: ["heavy"],
             gear: (weapon: Some("flamer"), items: ["incendiary"]),
+        ),
+        (
+            id: "breacher",
+            name: "Assault: Breacher",
+            description: "Shotgun, a machete and a taser: for clearing rooms of robots.",
+            classes: ["assault"],
+            gear: (items: ["machete", "taser"]),
         ),
         (
             id: "laser_trooper",

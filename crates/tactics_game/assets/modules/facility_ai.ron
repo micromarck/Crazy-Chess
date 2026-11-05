@@ -277,9 +277,39 @@
         ),
     ],
 
+    abilities: [
+        (
+            // A ground slam (big robots): aimed at an adjacent enemy, it hits
+            // everyone around the robot (friend or foe), cover or not.
+            id: "slam",
+            name: "Slam",
+            description: "Slam the ground: 4-6 damage to everyone next to you (friend or foe), cover doesn't help, wrecks props and walls around you. Never misses. Ends the turn.",
+            cost: EndsTurn,
+            targeting: Enemy,
+            range: Fixed(1.5),
+            heat: 3,
+            effect: Attack(
+                can_miss: false,
+                half_cover_penalty: 0,
+                full_cover_penalty: 0,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                damage: Fixed(min: 4, max: 6),
+                area_radius: 1.5,
+                melee: true,
+                slam: true,
+            ),
+        ),
+    ],
+
+    presentations: [
+        (ability: "slam", animation: "throw", projectile: None, windup: 0.45),
+    ],
+
     classes: [
         (
             id: "fac_secbot",
+            machine: Light,
             name: "Security Bot",
             stats: (max_hp: 4, mobility: 12, aim: 52, defense: 5, sight: 12.0, bravery: 100),
             weapon: "sec_smg",
@@ -291,6 +321,7 @@
         ),
         (
             id: "fac_drone",
+            machine: Light,
             name: "Patrol Drone",
             stats: (max_hp: 3, mobility: 14, aim: 56, defense: 15, sight: 16.0, bravery: 100),
             weapon: "spot_laser",
@@ -302,10 +333,11 @@
         ),
         (
             id: "fac_warden",
+            machine: Heavy,
             name: "Warden",
             stats: (max_hp: 14, mobility: 8, aim: 56, defense: 10, sight: 12.0, bravery: 100),
             weapon: "warden_cannon",
-            abilities: ["shoot", "suppress", "overwatch", "reload"],
+            abilities: ["shoot", "suppress", "overwatch", "reload", "slam"],
             model: "fac_warden",
             fearless: true,
             hearing: 8.0,
@@ -320,10 +352,11 @@
         ),
         (
             id: "vesper_prime",
+            machine: Heavy,
             name: "VESPER Prime",
             stats: (max_hp: 22, mobility: 9, aim: 60, defense: 10, sight: 13.0, bravery: 100),
             weapon: "vesper_lance",
-            abilities: ["shoot", "overwatch", "hunker", "reload"],
+            abilities: ["shoot", "overwatch", "hunker", "reload", "slam"],
             model: "vesper_prime",
             fearless: true,
             hearing: 10.0,

@@ -89,6 +89,10 @@ impl Battle {
     /// Where an area attack from `from` aimed at `point` goes off: `point`,
     /// or for a rocket (`direct`) the first wall or unit on the way.
     pub fn blast_point(&self, from: GridPos, profile: &AttackProfile, point: GridPos) -> GridPos {
+        // A slam goes off round the user, whoever it's aimed at.
+        if profile.slam {
+            return from;
+        }
         if !profile.direct || from == point {
             return point;
         }

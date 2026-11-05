@@ -39,6 +39,8 @@ use crate::visibility;
 mod ballistics;
 #[cfg(test)]
 mod big_tests;
+#[cfg(test)]
+mod melee_tests;
 mod fire;
 mod heat;
 mod morale;
@@ -236,6 +238,7 @@ impl Battle {
             heat: class.heat,
             no_half_cover: class.no_half_cover,
             size: class.size.max(1),
+            machine: class.machine,
             gear: Loadout { weapon: Some(weapon_id), ..gear },
             appearance: None,
         };
@@ -882,6 +885,7 @@ impl Battle {
             self.units
                 .iter()
                 .filter(|u| u.is_alive() && u.tiles().any(|p| tiles.contains(&p)))
+                .filter(|u| !profile.slam || u.id != user.id)
                 .map(|u| (u.id, origin))
                 .collect()
         } else if let Target::Unit(id) = target {
@@ -1106,6 +1110,16 @@ impl Battle {
             // The attack event already shows the damage; this applies it and
             // runs damaged/death scripts.
             self.apply_damage_from(target, damage, false, Some(attacker), events);
+            // Tasers knock flesh and blood out for a while.
+            let t = &mut self.units[target.0 as usize];
+            if profile.stun > 0 && t.is_alive() && t.machine == crate::unit::Machine::None {
+                t.status.stunned = t.status.stunned.max(profile.stun);
+                if t.team == self.active_team {
+                    t.action_points = 0;
+                }
+                t.status.overwatch = None;
+                events.push(GameEvent::UnitStunned { unit: target, turns: profile.stun });
+            }
         } else {
             let shot_at = self.rules.combat.morale.shot_at;
             self.add_fear(target, shot_at, events);

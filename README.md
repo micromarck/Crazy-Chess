@@ -169,7 +169,11 @@ TBSium/
   at the first thing in the way), a flamethrower (as a main weapon or a
   backpack: a cone of fire) and
   incendiary grenades, a particle grenade (short throw, goes off two turns
-  later: 5 damage in a 5x5 square plus shrapnel), and the Heavy Gunner class.
+  later: 5 damage in a 5x5 square plus shrapnel), melee weapons (combat
+  knife, machete, sledgehammer), a **taser** (shorts out light and medium
+  robots on the spot, 9 damage to heavy ones, stuns people), and the Heavy
+  Gunner class. Big robots (Bastion frames, wardens, loaders) can **slam** the
+  ground, hitting everyone next to them.
 * Fire: flamethrowers, incendiaries and exploding fuel barrels leave tiles
   burning for a few rounds; standing or walking in fire burns (machines heat
   up), props in it cook off, and the AI keeps out of it.
