@@ -86,6 +86,10 @@ pub enum Anim {
     Death { entity: Entity, t: f32, duration: f32, topple: bool },
     /// Do nothing for a while (wind-ups, banners).
     Wait { remaining: f32 },
+    /// Several animations playing at the same time (a horde's walks).
+    Group(Vec<Anim>),
+    /// Animations one after the other (one strand of a group).
+    Sequence(VecDeque<Anim>),
 }
 
 /// A death playing alongside everything else (weak horde enemies): same
@@ -134,10 +138,18 @@ impl VolleyBullet {
     }
 }
 
+/// An entry of the playback queue.
+#[derive(Debug, Clone)]
+enum Queued {
+    One(GameEvent),
+    /// Played together: their animations run side by side.
+    Together(Vec<GameEvent>),
+}
+
 /// Queue of events awaiting presentation plus the animations in progress.
 #[derive(Resource, Default)]
 pub struct Playback {
-    queue: VecDeque<GameEvent>,
+    queue: VecDeque<Queued>,
     anims: VecDeque<Anim>,
     current: Option<Anim>,
     /// Last unit that attacked (the "actor" of kill cams).
@@ -148,7 +160,14 @@ pub struct Playback {
 
 impl Playback {
     pub fn enqueue(&mut self, events: impl IntoIterator<Item = GameEvent>) {
-        self.queue.extend(events);
+        self.queue.extend(events.into_iter().map(Queued::One));
+    }
+
+    /// Events whose animations play **at the same time** (a horde's walks).
+    pub fn enqueue_together(&mut self, events: Vec<GameEvent>) {
+        if !events.is_empty() {
+            self.queue.push_back(Queued::Together(events));
+        }
     }
 
     /// `true` while events are queued or an animation runs.
@@ -245,13 +264,78 @@ fn run_playback(
             playback.current = Some(next);
             break;
         }
-        let Some(event) = playback.queue.pop_front() else { break };
-        let anims = start_event(&event, &mut playback, &mut p, &transforms);
-        playback.anims.extend(anims);
+        let Some(next) = playback.queue.pop_front() else { break };
+        match next {
+            Queued::One(event) => {
+                let anims = start_event(&event, &mut playback, &mut p, &transforms);
+                playback.anims.extend(anims);
+            }
+            Queued::Together(events) => {
+                // Each unit's walk becomes one strand of a group; the camera
+                // takes in the whole crowd instead of following anyone.
+                // One strand per unit: a unit's moves play in order, the
+                // units side by side.
+                let mut strands: Vec<(Option<UnitId>, VecDeque<Anim>)> = Vec::new();
+                let mut seen = Vec::new();
+                for event in &events {
+                    let unit = match event {
+                        GameEvent::UnitMoved { unit, path, .. } => {
+                            if p.state.battle.is_revealed(*unit)
+                                && let Some(last) = path.last()
+                            {
+                                seen.push(tile_top(p.state.battle.map(), *last));
+                            }
+                            Some(*unit)
+                        }
+                        _ => None,
+                    };
+                    let anims = start_event(event, &mut playback, &mut p, &transforms);
+                    if anims.is_empty() {
+                        continue;
+                    }
+                    match strands.iter_mut().find(|(u, _)| unit.is_some() && *u == unit) {
+                        Some((_, strand)) => strand.extend(anims),
+                        None => strands.push((unit, anims.into())),
+                    }
+                }
+                let group: Vec<Anim> = strands
+                    .into_iter()
+                    .map(|(_, mut s)| if s.len() == 1 { s.pop_front().unwrap() } else { Anim::Sequence(s) })
+                    .collect();
+                if !seen.is_empty() && !p.director.is_active() {
+                    let centre = seen.iter().copied().sum::<Vec3>() / seen.len() as f32;
+                    p.rig.follow(centre);
+                }
+                if !group.is_empty() {
+                    playback.anims.push_back(Anim::Group(group));
+                }
+            }
+        }
     }
 
-    let Some(anim) = playback.current.as_mut() else { return };
-    let finished = match anim {
+    let Some(mut anim) = playback.current.take() else { return };
+    if !step_anim(&mut anim, dt, true, &mut transforms, &mut p) {
+        playback.current = Some(anim);
+    }
+}
+
+/// Advances one animation by `dt`; returns whether it finished. `solo`:
+/// it's the only thing playing (the camera may follow it), not one of a
+/// group playing together.
+fn step_anim(anim: &mut Anim, dt: f32, solo: bool, transforms: &mut Query<&mut Transform>, p: &mut Presenter) -> bool {
+    match anim {
+        Anim::Group(list) => {
+            list.retain_mut(|a| !step_anim(a, dt, false, transforms, p));
+            list.is_empty()
+        }
+        Anim::Sequence(list) => {
+            if let Some(first) = list.front_mut()
+                && step_anim(first, dt, solo, transforms, p)
+            {
+                list.pop_front();
+            }
+            list.is_empty()
+        }
         Anim::Walk { unit, entity, from, points, index, t } => {
             // Constant speed: progress along a segment depends on its length,
             // so diagonals take longer than straight steps.
@@ -289,7 +373,7 @@ fn run_playback(
                     }
                     tr.translation = pos;
                     p.commands.entity(*entity).insert(crate::units::FaceTarget(Some(*next)));
-                    if !hidden && !p.director.is_active() {
+                    if solo && !hidden && !p.director.is_active() {
                         p.rig.track(tr.translation);
                     }
                 } else {
@@ -381,9 +465,6 @@ fn run_playback(
             *remaining -= dt;
             *remaining <= 0.0
         }
-    };
-    if finished {
-        playback.current = None;
     }
 }
 

@@ -419,6 +419,56 @@ mod tests {
         assert!(b.props().iter().filter(|p| p.tag == tags[0]).all(|p| p.door.is_some_and(|d| !d.open)));
     }
 
+    /// Hold the Hill: zombies can climb to the plateau (up the ramps; the
+    /// cliffs are too steep), the tide keeps 10-12 on the hill and never
+    /// more than 30 alive, and the squad wins by being on the pad once the
+    /// chopper lands (turn 12).
+    #[test]
+    fn hill_horde_tides_and_evac() {
+        use tactics_core::grid::Climb;
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(MISSION_DIR);
+        let def = parse_mission(&std::fs::read_to_string(dir.join("hill.mission.xml")).unwrap()).unwrap();
+        let (rules, _) = crate::content::build_ruleset();
+        let (mut b, warnings) = Battle::from_mission(rules, &def, 5);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let ev = b.begin();
+        assert!(!ev.iter().any(|e| matches!(e, GameEvent::ScriptError { .. })), "{ev:?}");
+        // Zombies can get up there (climbing 1 level per step).
+        let top = b.living(Team::Player).next().unwrap().pos;
+        let up = tactics_core::pathfinding::reachable(b.map(), top, u32::MAX / 4, Climb { max_up: 9 }, |_| true);
+        let zombie = b.living(Team::Enemy).next().unwrap();
+        let climb = tactics_core::pathfinding::reachable(b.map(), zombie.pos, u32::MAX / 4, Climb { max_up: 1 }, |_| true);
+        assert!(climb.contains(top), "zombies can reach the plateau");
+        assert!(up.contains(zombie.pos));
+        // A cliff: some slope tile next to a much lower one.
+        let cliff = (0..b.map().width()).flat_map(|x| (0..b.map().height()).map(move |y| GridPos::new(x, y))).any(|p| {
+            [(1, 0), (0, 1)].iter().any(|(dx, dy)| {
+                let q = GridPos::new(p.x + dx, p.y + dy);
+                b.map().in_bounds(q) && b.map().is_walkable(p) && b.map().is_walkable(q) && (b.map().elevation(p) - b.map().elevation(q)).abs() >= 2
+            })
+        });
+        assert!(cliff, "the hill has cliffs");
+
+        // Let the zombies come for a while (the squad just waits): the tide
+        // tops them up and never passes 30.
+        let mut most = 0;
+        for _ in 0..8 {
+            b.apply(Action::EndTurn).unwrap(); // zombies' turn: the tide spawns
+            most = most.max(b.living(Team::Enemy).count());
+            assert!(b.living(Team::Enemy).count() <= 30);
+            // Zombies don't act here (we only end turns), so nothing dies.
+            b.apply(Action::EndTurn).unwrap();
+        }
+        assert!(most >= 20, "they build up: {most}");
+        assert_eq!(b.living(Team::Enemy).count().min(30), b.living(Team::Enemy).count());
+
+        // The squad (still on the pad) wins when the chopper lands.
+        while b.round() < 12 && !b.is_over() {
+            b.apply(Action::EndTurn).unwrap();
+        }
+        assert_eq!(b.winner(), Some(Team::Player), "round {}", b.round());
+    }
+
     /// Every mission in `assets/missions/index.xml` parses and builds a
     /// battle with the game's modules, without warnings or script errors.
     #[test]
