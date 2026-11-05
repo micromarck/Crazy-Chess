@@ -284,6 +284,9 @@ pub struct UnitClass {
     pub loadout: Option<String>,
     /// Runs on heat instead of health (see [`HeatRules`]).
     pub heat: Option<HeatRules>,
+    /// Too big to hide behind low cover: half cover gives it nothing (full
+    /// cover still does). Robot frames.
+    pub no_half_cover: bool,
     /// May only use weapons and items that name this class in their
     /// `classes` (gear open to everyone is off limits): robot frames have
     /// their own arsenal.
@@ -361,6 +364,8 @@ pub struct Unit {
     pub body: Body,
     /// Copied from the class: runs on heat instead of health.
     pub heat: Option<HeatRules>,
+    /// Copied from the class: half cover doesn't protect it.
+    pub no_half_cover: bool,
     /// What the unit carries (resolved at spawn).
     pub gear: crate::content::Loadout,
     /// Looks (`None` = derived from the name by the frontend).

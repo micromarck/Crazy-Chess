@@ -227,6 +227,7 @@ impl Battle {
             fearless: class.fearless,
             body: class.body,
             heat: class.heat,
+            no_half_cover: class.no_half_cover,
             gear: Loadout { weapon: Some(weapon_id), ..gear },
             appearance: None,
         };

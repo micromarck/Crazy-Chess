@@ -563,6 +563,7 @@ fn eval_tile(battle: &Battle, unit: &Unit, pos: GridPos, config: &AiConfig) -> T
         score += config.cover_weight
             * match cover.level {
                 CoverLevel::Full => 30.0,
+                CoverLevel::Half if unit.no_half_cover => -25.0,
                 CoverLevel::Half => 15.0,
                 CoverLevel::None => -25.0,
             };

@@ -15,6 +15,8 @@
 //     guns, and each frame has its own radical weapons:
 //       Strider (light)  - Twin Pulse Lasers, Needle Rail, Arc Thrower
 //       Bastion (heavy)  - Gatling Laser, Plasma Cannon, Missile Pod
+//   * TOO BIG FOR LOW COVER (`no_half_cover`): half cover gives a frame
+//     nothing; only full cover (walls) protects it.
 //   * Medkits don't fix machines; machines feel no fear.
 (
     info: (
@@ -225,6 +227,7 @@
             body: (height: 1.2),
             heat: (cooling: 4, per_move: 1, per_shot: 2),
             restricted_gear: true,
+            no_half_cover: true,   // too big to hide behind low cover
             loadout: "strider_std",
         ),
         (
@@ -238,6 +241,7 @@
             body: (height: 1.8),
             heat: (cooling: 3, per_move: 3, per_shot: 4),
             restricted_gear: true,
+            no_half_cover: true,   // too big to hide behind low cover
             loadout: "bastion_std",
         ),
     ],

@@ -233,6 +233,40 @@ mod tests {
         assert_eq!(b.unit(heavy).unwrap().heat(), 8);
     }
 
+    /// Frames are too big for low cover: a crate in front of a frame gives
+    /// it nothing, the same crate in front of a soldier does; a wall still
+    /// protects both.
+    #[test]
+    fn frames_get_no_half_cover() {
+        let (rules, _) = build_ruleset();
+        let art = "
+            E.....
+            ......
+            ......
+            .h.H..
+            .F.S..
+        ";
+        let mut b = Battle::new(Map::from_ascii(art), rules, 1);
+        let f = b.spawn("frame_light", "S-07", Team::Player, Map::find_markers(art, 'F')[0]).unwrap();
+        let s = b.spawn("rifleman", "Vance", Team::Player, Map::find_markers(art, 'S')[0]).unwrap();
+        let e = b.spawn("merc_rifleman", "Merc", Team::Enemy, Map::find_markers(art, 'E')[0]).unwrap();
+        let (fu, su, eu) = (b.unit(f).unwrap(), b.unit(s).unwrap(), b.unit(e).unwrap());
+        let profile = b.ability(&"shoot".into()).unwrap().effect.attack_profile().unwrap().clone();
+        let at_frame = tactics_core::combat::preview_attack(&b.rules().combat, b.map(), eu.pos, eu, fu, &profile);
+        assert!(!at_frame.breakdown.iter().any(|(l, _)| l.contains("cover")), "no half cover for frames: {:?}", at_frame.breakdown);
+        assert_eq!(at_frame.cover_block, 0);
+        // The crate still covers a soldier.
+        let mut soldier = su.clone();
+        soldier.pos = fu.pos;
+        let at_soldier = tactics_core::combat::preview_attack(&b.rules().combat, b.map(), eu.pos, eu, &soldier, &profile);
+        assert!(at_soldier.hit_chance < at_frame.hit_chance, "{} vs {}", at_soldier.hit_chance, at_frame.hit_chance);
+        // Full cover still protects a frame.
+        let mut frame = fu.clone();
+        frame.pos = su.pos;
+        let behind_wall = tactics_core::combat::preview_attack(&b.rules().combat, b.map(), eu.pos, eu, &frame, &profile);
+        assert!(behind_wall.hit_chance < at_frame.hit_chance);
+    }
+
     /// AI vs AI with robot frames in the squad: only legal actions, the AI
     /// never overheats its own frames, and the frames get hot and cool off.
     #[test]
