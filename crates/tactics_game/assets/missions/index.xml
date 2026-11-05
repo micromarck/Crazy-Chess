@@ -15,5 +15,6 @@
   <mission file="scrapyard.mission.xml"/>
   <mission file="salvage_run.mission.xml"/>
   <mission file="facility.mission.xml"/>
+  <mission file="hill.mission.xml"/>
   <mission file="lab.mission.xml"/>
 </missions>
