@@ -185,7 +185,7 @@ presentations: [
         animation: "shoot",       // slot on the user (default depends on the effect)
         camera: "laser_cam",      // camera script to run
         camera_chance: 60,        // % of uses that get the cinematic
-        projectile: Beam,         // Tracer | Beam | Arc | None
+        projectile: Beam,         // Tracer | Beam | Arc | Rocket | None
         windup: 0.25,             // seconds from animation start to the effect
     ),
 ],
@@ -302,6 +302,9 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `rounds` | weapon `burst` | Rounds fired per use (e.g. `Some(12)` for suppression). |
 | `melee` | `false` | A strike in reach (claws, blades): rolled, not traced as a bullet. |
 | `shrapnel` | `0` | Area attacks: fragments thrown out of the blast in every direction, traced like bullets up to `area_radius + 5` tiles; 1 damage each to the first unit hit (friend or foe, outside the blast); walls stop them. The Frag Grenade throws 16. |
+| `cone` | `0.0` | > 0 = a **cone** this many degrees wide from the user towards the target tile, reaching that far (flamethrowers). Hits everyone in it the user can see, friend or foe; cover counts from the user. |
+| `ignite` | `0` | Sets the blast or cone **on fire** for this many rounds: a unit starting its turn in fire takes `combat.fire_damage` (2), each burning tile walked into `combat.fire_step_damage` (1); props there take 1 a round; walls don't burn. |
+| `direct` | `false` | Area attacks: the projectile flies **straight** (a rocket) and goes off at the first wall or unit in the way. Pair with `projectile: Rocket` in the presentation. |
 
 Hit chance:
 

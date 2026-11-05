@@ -221,12 +221,29 @@ fn draw_targeting(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleSt
         _ => selection.hovered,
     };
     if let (Some(profile), Some(hover)) = (def.effect.attack_profile(), area_at)
-        && profile.area_radius > 0.0 {
+        && profile.is_area() {
             let ok = battle
                 .validate(&Action::UseAbility { unit: id, ability: ability.clone(), target: Target::Tile(hover) })
                 .is_ok();
             let color = if ok { theme::EXPLOSION } else { theme::UI_DIM };
-            ground_circle(&mut gizmos, tile_top(battle.map(), hover), profile.area_radius, color);
+            // Rockets go off at the first thing in their way: show where.
+            let point = battle.blast_point(unit.pos, profile, hover);
+            let tiles = battle.area_tiles(unit.pos, profile, point);
+            if profile.cone > 0.0 {
+                // A cone: every tile it will scorch.
+                for t in &tiles {
+                    tile_rect(&mut gizmos, battle.map(), *t, 0.9, color.with_alpha(0.7));
+                }
+            } else {
+                ground_circle(&mut gizmos, tile_top(battle.map(), point), profile.area_radius, color);
+            }
+            if profile.direct {
+                let from = tile_top(battle.map(), unit.pos) + Vec3::Y * theme::UNIT_HEIGHT * 0.7;
+                let to = tile_top(battle.map(), point) + Vec3::Y * 0.5;
+                for i in (0..20).step_by(2) {
+                    gizmos.line(from.lerp(to, i as f32 / 20.0), from.lerp(to, (i + 1) as f32 / 20.0), color.with_alpha(0.8));
+                }
+            }
             // Throw preview: the arc the grenade would fly.
             let lobbed = battle.rules().presentation_of(&def.id).is_some_and(|p| p.projectile == tactics_core::content::ProjectileStyle::Arc);
             if lobbed {
@@ -239,7 +256,7 @@ fn draw_targeting(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleSt
                     gizmos.line(at(i as f32 / 24.0), at((i + 1) as f32 / 24.0), color.with_alpha(0.8));
                 }
             }
-            for u in battle.units().iter().filter(|u| u.is_alive() && u.pos.distance(hover) <= profile.area_radius) {
+            for u in battle.units().iter().filter(|u| u.is_alive() && tiles.contains(&u.pos)) {
                 tile_rect(&mut gizmos, state.battle.map(), u.pos, 0.7, color);
             }
         }
@@ -372,6 +389,29 @@ fn draw_tracer(mut gizmos: Gizmos, playback: Res<Playback>) {
                 ground_circle(&mut gizmos, *center + Vec3::Y * (0.1 + i as f32 * 0.2), r.max(0.05), theme::EXPLOSION.with_alpha(1.0 - k));
             }
             gizmos.sphere(Isometry3d::from_translation(*center + Vec3::Y * 0.4), radius * k * 0.6, theme::TRACER.with_alpha(1.0 - k));
+        }
+        Some(Anim::Rocket { from, to, t }) => {
+            // A rocket body with a flame at the tail and a smoke trail.
+            let k = (t / crate::playback::rocket_time(*from, *to)).min(1.0);
+            let dir = (*to - *from).normalize_or_zero();
+            let head = from.lerp(*to, k);
+            let tail = head - dir * 0.35;
+            for off in [Vec3::ZERO, Vec3::Y * 0.02, -Vec3::Y * 0.02] {
+                gizmos.line(tail + off, head + off, Color::srgb(0.75, 0.78, 0.8));
+            }
+            gizmos.sphere(Isometry3d::from_translation(tail), 0.06, theme::TRACER);
+            gizmos.sphere(Isometry3d::from_translation(tail - dir * 0.08), 0.09, theme::EXPLOSION);
+            let travelled = from.distance(head);
+            let mut d = 0.3;
+            while d < travelled {
+                let p = from.lerp(head, (d / travelled.max(1e-3)).min(1.0));
+                let age = (travelled - d) / crate::playback::ROCKET_SPEED;
+                let fade = (1.0 - age * 1.5).clamp(0.0, 1.0);
+                if fade > 0.0 {
+                    gizmos.sphere(Isometry3d::from_translation(p + Vec3::Y * age * 0.6), 0.06 + age * 0.25, Color::srgba(0.7, 0.7, 0.72, 0.5 * fade));
+                }
+                d += 0.35;
+            }
         }
         Some(Anim::Projectile { from, to, t }) => {
             // Parabola from `from` to `to`, apex proportional to distance.

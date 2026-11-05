@@ -53,6 +53,8 @@ pub const SHOT_TIME: f32 = 0.45;
 pub const AIM_TIME: f32 = 0.2;
 /// Flight time of a lobbed projectile.
 pub const ARC_TIME: f32 = 0.6;
+/// Rocket speed (metres per second).
+pub const ROCKET_SPEED: f32 = 18.0;
 /// Blast ring duration.
 pub const EXPLOSION_TIME: f32 = 0.5;
 /// Death topple duration (models without a death clip).
@@ -74,6 +76,8 @@ pub enum Anim {
     Volley { muzzle: Vec3, bullets: Vec<VolleyBullet>, style: ProjectileStyle, aim: f32, interval: f32, per_round: usize, t: f32 },
     /// A lobbed projectile (grenade) from `from` to `to`.
     Projectile { from: Vec3, to: Vec3, t: f32 },
+    /// A rocket flying straight from `from` to `to`, trailing smoke.
+    Rocket { from: Vec3, to: Vec3, t: f32 },
     /// Expanding blast ring (drawn by the overlay).
     Explosion { center: Vec3, radius: f32, t: f32 },
     /// Death: topple + sink (primitive) or the model's death clip, then despawn.
@@ -136,6 +140,8 @@ pub struct Playback {
     current: Option<Anim>,
     /// Last unit that attacked (the "actor" of kill cams).
     last_attacker: Option<UnitId>,
+    /// A rocket was just fired from here: it flies to the next explosion.
+    rocket_from: Option<Vec3>,
 }
 
 impl Playback {
@@ -330,6 +336,10 @@ fn run_playback(
             *t += dt;
             *t >= ARC_TIME
         }
+        Anim::Rocket { from, to, t } => {
+            *t += dt;
+            *t >= rocket_time(*from, *to)
+        }
         Anim::Explosion { t, .. } => {
             *t += dt;
             *t >= EXPLOSION_TIME
@@ -437,13 +447,41 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             {
                 steps.push(Anim::Projectile { from: actor + Vec3::Y * CHEST, to: to + Vec3::Y * 0.2, t: 0.0 });
             }
+            // A rocket flies to wherever it actually goes off (the explosion
+            // that follows: maybe something in the way).
+            if pres.projectile == ProjectileStyle::Rocket {
+                playback.rocket_from = Some(actor + Vec3::Y * CHEST);
+            }
             steps
         }
 
         GameEvent::Explosion { center, radius } => {
             let c = tile_top(battle.map(), *center);
             look_at(&p.director, &mut p.rig, c);
-            vec![Anim::Explosion { center: c, radius: *radius, t: 0.0 }]
+            let mut steps = Vec::new();
+            if let Some(from) = playback.rocket_from.take() {
+                steps.push(Anim::Rocket { from, to: c + Vec3::Y * 0.5, t: 0.0 });
+            }
+            steps.push(Anim::Explosion { center: c, radius: *radius, t: 0.0 });
+            steps
+        }
+
+        GameEvent::Flames { unit, tiles, .. } => {
+            let fire: Vec<Vec3> = tiles.iter().map(|t| tile_top(battle.map(), *t)).collect();
+            if let Some(far) = fire.last() {
+                look_at(&p.director, &mut p.rig, *far);
+            }
+            p.log.push(format!("  {} sweeps {} tiles with flame", name(*unit), tiles.len()));
+            p.commands.spawn(crate::fire::FlameBurst { tiles: fire, t: 0.0 });
+            vec![Anim::Wait { remaining: 0.55 }]
+        }
+        GameEvent::FireStarted { tiles, turns } => {
+            p.log.push(format!("  {} tile{} catch fire ({turns} rounds)", tiles.len(), if tiles.len() == 1 { "" } else { "s" }));
+            vec![]
+        }
+        GameEvent::FireOut { tiles } => {
+            p.log.push(format!("  {} fire{} burn out", tiles.len(), if tiles.len() == 1 { "" } else { "s" }));
+            vec![]
         }
 
         GameEvent::Volley { attacker, ability, target, origin, hit_chance, reaction, suppress, bullets } => {
@@ -861,4 +899,9 @@ fn spawn_result_text(commands: &mut Commands, at: Vec3, outcome: &ShotOutcome) {
         ShotOutcome::Hit { damage, .. } => (format!("-{damage}"), theme::TARGET),
     };
     FloatingText::spawn(commands, at, text, color);
+}
+
+/// Flight time of a rocket from `from` to `to`.
+pub fn rocket_time(from: Vec3, to: Vec3) -> f32 {
+    (from.distance(to) / ROCKET_SPEED).clamp(0.15, 1.2)
 }

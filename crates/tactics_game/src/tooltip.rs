@@ -149,7 +149,7 @@ pub fn tooltip_text(state: &BattleState, selection: &Selection) -> String {
                 .iter()
                 .filter_map(|(v, p)| b.unit(*v).map(|u| (u, p)))
                 .map(|(u, p)| {
-                    if def.effect.attack_profile().is_some_and(|a| a.area_radius > 0.0) {
+                    if def.effect.attack_profile().is_some_and(|a| a.is_area()) {
                         format!("{} {}-{}", u.name, p.damage.0, p.damage.1)
                     } else {
                         format!("{}  {}-{} dmg  crit {}%{}", odds_text(p), p.damage.0, p.damage.1, p.crit_chance, block_text(p))

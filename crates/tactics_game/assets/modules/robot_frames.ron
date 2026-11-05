@@ -14,7 +14,8 @@
 //   * Its own arsenal (`restricted_gear`): frames can't carry soldiers'
 //     guns, and each frame has its own radical weapons:
 //       Strider (light)  - Twin Pulse Lasers, Needle Rail, Arc Thrower
-//       Bastion (heavy)  - Gatling Laser, Plasma Cannon, Missile Pod
+//       Bastion (heavy)  - Gatling Laser, Plasma Cannon, Missile Pod,
+//                          Inferno Projector (a cone of fire)
 //   * TOO BIG FOR LOW COVER (`no_half_cover`): half cover gives a frame
 //     nothing; only full cover (walls) protects it.
 //   * Medkits don't fix machines; machines feel no fear.
@@ -50,6 +51,27 @@
             effect: Cool(amount: 6),
         ),
         (
+            id: "inferno",
+            name: "Inferno Projector",
+            description: "Roast a 60-degree cone out to 5 tiles: 2-4 damage to everyone in it (friend or foe), ignoring cover; it burns for 3 rounds. +5 heat, 1 turn cooldown.",
+            cost: EndsTurn,
+            cooldown: 1,
+            targeting: Tile,
+            range: Fixed(5.0),
+            requires_los: true,
+            heat: 5,
+            effect: Attack(
+                can_miss: false,
+                half_cover_penalty: 0,
+                full_cover_penalty: 0,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                damage: Fixed(min: 2, max: 4),
+                cone: 60.0,
+                ignite: 3,
+            ),
+        ),
+        (
             id: "missile_salvo",
             name: "Missile Salvo",
             description: "Fire the missile pod at a tile: 3-5 damage to everyone within 1.5 tiles, wrecks walls, 10 fragments. Never misses. +8 heat. 1 per pod.",
@@ -73,7 +95,8 @@
     ],
 
     presentations: [
-        (ability: "missile_salvo", animation: "shoot", projectile: Arc, windup: 0.35),
+        (ability: "missile_salvo", animation: "shoot", projectile: Rocket, windup: 0.35),
+        (ability: "inferno", animation: "shoot", projectile: None, windup: 0.3),
         (ability: "shutdown", animation: "hunker"),
     ],
 
@@ -194,6 +217,14 @@
             slot: Utility,
             abilities: ["missile_salvo"],
             charges: Some(1),
+            classes: ["frame_heavy"],
+        ),
+        (
+            id: "inferno_projector",
+            name: "Inferno Projector",
+            description: "Grants Inferno Projector: a cone of fire (+5 heat, 1 turn cooldown).",
+            slot: Utility,
+            abilities: ["inferno"],
             classes: ["frame_heavy"],
         ),
         (

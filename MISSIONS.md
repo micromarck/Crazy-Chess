@@ -313,6 +313,7 @@ work exactly like `<unit>` scripts above.
 | `stun(unit, turns)`, `unit_stunned(unit)` | knock a unit out: no action points (and no overwatch) for its team's next `turns` turns; `unit_stunned` = turns left |
 | `set_name(unit, name)` | rename a unit |
 | `mark_unit(unit, text)`, `unmark_unit(unit)` | a label that stays over the unit (e.g. a boss), shown when the squad can see it |
+| `ignite(x, y, radius, turns)`, `on_fire(x, y)` | set tiles within `radius` burning for `turns` rounds (fuel barrels: `explode(x, y, 1.6, 4); ignite(x, y, 1.6, 2);`); is a tile burning? |
 
 Example: a door that opens when a switch is used.
 

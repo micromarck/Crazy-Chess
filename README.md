@@ -157,7 +157,12 @@ TBSium/
   modules with class scripts: an officer who holds the line, machines that
   break down, malfunction and lose armour over time).
 * Arsenal (data module): laser rifles, a laser lance and scatter laser (beams),
-  minigun, autocannon and rocket launcher, and the Heavy Gunner class.
+  minigun, autocannon, a rocket launcher (straight-flying rockets that go off
+  at the first thing in the way), a flamethrower (a cone of fire) and
+  incendiary grenades, and the Heavy Gunner class.
+* Fire: flamethrowers, incendiaries and exploding fuel barrels leave tiles
+  burning for a few rounds; standing or walking in fire burns (machines heat
+  up), props in it cook off, and the AI keeps out of it.
 * Robot Frames (data module): player robots that run on **heat instead of
   health**: hits, shots and moving heat them up, they cool each turn, and
   they're destroyed at the heat limit. **Shutdown** vents all heat after two

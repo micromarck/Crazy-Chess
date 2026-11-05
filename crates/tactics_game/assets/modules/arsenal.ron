@@ -5,7 +5,10 @@
 // Lasers: almost no spread, fewer but sharper hits, beams instead of tracers.
 //   Laser Rifle (anyone), Laser Lance (snipers), Scatter Laser (assault).
 // Heavy: Minigun (heavy gunners), Autocannon (heavy gunners, grenadiers) and
-//   the Rocket Launcher item (a 2-tile blast; heavy gunners, grenadiers).
+//   the Rocket Launcher item (a straight-flying rocket that goes off at the
+//   first thing in its way; heavy gunners, grenadiers).
+// Fire: the Flamethrower item (a cone of flame that leaves the ground
+//   burning; heavy gunners, assault) and Incendiary Grenades (anyone).
 (
     info: (
         id: "arsenal",
@@ -106,7 +109,7 @@
         (
             id: "fire_rocket",
             name: "Fire Rocket",
-            description: "Fire at a tile: 4-6 damage to everyone within 2 tiles, wrecks walls and props, 14 fragments fly further. Never misses. One rocket per launcher.",
+            description: "Fire a rocket at a tile: it flies straight and goes off at the first wall or unit in its way. 4-6 damage to everyone within 2 tiles, wrecks walls and props, 14 fragments fly further. One rocket per launcher.",
             cost: EndsTurn,
             charges: Some(1),
             targeting: Tile,
@@ -121,12 +124,55 @@
                 damage: Fixed(min: 4, max: 6),
                 area_radius: 2.0,
                 shrapnel: 14,
+                direct: true,
+            ),
+        ),
+        (
+            id: "flamethrower",
+            name: "Flamethrower",
+            description: "Hose a 50-degree cone out to 5 tiles: 2-3 damage to everyone in it you can see (friend or foe), ignoring cover, and sets it ablaze for 2 rounds. 2 tanks.",
+            cost: EndsTurn,
+            charges: Some(2),
+            targeting: Tile,
+            range: Fixed(5.0),
+            requires_los: true,
+            effect: Attack(
+                can_miss: false,
+                half_cover_penalty: 0,
+                full_cover_penalty: 0,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                damage: Fixed(min: 2, max: 3),
+                cone: 50.0,
+                ignite: 2,
+            ),
+        ),
+        (
+            id: "incendiary_grenade",
+            name: "Incendiary Grenade",
+            description: "Throw at a tile: 1-2 damage within 1.5 tiles and the area burns for 3 rounds (2 damage to anyone starting a turn in it, 1 per burning tile walked through).",
+            cost: Points(1),
+            charges: Some(1),
+            targeting: Tile,
+            range: Fixed(10.0),
+            requires_los: true,
+            effect: Attack(
+                can_miss: false,
+                half_cover_penalty: 0,
+                full_cover_penalty: 0,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                damage: Fixed(min: 1, max: 2),
+                area_radius: 1.5,
+                ignite: 3,
             ),
         ),
     ],
 
     presentations: [
-        (ability: "fire_rocket", animation: "shoot", projectile: Arc, windup: 0.4),
+        (ability: "fire_rocket", animation: "shoot", projectile: Rocket, windup: 0.4),
+        (ability: "flamethrower", animation: "shoot", projectile: None, windup: 0.3),
+        (ability: "incendiary_grenade", animation: "throw", projectile: Arc, windup: 0.3),
     ],
 
     items: [
@@ -138,6 +184,23 @@
             abilities: ["fire_rocket"],
             charges: Some(1),
             classes: ["heavy", "grenadier"],
+        ),
+        (
+            id: "flamethrower_pack",
+            name: "Flamethrower",
+            description: "Grants Flamethrower (two tanks of fuel).",
+            slot: Utility,
+            abilities: ["flamethrower"],
+            charges: Some(2),
+            classes: ["heavy", "assault"],
+        ),
+        (
+            id: "incendiary",
+            name: "Incendiary Grenade",
+            description: "Grants Incendiary Grenade (one throw per grenade).",
+            slot: Utility,
+            abilities: ["incendiary_grenade"],
+            charges: Some(1),
         ),
     ],
 
@@ -167,6 +230,13 @@
             description: "Autocannon and two rocket launchers.",
             classes: ["heavy"],
             gear: (weapon: Some("autocannon"), items: ["rocket_launcher", "rocket_launcher"]),
+        ),
+        (
+            id: "heavy_flame",
+            name: "Heavy: Pyro",
+            description: "Minigun, a flamethrower and an incendiary grenade.",
+            classes: ["heavy"],
+            gear: (weapon: Some("minigun"), items: ["flamethrower_pack", "incendiary"]),
         ),
         (
             id: "laser_trooper",

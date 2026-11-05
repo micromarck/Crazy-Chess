@@ -81,10 +81,10 @@
   <prop tag="wreck2" kind="car" x="19" y="15" cover="half" hp="8"/>
   <prop tag="wreck3" kind="car" x="4" y="7" cover="half" hp="8"/>
   <prop tag="drum1" kind="barrel" x="15" y="12" cover="half" hp="1">
-    <script on="destroyed">explode(x, y, 1.6, 3);</script>
+    <script on="destroyed">explode(x, y, 1.6, 3); ignite(x, y, 1.6, 2);</script>
   </prop>
   <prop tag="drum2" kind="barrel" x="22" y="10" cover="half" hp="1">
-    <script on="destroyed">explode(x, y, 1.6, 3);</script>
+    <script on="destroyed">explode(x, y, 1.6, 3); ignite(x, y, 1.6, 2);</script>
   </prop>
   <prop tag="ammo1" kind="supply_ammo" x="11" y="19" cover="none"/>
   <prop tag="ammo2" kind="supply_ammo" x="26" y="20" cover="none"/>

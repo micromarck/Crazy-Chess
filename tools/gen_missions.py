@@ -231,7 +231,7 @@ def proving_grounds():
     for (x, y) in [(14, 10), (15, 10), (3, 19), (4, 19), (9, 24), (9, 25), (15, 28), (2, 27)]:
         L.set(x, y, "h")
     L.fill(14, 16, 15, 17, "H")
-    L.prop("west_barrel", "barrel", 11, 15, "half", 2, '<script on="destroyed">explode(x, y, 1.6, 4);</script>')
+    L.prop("west_barrel", "barrel", 11, 15, "half", 2, '<script on="destroyed">explode(x, y, 1.6, 4); ignite(x, y, 1.6, 2);</script>')
     # East: a walled compound with a door, barrels and a console.
     L.room(26, 9, 36, 20)
     L.door("compound_west", 26, 14, 1, 2)
@@ -239,7 +239,7 @@ def proving_grounds():
     for (x, y) in [(29, 12), (33, 12), (29, 17), (33, 17)]:
         L.set(x, y, "h")
     L.prop("compound_barrel", "barrel", 31, 14, "half", 2,
-           '<script on="destroyed">message("The fuel barrel explodes!"); explode(x, y, 1.8, 4);</script>')
+           '<script on="destroyed">message("The fuel barrel explodes!"); explode(x, y, 1.8, 4); ignite(x, y, 1.8, 2);</script>')
     L.prop("compound_console", "console", 35, 10, "half")
     L.tile_script(34, 11, '<script on="enter" team="player" once="true">message("Console: the east wing pods are now awake!"); wake_all(); show_zone("pg_console", false);</script>',
                   marker="danger", label="ALARM CONSOLE", tag="pg_console")
@@ -434,9 +434,9 @@ def complex_():
     # Props.
     L.prop("armory_rack", "crate", 8, 8, "half", 4)
     L.prop("gen_core", "barrel", 25, 20, "half", 3,
-           '<script on="destroyed">message("The generator blows! The lights flicker."); explode(x, y, 2.0, 5);</script>')
+           '<script on="destroyed">message("The generator blows! The lights flicker."); explode(x, y, 2.0, 5); ignite(x, y, 2.0, 2);</script>')
     L.prop("gen_core_2", "barrel", 29, 20, "half", 3,
-           '<script on="destroyed">explode(x, y, 2.0, 5);</script>')
+           '<script on="destroyed">explode(x, y, 2.0, 5); ignite(x, y, 2.0, 2);</script>')
     L.prop("sec_console", "console", 39, 4, "half")
     L.prop("mess_table", "crate", 12, 20, "half", 3)
     L.prop("mess_table_2", "crate", 17, 20, "half", 3)

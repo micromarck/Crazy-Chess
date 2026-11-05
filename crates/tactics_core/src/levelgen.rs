@@ -260,7 +260,7 @@ impl Gen {
 
     fn barrel(&mut self, p: GridPos) {
         let tag = format!("barrel_{}_{}", p.x, p.y);
-        let boom = hook(HookEvent::Destroyed, None, "message(\"A barrel explodes!\"); explode(x, y, 1.6, 4);");
+        let boom = hook(HookEvent::Destroyed, None, "message(\"A barrel explodes!\"); explode(x, y, 1.6, 4); ignite(x, y, 1.6, 2);");
         self.prop(tag, "barrel", p, CoverLevel::Half, Some(2), vec![boom]);
     }
 

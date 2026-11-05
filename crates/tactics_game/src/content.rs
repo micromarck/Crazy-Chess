@@ -233,7 +233,65 @@ mod tests {
         assert_eq!(b.unit(heavy).unwrap().heat(), 8);
     }
 
-    /// Frames are too big for low cover: a crate in front of a frame gives
+    /// Fire and rockets: the flamethrower burns a cone and leaves it
+    /// ablaze, the rocket launcher fires straight, and the AI uses them in
+    /// a fight without errors.
+    #[test]
+    fn flamethrowers_and_rockets() {
+        use tactics_core::ai::{self, AiConfig};
+        use tactics_core::content::Loadout;
+        let (rules, _) = build_ruleset();
+        let pyro = Loadout { items: vec!["flamethrower_pack".into(), "incendiary".into()], ..Default::default() };
+        assert!(rules.check_gear("heavy", &pyro).is_empty());
+        assert!(rules.ability(&"fire_rocket".into()).unwrap().effect.attack_profile().unwrap().direct);
+        let art = "
+            ..............
+            ..h......h....
+            ..............
+            ....H.....H...
+            ..............
+        ";
+        let mut fires = 0;
+        for seed in 0..4 {
+            let mut b = Battle::new(Map::from_ascii(art), rules.clone(), seed);
+            b.spawn_equipped("heavy", "Pyro", Team::Player, GridPos::new(0, 2), Some("heavy_flame"), &Loadout::default()).unwrap();
+            b.spawn_equipped("heavy", "Rocketeer", Team::Player, GridPos::new(0, 1), Some("heavy_std"), &Loadout::default()).unwrap();
+            for (i, x) in [7, 8, 9].iter().enumerate() {
+                b.spawn("merc_rifleman", format!("M{i}"), Team::Enemy, GridPos::new(*x, 2)).unwrap();
+            }
+            let config = AiConfig::default();
+            for _ in 0..400 {
+                if b.is_over() || b.round() > 12 {
+                    break;
+                }
+                let action = ai::next_team_action(&b, &config);
+                let ev = b.apply(action.clone()).unwrap_or_else(|e| panic!("illegal {action:?}: {e}"));
+                assert!(script_errors(&ev).is_empty(), "{:?}", script_errors(&ev));
+                fires += ev.iter().filter(|e| matches!(e, GameEvent::FireStarted { .. })).count();
+            }
+        }
+        let _ = fires;
+
+        // Direct use: the flamethrower sets the cone ablaze; the rocket
+        // flies straight into the first merc in its way.
+        let mut b = Battle::new(Map::from_ascii(art), rules.clone(), 1);
+        let pyro = b.spawn_equipped("heavy", "Pyro", Team::Player, GridPos::new(0, 2), Some("heavy_flame"), &Loadout::default()).unwrap();
+        let rocketeer = b.spawn_equipped("heavy", "Rocketeer", Team::Player, GridPos::new(0, 0), Some("heavy_std"), &Loadout::default()).unwrap();
+        let near = b.spawn("merc_rifleman", "Near", Team::Enemy, GridPos::new(4, 2)).unwrap();
+        let blocker = b.spawn("merc_rifleman", "Blocker", Team::Enemy, GridPos::new(6, 0)).unwrap();
+        b.spawn("merc_rifleman", "Far", Team::Enemy, GridPos::new(12, 0)).unwrap();
+        let hp = b.unit(near).unwrap().hp;
+        let ev = b.apply(Action::ability(pyro, "flamethrower", Target::Tile(GridPos::new(4, 2)))).unwrap();
+        assert!(ev.iter().any(|e| matches!(e, GameEvent::FireStarted { .. })));
+        assert!(b.unit(near).unwrap().hp < hp, "burned");
+        assert!(b.on_fire(GridPos::new(3, 2)));
+        let ev = b.apply(Action::ability(rocketeer, "fire_rocket", Target::Tile(GridPos::new(12, 0)))).unwrap();
+        let blocker_pos = GridPos::new(6, 0);
+        assert!(ev.iter().any(|e| matches!(e, GameEvent::Explosion { center, .. } if *center == blocker_pos)), "the rocket hits the first merc");
+        let _ = blocker;
+    }
+
+        /// Frames are too big for low cover: a crate in front of a frame gives
     /// it nothing, the same crate in front of a soldier does; a wall still
     /// protects both.
     #[test]

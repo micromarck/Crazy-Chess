@@ -37,6 +37,7 @@ use crate::unit::{Team, Unit, UnitId};
 use crate::visibility;
 
 mod ballistics;
+mod fire;
 mod heat;
 mod morale;
 mod stealth;
@@ -86,6 +87,8 @@ pub struct Battle {
     map_version: u32,
     /// The mission's background (for renderers).
     sky: crate::mission::SkyDef,
+    /// Burning tiles: rounds of fire left (see fire.rs).
+    fires: std::collections::BTreeMap<GridPos, u32>,
 }
 
 impl Battle {
@@ -117,6 +120,7 @@ impl Battle {
             wall_damage: Default::default(),
             map_version: 0,
             sky: Default::default(),
+            fires: Default::default(),
         }
     }
 
@@ -392,6 +396,7 @@ impl Battle {
         let AbilityEffect::Attack(profile) = &def.effect else {
             return Ok(Vec::new());
         };
+        let point = self.blast_point(user.pos, profile, point);
         Ok(self
             .attack_victims(user, profile, point, target)
             .into_iter()
@@ -649,12 +654,27 @@ impl Battle {
                 }
             }
             AbilityEffect::Attack(profile) => {
-                if profile.area_radius > 0.0 {
+                let user = self.units[unit.0 as usize].clone();
+                // Rockets go off at the first thing in their way.
+                let point = self.blast_point(user.pos, profile, point);
+                let tiles = if profile.is_area() { self.area_tiles(user.pos, profile, point) } else { Vec::new() };
+                if profile.cone > 0.0 {
+                    events.push(GameEvent::Flames { unit, from: user.pos, tiles: tiles.clone() });
+                } else if profile.area_radius > 0.0 {
                     events.push(GameEvent::Explosion { center: point, radius: profile.area_radius });
                 }
-                let user = self.units[unit.0 as usize].clone();
                 for (victim, origin) in self.attack_victims(&user, profile, point, target) {
                     self.resolve_attack(unit, victim, &def.id, origin, profile, false, events);
+                }
+                // Cones scorch the props they sweep.
+                if profile.cone > 0.0 {
+                    let props: Vec<_> = self.props.iter().filter(|p| p.alive && p.hp.is_some() && tiles.contains(&p.pos)).map(|p| p.id).collect();
+                    for id in props {
+                        self.damage_prop(id, 1, events);
+                    }
+                }
+                if profile.ignite > 0 && !self.is_over() {
+                    self.ignite(&tiles, profile.ignite, events);
                 }
                 // Blasts also hit destructible props.
                 if profile.area_radius > 0.0 {
@@ -704,11 +724,14 @@ impl Battle {
 
     /// Units an attack affects, each with the origin used for cover/range.
     fn attack_victims(&self, user: &Unit, profile: &AttackProfile, point: GridPos, target: Target) -> Vec<(UnitId, GridPos)> {
-        if profile.area_radius > 0.0 {
+        if profile.is_area() {
+            // Cones (flamethrowers) are aimed from the user; blasts from their centre.
+            let origin = if profile.cone > 0.0 { user.pos } else { point };
+            let tiles = self.area_tiles(user.pos, profile, point);
             self.units
                 .iter()
-                .filter(|u| u.is_alive() && u.pos.distance(point) <= profile.area_radius)
-                .map(|u| (u.id, point))
+                .filter(|u| u.is_alive() && tiles.contains(&u.pos))
+                .map(|u| (u.id, origin))
                 .collect()
         } else if let Target::Unit(id) = target {
             vec![(id, self.shot_line(user.pos, point).0)]
@@ -750,6 +773,15 @@ impl Battle {
             }
             self.unit_mut(id).pos = step;
             segment.push(step);
+
+            // Walking into fire burns.
+            if self.on_fire(step) {
+                events.push(GameEvent::UnitMoved { unit: id, from: segment_start, path: std::mem::take(&mut segment) });
+                segment_start = step;
+                if !self.burn_step(id, events) || self.is_over() {
+                    return;
+                }
+            }
 
             if let Some((watcher, ability)) = self.find_overwatcher(id) {
                 // Flush the walked part first so the frontend animates in order.
@@ -946,6 +978,7 @@ impl Battle {
         }
         events.push(GameEvent::TurnStarted { team, round: self.round });
         self.heat_turn_start(team, events);
+        self.fire_turn_start(team, events);
         self.morale_turn_start(team, events);
         self.on_turn_start(events);
         self.check_victory(events);
