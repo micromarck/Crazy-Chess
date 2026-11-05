@@ -61,6 +61,10 @@
   #mission-status { top: 12px; left: 300px; max-width: 520px; flex-direction: column; align-items: center; }
   #tools { position: absolute; top: 84px; left: 12px; flex-direction: row; }
   #log { top: 12px; right: 12px; max-width: 440px; font-size: 13px; color: #9aa1ad; }
+  .log-bar { flex-direction: row; justify-content: flex-end; }
+  .log-lines { flex-direction: column; }
+  .log-toggle { height: 28px; min-width: 64px; margin-left: 0px; padding: 2px 8px; font-size: 12px; }
+  .log-folded { height: auto; min-height: 36px; max-width: 420px; margin-left: 0px; padding: 3px 8px; flex-direction: column; align-items: flex-start; font-size: 12px; }
   #unit { bottom: 80px; left: 12px; min-width: 230px; }
   #hover { bottom: 80px; right: 12px; max-width: 380px; }
 
@@ -214,11 +218,22 @@
   <button class="small-button" data-command="toggle:help">Help<span class="key">H</span></button>
   <button class="small-button" data-command="toggle:settings">Settings<span class="key">game</span></button>
   <button class="small-button" data-command="cinematics">Cinema<span class="key" data-if="cinematics">on</span><span class="key" data-if="!cinematics">off</span></button>
+  <button class="small-button" data-command="fullscreen" data-if="ui.can_fullscreen">Full<span class="key">screen</span></button>
 </div>
 
-<!-- Combat log: one line per entry -->
-<div id="log" class="panel" data-for="line in log">
-  <span>{{ line.text }}</span>
+<!-- Mission briefing and combat log: one line per entry. Collapsible:
+     folded, it shows just the latest line (tap it to open again). -->
+<div id="log" class="panel">
+  <div class="log-bar" data-if="!ui.log_hidden">
+    <button class="log-toggle" data-command="toggle:log_hidden">Hide</button>
+  </div>
+  <div class="log-lines" data-if="!ui.log_hidden" data-for="line in log">
+    <span>{{ line.text }}</span>
+  </div>
+  <button class="log-folded" data-if="ui.log_hidden" data-command="toggle:log_hidden">
+    <span class="key">MISSION LOG - tap to open</span>
+    <span>{{ log.last }}</span>
+  </button>
 </div>
 
 <!-- Mission list (from assets/missions/index.xml); toggled by the Missions button -->

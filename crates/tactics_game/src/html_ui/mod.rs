@@ -189,6 +189,7 @@ pub fn run_ui_commands(
     mut log: ResMut<LogMessages>,
     mut settings: ResMut<crate::settings::GameSettings>,
     mut roster: ResMut<crate::roster::Roster>,
+    mut windows: Query<&mut Window, With<bevy::window::PrimaryWindow>>,
 ) {
     for UiCommand(cmd) in commands.read() {
         let (name, arg) = cmd.split_once(':').map_or((cmd.as_str(), ""), |(n, a)| (n, a));
@@ -223,6 +224,11 @@ pub fn run_ui_commands(
             },
             "restart" => {
                 player.write(PlayerCommand::Restart);
+            }
+            "fullscreen" => {
+                for mut w in &mut windows {
+                    crate::touch::toggle_fullscreen(&mut w);
+                }
             }
             "ability" => {
                 player.write(PlayerCommand::UseAbility(arg.trim().into()));

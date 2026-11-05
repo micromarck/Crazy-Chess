@@ -133,6 +133,8 @@ pub fn collect_ui_data(
     let pending = selection.pending.as_ref().and_then(|a| b.ability(a));
     // Touchscreen controls: the Move button and the move confirmation.
     v.set("ui.touch", bool_str(touch.active));
+    // A Full screen button (not in the Android app: it's always fullscreen).
+    v.set("ui.can_fullscreen", bool_str(!cfg!(target_os = "android")));
     let mover = selection.unit.and_then(|id| b.unit(id)).filter(|u| u.can_act() && player_turn);
     v.set("move.available", bool_str(mover.is_some()));
     v.set("move.state", if selection.move_mode { "active" } else if mover.is_some() { "ready" } else { "disabled" });

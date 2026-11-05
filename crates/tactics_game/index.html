@@ -2,15 +2,44 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-    <title>Tactics</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>TBSium</title>
+    <!-- Installable: "Add to Home Screen" opens it fullscreen, in landscape. -->
+    <link rel="manifest" href="web/manifest.webmanifest" />
+    <link rel="icon" href="web/icon-192.png" />
+    <link rel="apple-touch-icon" href="web/icon-192.png" />
+    <meta name="theme-color" content="#0f1217" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="TBSium" />
     <!-- Trunk: build the `tactics_game` binary for wasm32 (wasm-opt shrinks the release output);
          loader.js shows download progress on the loading screen (#tbs-loading). -->
     <link data-trunk rel="rust" data-bin="tactics_game" data-wasm-opt="z" data-initializer="loader.js" />
     <!-- Ship the assets folder alongside the wasm. -->
     <link data-trunk rel="copy-dir" href="assets" />
+    <!-- The app manifest and icons. -->
+    <link data-trunk rel="copy-dir" href="web" />
     <style>
       html, body { margin: 0; height: 100%; background: #0f1217; overflow: hidden; }
+      /* Touchscreens: the game owns every gesture (no browser pinch-zoom,
+         double-tap zoom, pull-to-refresh, text selection or long-press menus). */
+      html, body {
+        position: fixed; inset: 0;
+        overscroll-behavior: none; touch-action: none;
+        -webkit-user-select: none; user-select: none;
+        -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+      }
+      /* Portrait phones: ask for landscape (the HUD is laid out for it). */
+      #tbs-rotate {
+        display: none; position: fixed; inset: 0; z-index: 20;
+        flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+        background: #0f1217f0; color: #d8dee9; text-align: center; padding: 24px;
+        font: 16px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace;
+      }
+      #tbs-rotate .phone { width: 46px; height: 80px; border: 3px solid #f0c674; border-radius: 9px; animation: tbs-turn 2s ease-in-out infinite; }
+      @keyframes tbs-turn { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+      @media (orientation: portrait) and (pointer: coarse) { #tbs-rotate { display: flex; } }
       /* Bevy attaches its <canvas> to <body>; fit_canvas_to_parent makes it fill it. */
       canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
 
@@ -44,9 +73,18 @@
       <div class="tip">Tip: units at the end of a wall can peek around the corner to see and shoot.</div>
       <noscript>This game needs JavaScript and WebAssembly.</noscript>
     </div>
+    <div id="tbs-rotate">
+      <div class="phone"></div>
+      <div>Turn your device sideways to play.</div>
+      <div style="font-size: 13px; color: #8a94a3">Tip: the Full screen button (top left) hides the browser bars.</div>
+    </div>
     <script>
       // Right-drag rotates the camera: no browser context menu over the game.
       document.addEventListener("contextmenu", (e) => e.preventDefault());
+      // iOS Safari: no page pinch-zoom (it ignores user-scalable=no).
+      for (const name of ["gesturestart", "gesturechange", "gestureend"]) {
+        document.addEventListener(name, (e) => e.preventDefault());
+      }
     </script>
   </body>
 </html>
