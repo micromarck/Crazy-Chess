@@ -18,5 +18,8 @@
   <mission file="hill.mission.xml"/>
   <mission file="hill_extreme.mission.xml"/>
   <mission file="valley.mission.xml"/>
+  <mission file="raptor_run.mission.xml"/>
+  <mission file="tyrant_hunt.mission.xml"/>
+  <mission file="nest_raid.mission.xml"/>
   <mission file="lab.mission.xml"/>
 </missions>

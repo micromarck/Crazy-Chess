@@ -64,7 +64,10 @@ killing the officer), *Scrapyard* (corrupted robots that fall apart: kill
 them or outlast them) and *Salvage Run* (steal a robot core from a merc
 crew and their cargo); with the Dinosaurs module, *Lost Valley* (recover a
 lost expedition's drive from a jungle of raptors, a 2x2 Hornback and a 3x3
-Tyrant). See
+Tyrant), *Raptor Run* (run a canyon to the evac before the chopper leaves
+while packs pour out of the side ravines), *Tyrant Hunt* (kill a Tyrant, and
+its mate, round a research station whose doorways are too narrow for them)
+and *Nest Raid* (steal three raptor eggs at night). See
 **[MISSIONS.md](MISSIONS.md)**.
 
 The HUD is an **HTML/CSS layout** (`assets/ui/hud.html`) rendered natively on
@@ -186,7 +189,7 @@ TBSium/
   walkable and level, can't squeeze through narrow gaps, and is shot, blasted,
   seen and bitten from any of its tiles). Raptors (1 tile, fast packs that
   screech to wake each other), the Hornback (2x2, armoured, charges when hurt)
-  and the Tyrant (3x3, its roar frightens soldiers).
+  and the Tyrant (3x3, 48 HP, its roar frightens soldiers).
 * 2 action points per unit; move (1 AP) or dash (2 AP), blue/yellow range overlay.
 * Directional half/full cover, flanking (+crit), cover shields on hover.
 * Hit chance = aim − defence − cover − hunker ± range falloff, shown with a full breakdown.

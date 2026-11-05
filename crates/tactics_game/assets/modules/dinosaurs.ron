@@ -8,7 +8,7 @@
 //   * Hornback (2x2)     - an armoured three-horned grazer: tough frill
 //                          (defence), a goring charge; hurt, it gets angry
 //                          and faster.
-//   * Tyrant   (3x3)     - the king: huge bite, 30 HP. Its roar when it
+//   * Tyrant   (3x3)     - the king: huge bite, 48 HP. Its roar when it
 //                          first sees the squad shakes everyone near.
 //
 // All of them hunt like a horde (close in and strike) and feel no fear.
@@ -117,7 +117,7 @@
             id: "dino_hornback",
             name: "Hornback",
             size: 2,
-            stats: (max_hp: 18, mobility: 10, aim: 65, defense: 20, sight: 10.0, bravery: 100),
+            stats: (max_hp: 24, mobility: 10, aim: 65, defense: 20, sight: 10.0, bravery: 100),
             weapon: "dino_jaws",
             abilities: ["gore"],
             model: "dino_hornback",
@@ -140,7 +140,7 @@
             id: "dino_tyrant",
             name: "Tyrant",
             size: 3,
-            stats: (max_hp: 30, mobility: 12, aim: 70, defense: 5, sight: 16.0, bravery: 100),
+            stats: (max_hp: 48, mobility: 12, aim: 70, defense: 10, sight: 16.0, bravery: 100),
             weapon: "dino_jaws",
             abilities: ["chomp"],
             model: "dino_tyrant",
