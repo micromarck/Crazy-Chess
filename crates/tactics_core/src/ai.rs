@@ -598,6 +598,11 @@ fn eval_tile(battle: &Battle, unit: &Unit, pos: GridPos, config: &AiConfig) -> T
         let huddle = battle.living(unit.team).filter(|a| a.id != unit.id && a.pos.distance(pos) < 1.6).count();
         score -= config.cluster_penalty * huddle as f32;
     }
+    // Armed charges (particle grenades) about to go off.
+    if battle.armed_charges().iter().any(|c| battle.charge_tiles(c).contains(&pos)) {
+        danger += 5.0;
+        score -= 80.0;
+    }
     // Fire: burns at the start of every turn spent there.
     if battle.on_fire(pos) {
         danger += rules.fire_damage as f32 * 2.0;

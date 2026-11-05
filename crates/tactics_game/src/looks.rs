@@ -285,6 +285,14 @@ pub fn weapon_parts(look: WeaponLook, scoped: bool) -> Vec<Part> {
             ball([0.0, 0.04, -0.16], [0.12, 0.12, 0.12], Glow),
             cube([0.0, -0.1, 0.06], [0.1, 0.1, 0.16], Trim),
         ],
+        WeaponLook::Flamer => vec![
+            cube([0.0, 0.02, -0.06], [0.07, 0.09, 0.26], Gun),
+            barrel([0.0, 0.04, -0.34], 0.035, 0.32, GunLight),
+            barrel([0.0, 0.04, -0.5], 0.06, 0.05, Trim),
+            ball([0.0, 0.04, -0.53], [0.03, 0.03, 0.03], Glow),
+            barrel([0.0, -0.08, -0.06], 0.1, 0.2, Trim),
+            cube([0.0, -0.08, 0.1], [0.04, 0.1, 0.06], Gun),
+        ],
         WeaponLook::None => Vec::new(),
     };
     if scoped && !matches!(look, WeaponLook::Sniper | WeaponLook::None) {
@@ -305,6 +313,7 @@ pub fn foregrip(look: WeaponLook) -> Option<f32> {
         WeaponLook::Laser => Some(0.24),
         WeaponLook::Minigun => Some(0.2),
         WeaponLook::Cannon => Some(0.22),
+        WeaponLook::Flamer => Some(0.26),
         WeaponLook::Pistol | WeaponLook::Plasma | WeaponLook::None => None,
     }
 }
@@ -668,7 +677,7 @@ mod tests {
 
     #[test]
     fn every_weapon_look_has_parts_except_none() {
-        for look in [WeaponLook::Rifle, WeaponLook::Shotgun, WeaponLook::Sniper, WeaponLook::Smg, WeaponLook::Lmg, WeaponLook::Pistol, WeaponLook::Plasma, WeaponLook::Laser, WeaponLook::Minigun, WeaponLook::Cannon] {
+        for look in [WeaponLook::Rifle, WeaponLook::Shotgun, WeaponLook::Sniper, WeaponLook::Smg, WeaponLook::Lmg, WeaponLook::Pistol, WeaponLook::Plasma, WeaponLook::Laser, WeaponLook::Minigun, WeaponLook::Cannon, WeaponLook::Flamer] {
             assert!(!weapon_parts(look, false).is_empty(), "{look:?}");
             assert!(weapon_parts(look, true).len() >= weapon_parts(look, false).len());
         }

@@ -89,6 +89,8 @@ pub struct Battle {
     sky: crate::mission::SkyDef,
     /// Burning tiles: rounds of fire left (see fire.rs).
     fires: std::collections::BTreeMap<GridPos, u32>,
+    /// Charges waiting to go off (delayed grenades, see fire.rs).
+    charges_armed: Vec<fire::ArmedCharge>,
 }
 
 impl Battle {
@@ -121,6 +123,7 @@ impl Battle {
             map_version: 0,
             sky: Default::default(),
             fires: Default::default(),
+            charges_armed: Vec::new(),
         }
     }
 
@@ -397,6 +400,7 @@ impl Battle {
         let user = self.living_unit(unit)?;
         let def = self.rules.ability(ability).ok_or_else(|| ActionError::UnknownAbility(ability.clone()))?;
         let point = self.check_target(user, def, target)?;
+        let def = &self.with_weapon(user, def);
         let AbilityEffect::Attack(profile) = &def.effect else {
             return Ok(Vec::new());
         };
@@ -505,6 +509,7 @@ impl Battle {
                     }
                     AbilityEffect::Reload if u.weapon.spare == 0 => return Err(ActionError::OutOfMagazines),
                     AbilityEffect::Suppress(_) if u.weapon.ammo <= 0 => return Err(ActionError::OutOfAmmo),
+                    AbilityEffect::Suppress(_) if u.weapon.cone > 0.0 => return Err(ActionError::NotWithThisWeapon),
                     AbilityEffect::Overclock if u.status.overclocked => return Err(ActionError::AlreadyActive),
                     _ => {}
                 }
@@ -586,6 +591,8 @@ impl Battle {
     fn use_ability(&mut self, unit: UnitId, ability: AbilityId, target: Target, events: &mut Vec<GameEvent>) {
         let def = self.rules.ability(&ability).cloned().expect("validated");
         let point = self.check_target(&self.units[unit.0 as usize], &def, target).expect("validated");
+        // A flame weapon turns its shots into cones of fire.
+        let def = self.with_weapon(&self.units[unit.0 as usize], &def);
         events.push(GameEvent::AbilityUsed { unit, ability: ability.clone(), target });
         // Attacking gives a concealed squad away.
         if self.stealth.concealed
@@ -697,6 +704,12 @@ impl Battle {
                     }
                 }
             }
+            AbilityEffect::Attack(profile) if profile.fuse > 0 && profile.is_area() => {
+                // A delayed charge: it lands now and goes off later.
+                let team = self.units[unit.0 as usize].team;
+                self.charges_armed.push(fire::ArmedCharge { unit, team, ability: def.id.clone(), pos: point, turns: profile.fuse });
+                events.push(GameEvent::ChargeArmed { unit, pos: point, turns: profile.fuse });
+            }
             AbilityEffect::Attack(profile) => {
                 let user = self.units[unit.0 as usize].clone();
                 // Rockets go off at the first thing in their way.
@@ -754,6 +767,7 @@ impl Battle {
                 events.push(GameEvent::Shutdown { unit, shut_down: true });
             }
             AbilityEffect::Cool { amount } => self.add_heat(unit, -amount, events),
+            AbilityEffect::Idle => {}
             AbilityEffect::Overclock => {
                 let u = self.unit_mut(unit);
                 u.status.overclocked = true;
@@ -805,6 +819,29 @@ impl Battle {
         } else {
             self.unit_at(point).map(|u| vec![(u.id, self.shot_line(user.pos, point).0)]).unwrap_or_default()
         }
+    }
+
+    /// `def` as `unit` would use it: with a **flame weapon** (`Weapon::cone`)
+    /// its weapon attacks become cones of fire out to the target (never
+    /// missing, ignoring cover, setting it alight).
+    pub fn with_weapon(&self, unit: &Unit, def: &AbilityDef) -> AbilityDef {
+        let mut def = def.clone();
+        if unit.weapon.cone > 0.0
+            && let AbilityEffect::Attack(p) | AbilityEffect::Overwatch(p) = &mut def.effect
+            && p.damage == crate::content::DamageSource::Weapon
+            && !p.melee
+            && !p.is_area()
+        {
+            p.cone = unit.weapon.cone;
+            p.ignite = unit.weapon.ignite;
+            p.can_miss = false;
+            p.half_cover_penalty = 0;
+            p.full_cover_penalty = 0;
+            p.range_falloff = false;
+            p.flank_crit_bonus = 0;
+            p.rounds = None;
+        }
+        def
     }
 
     /// Where a shot from `from` at `to` is fired from and aimed at: the
@@ -933,6 +970,15 @@ impl Battle {
     }
 
     fn reaction_fire(&mut self, shooter: UnitId, target: UnitId, ability: &AbilityId, profile: &AttackProfile, events: &mut Vec<GameEvent>) {
+        // A flame weapon on overwatch: a cone of fire at whoever moved in.
+        if self.units[shooter.0 as usize].weapon.cone > 0.0 {
+            let base = AbilityDef { id: ability.clone(), effect: AbilityEffect::Attack(profile.clone()), ..Default::default() };
+            let def = self.with_weapon(&self.units[shooter.0 as usize], &base);
+            let point = self.units[target.0 as usize].pos;
+            self.unit_mut(shooter).weapon.ammo -= 1;
+            self.run_effect(shooter, &def, point, Target::Unit(target), events);
+            return;
+        }
         if profile.is_ballistic() {
             let cap = Some(self.units[shooter.0 as usize].weapon.ammo.max(0) as u32);
             let fired = self.fire_volley(shooter, target, ability, profile, cap, true, false, events);
@@ -1049,6 +1095,7 @@ impl Battle {
         events.push(GameEvent::TurnStarted { team, round: self.round });
         self.heat_turn_start(team, events);
         self.fire_turn_start(team, events);
+        self.charges_turn_start(team, events);
         self.morale_turn_start(team, events);
         self.on_turn_start(events);
         self.check_victory(events);

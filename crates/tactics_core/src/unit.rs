@@ -53,6 +53,8 @@ pub enum WeaponLook {
     Minigun,
     /// A heavy, short, fat-barrelled cannon (fires beams).
     Cannon,
+    /// Fuel tank and a long nozzle (flamethrowers).
+    Flamer,
     /// Nothing held (built-in weapons of drones, claws...).
     None,
 }
@@ -110,6 +112,12 @@ pub struct Weapon {
     /// Heat each attack with it adds to a unit that runs on heat (see
     /// [`HeatRules`]); 0 = the unit's `per_shot`. Ignored by everyone else.
     pub heat: i32,
+    /// `> 0`: a **flame weapon**: its attacks (Shoot, overwatch) sweep a
+    /// cone this many degrees wide out to the target instead of firing
+    /// bullets, never miss, ignore cover and burn everyone in it.
+    pub cone: f32,
+    /// Rounds of fire its cone leaves behind (flame weapons).
+    pub ignite: u32,
 }
 
 impl Default for Weapon {
@@ -137,6 +145,8 @@ impl Default for Weapon {
             look: WeaponLook::Rifle,
             model: None,
             heat: 0,
+            cone: 0.0,
+            ignite: 0,
         }
     }
 }

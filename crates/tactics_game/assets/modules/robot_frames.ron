@@ -55,6 +55,16 @@
             effect: Cool(amount: 6),
         ),
         (
+            id: "idle",
+            name: "Idle",
+            description: "Power down the actuators and do nothing: ends the turn without making any heat (the frame still cools at the start of its next turn).",
+            cost: EndsTurn,
+            targeting: SelfOnly,
+            range: Fixed(0.0),
+            requires_los: false,
+            effect: Idle,
+        ),
+        (
             id: "overclock",
             name: "Overclock",
             description: "Free action, 3 times a mission: this turn your next shot costs only 1 AP (one extra shot), but every bit of heat you make is DOUBLED.",
@@ -126,6 +136,7 @@
         (ability: "inferno", animation: "shoot", projectile: None, windup: 0.3),
         (ability: "boost", projectile: None),
         (ability: "overclock", projectile: None),
+        (ability: "idle", animation: "idle", projectile: None),
         (ability: "shutdown", animation: "hunker"),
     ],
 
@@ -289,7 +300,7 @@
             // max_hp = heat limit.
             stats: (max_hp: 12, mobility: 15, aim: 72, defense: 10, sight: 15.0, bravery: 100),
             weapon: "pulse_lasers",
-            abilities: ["shoot", "overclock", "overwatch", "shutdown", "reload"],
+            abilities: ["shoot", "overclock", "overwatch", "idle", "shutdown", "reload"],
             model: "frame_light",
             fearless: true,
             body: (height: 1.2),
@@ -303,7 +314,7 @@
             name: "Bastion Frame",
             stats: (max_hp: 20, mobility: 8, aim: 62, defense: 20, sight: 13.0, bravery: 100),
             weapon: "gatling_laser",
-            abilities: ["shoot", "suppress", "overwatch", "shutdown", "reload"],
+            abilities: ["shoot", "suppress", "overwatch", "idle", "shutdown", "reload"],
             model: "frame_heavy",
             fearless: true,
             body: (height: 1.8),

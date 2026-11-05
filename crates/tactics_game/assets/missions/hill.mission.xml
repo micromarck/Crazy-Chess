@@ -9,7 +9,7 @@
   Layout: . floor   # cut out   h half cover   H full cover
 -->
 <mission id="hill" name="Hold the Hill" seed="51214" fog="false" win="script">
-  <description>The squad is cut off on a hilltop at dusk with the dead crawling up the slopes. Hold for 12 turns until the evac chopper lands on the pad, then get everyone aboard. The north and east faces are sheer cliffs the zombies can't climb; they come up the south and west slopes, 10-12 at a time, and more keep gathering below.</description>
+  <description>The squad is cut off on a hilltop at dusk with the dead crawling up the slopes. Hold for 12 turns until the evac chopper lands on the pad, then get everyone aboard. The north and east faces are sheer cliffs the zombies can't climb; they come up the south and west slopes, 10-12 at a time, and more keep gathering below (up to 30).</description>
 
   <sky top="#1d2238" horizon="#c46a3c"/>
 

@@ -83,6 +83,8 @@ pub enum ActionError {
     NoHeat,
     /// The effect is already running (e.g. overclocked).
     AlreadyActive,
+    /// Can't be done with the equipped weapon (suppressing with a flamer).
+    NotWithThisWeapon,
 }
 
 impl fmt::Display for ActionError {
@@ -109,6 +111,7 @@ impl fmt::Display for ActionError {
             ActionError::CantHealMachine => write!(f, "medkits can't fix machines"),
             ActionError::NoHeat => write!(f, "no heat to shed"),
             ActionError::AlreadyActive => write!(f, "already active"),
+            ActionError::NotWithThisWeapon => write!(f, "not with this weapon"),
         }
     }
 }

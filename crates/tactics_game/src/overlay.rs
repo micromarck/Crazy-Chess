@@ -27,6 +27,7 @@ impl Plugin for OverlayPlugin {
             (
                 (draw_movement, draw_targets, draw_targeting).run_if(player_can_act),
                 draw_hover,
+                draw_armed_charges,
                 draw_health_bars,
                 draw_zones,
                 draw_tracer,
@@ -234,17 +235,25 @@ fn draw_targeting(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleSt
         }
         tile_rect(&mut gizmos, battle.map(), to, 0.9, color);
     }
+    // (A flame weapon turns Shoot into a cone.)
+    let def = &battle.with_weapon(unit, def);
+    let area_at = match (selection.aim, def.targeting) {
+        (Some(Target::Unit(t)), _) => battle.unit(t).map(|u| u.pos),
+        _ => area_at,
+    };
     if let (Some(profile), Some(hover)) = (def.effect.attack_profile(), area_at)
         && profile.is_area() {
-            let ok = battle
-                .validate(&Action::UseAbility { unit: id, ability: ability.clone(), target: Target::Tile(hover) })
-                .is_ok();
+            let target = match (def.targeting, battle.unit_at(hover)) {
+                (Targeting::Enemy | Targeting::Ally, Some(u)) => Target::Unit(u.id),
+                _ => Target::Tile(hover),
+            };
+            let ok = battle.validate(&Action::UseAbility { unit: id, ability: ability.clone(), target }).is_ok();
             let color = if ok { theme::EXPLOSION } else { theme::UI_DIM };
             // Rockets go off at the first thing in their way: show where.
             let point = battle.blast_point(unit.pos, profile, hover);
             let tiles = battle.area_tiles(unit.pos, profile, point);
-            if profile.cone > 0.0 {
-                // A cone: every tile it will scorch.
+            if profile.cone > 0.0 || profile.square {
+                // A cone or a square blast: every tile it will hit.
                 for t in &tiles {
                     tile_rect(&mut gizmos, battle.map(), *t, 0.9, color.with_alpha(0.7));
                 }
@@ -274,6 +283,24 @@ fn draw_targeting(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleSt
                 tile_rect(&mut gizmos, state.battle.map(), u.pos, 0.7, color);
             }
         }
+}
+
+/// Armed charges (particle grenades): the area they'll hit, pulsing, and a
+/// glowing marker per turn left on the grenade itself.
+fn draw_armed_charges(mut gizmos: Gizmos, state: Res<BattleState>, time: Res<Time>) {
+    let battle = &state.battle;
+    let pulse = 0.5 + 0.5 * (time.elapsed_secs() * 6.0).sin();
+    for c in battle.armed_charges() {
+        let color = theme::TARGET.with_alpha(0.35 + 0.5 * pulse);
+        for t in battle.charge_tiles(c) {
+            tile_rect(&mut gizmos, battle.map(), t, 0.92, color);
+        }
+        let at = tile_top(battle.map(), c.pos);
+        gizmos.sphere(Isometry3d::from_translation(at + Vec3::Y * 0.12), 0.1 + 0.04 * pulse, theme::BEAM);
+        for i in 0..c.turns {
+            gizmos.sphere(Isometry3d::from_translation(at + Vec3::Y * (0.45 + 0.18 * i as f32)), 0.05, theme::TARGET);
+        }
+    }
 }
 
 fn draw_hover(mut gizmos: Gizmos, selection: Res<Selection>, state: Res<BattleState>) {

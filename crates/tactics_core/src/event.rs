@@ -92,6 +92,9 @@ pub enum GameEvent {
     /// A unit jumped (`over_walls`: jump pack) or boosted straight from
     /// `from` to `to`.
     UnitLeaped { unit: UnitId, from: GridPos, to: GridPos, over_walls: bool },
+    /// A delayed charge (particle grenade) landed at `pos`: it goes off in
+    /// `turns` of the thrower's turns.
+    ChargeArmed { unit: UnitId, pos: GridPos, turns: u32 },
     /// Tiles caught fire (burning for `turns` rounds).
     FireStarted { tiles: Vec<GridPos>, turns: u32 },
     /// Tiles burned out.

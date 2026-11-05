@@ -87,7 +87,8 @@ pub fn fields_for(def: &AbilityDef) -> Vec<EditField> {
         | AbilityEffect::Shutdown { .. }
         | AbilityEffect::Cool { .. }
         | AbilityEffect::Overclock
-        | AbilityEffect::Leap { .. } => {}
+        | AbilityEffect::Leap { .. }
+        | AbilityEffect::Idle => {}
     }
     f
 }

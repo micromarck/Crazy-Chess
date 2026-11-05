@@ -482,6 +482,7 @@ fn default_slot(def: &AbilityDef) -> &'static str {
         AbilityEffect::Cool { .. } => "reload",
         AbilityEffect::Overclock => "reload",
         AbilityEffect::Leap { .. } => "walk",
+        AbilityEffect::Idle => "idle",
     }
 }
 
@@ -584,6 +585,12 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             p.commands.spawn(crate::fire::FlameBurst { tiles: fire, t: 0.0 });
             vec![Anim::Wait { remaining: 0.55 }]
         }
+        GameEvent::ChargeArmed { unit, pos, turns } => {
+            p.log.push(format!("  {}'s charge is armed: it goes off in {turns} turn{}", name(*unit), if *turns == 1 { "" } else { "s" }));
+            let at = tile_top(battle.map(), *pos) + Vec3::Y * 1.2;
+            FloatingText::spawn(&mut p.commands, at, format!("ARMED ({turns})"), theme::TARGET);
+            vec![Anim::Wait { remaining: 0.3 }]
+        }
         GameEvent::FireStarted { tiles, turns } => {
             p.log.push(format!("  {} tile{} catch fire ({turns} rounds)", tiles.len(), if tiles.len() == 1 { "" } else { "s" }));
             vec![]
@@ -680,6 +687,8 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
                 (ProjectileStyle::Tracer, Some(tactics_core::unit::WeaponLook::Laser | tactics_core::unit::WeaponLook::Cannon)) => ProjectileStyle::Beam,
                 (s, _) => s,
             };
+            // Flame weapons: the Flames sweep is the visual, no projectile.
+            let style = if battle.unit(*attacker).is_some_and(|u| u.weapon.cone > 0.0) { ProjectileStyle::None } else { style };
             let from_attacker = *reaction || battle.unit(*attacker).is_some_and(|u| u.pos == *origin);
             if *reaction {
                 FloatingText::spawn(&mut p.commands, s + Vec3::Y * 1.6, "OVERWATCH".into(), theme::TRACER);
