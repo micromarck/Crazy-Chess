@@ -29,7 +29,10 @@ records (missions, kills, wounds; optional permadeath).
 
 Units carry **loadouts** (weapon, armor, two utility items: grenades,
 medkits, scopes...) defined as module data and edited in game with the
-**Loadout** panel. **Morale**: fear rises with wounds, near misses, fallen
+**Loadout** panel: pick a soldier, then step through their class, weapon,
+armour, items or a quick-pick preset with the arrows (each choice is
+described); soldiers retrain as other soldier classes, robots refit as
+other frames. **Morale**: fear rises with wounds, near misses, fallen
 comrades, flanks and bad odds, and falls with kills and hunkering; shaken
 and panicked units (yours too) aim worse and panicked ones lose AP. Robots
 and drones are fearless. The **AI** reads threat (the damage it would take at

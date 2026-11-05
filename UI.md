@@ -64,7 +64,7 @@ Any `<button>` (or element with `data-command`) is clickable/tappable:
 | `move` | touchscreen: enter / leave move mode (then tap a tile, then `confirm`) |
 | `rotate:left`, `rotate:right` | turn the view 45° left / right (like E / Q) |
 | `roster:<command>` | Barracks: `select:<id>`, `squad`, `class`, `look:<field>`, `random_look`, `rename`, `recruit`, `dismiss` |
-| `gear:<what>:<member>[:<slot>]`, `apply_loadout` | edit squad loadouts (see the Loadout panel) |
+| `gear:select:<member>`, `gear:<what>:<member>[:<slot>][:<dir>]`, `gear:reset:<member>`, `apply_loadout` | edit the squad in the Loadout panel: `<what>` = `class`, `weapon`, `armor`, `item` (slot 0/1), `preset`; `<dir>` = `1` next, `-1` previous (see `src/loadout.rs`) |
 | `ability:<id>` | use the selected unit's ability (or start targeting it) |
 | `select:<unit id>` | select a squad member |
 | `editor` | toggle the module editor (F1) |
@@ -107,7 +107,8 @@ Lists (for `data-for`):
 |---|---|
 | `abilities` | `id name description key cost charges cooldown state` (`state` = `ready` / `active` / `disabled`) |
 | `squad` | `id name hp max_hp hp_percent ap fear state` (`state` = `selected` / `ready` / `done`; `fear` = `SHAKEN`/`PANIC`/empty) |
-| `loadout` | `index name class preset weapon armor item0 item1 stats problems` (the player squad's gear) |
+| `loadout` | `index name class state` (the player squad; `state` = `selected` for the one shown) |
+| (values) `lo.*` | the shown member: `lo.index name stats class class_info weapon weapon_info armor armor_info item0 item0_info item1 item1_info preset preset_info abilities problems` |
 | `roster` | `id name class tag record state` (saved soldiers; `tag` = `SQUAD` / `KIA` / empty) |
 | `log` | `text` |
 | `missions` | `id name description file state` (`state` = `current` / empty) |

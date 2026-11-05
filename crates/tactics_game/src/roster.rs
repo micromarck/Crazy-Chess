@@ -57,7 +57,7 @@ const ROBOT_CLASSES: [&str; 2] = ["frame_light", "frame_heavy"];
 
 /// The classes of the same family as `class` (soldiers retrain as
 /// soldiers, frames refit as frames) that the rules know.
-fn family(class: &str, rules: &Ruleset) -> Vec<&'static str> {
+pub(crate) fn family(class: &str, rules: &Ruleset) -> Vec<&'static str> {
     let list: &[&'static str] = if ROBOT_CLASSES.contains(&class) { &ROBOT_CLASSES } else { &SOLDIER_CLASSES };
     list.iter().copied().filter(|c| rules.class(c).is_some()).collect()
 }
@@ -113,6 +113,9 @@ pub struct Roster {
     /// Battle (seed) whose results were already recorded.
     #[serde(skip)]
     recorded: Option<u64>,
+    /// Squad member shown in the Loadout panel.
+    #[serde(skip)]
+    pub loadout_selected: usize,
 }
 
 impl Roster {
@@ -209,11 +212,13 @@ impl Roster {
         }
     }
 
-    /// Copies loadout edits made on the squad (Loadout panel) back into the records.
+    /// Copies loadout edits made on the squad (Loadout panel: class and
+    /// gear) back into the records.
     pub fn pull_gear(&mut self, rules: &Ruleset) {
         let Some(squad) = rules.squad("player") else { return };
         for m in &squad.members {
             if let Some(s) = self.soldiers.iter_mut().find(|s| s.name == m.name && !s.kia) {
+                s.class = m.class.clone();
                 s.loadout = m.loadout.clone();
                 s.gear = m.gear.clone();
             }
