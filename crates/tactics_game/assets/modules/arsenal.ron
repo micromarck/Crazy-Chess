@@ -10,7 +10,8 @@
 // Particle Grenade (anyone): a short throw that arms where it lands and goes
 //   off two turns later: 5 damage in a 5x5 square plus shrapnel.
 // Mobility: the Jump Pack item (a straight-line leap over walls, any soldier).
-// Fire: the Flamethrower item (a cone of flame that leaves the ground
+// Fire: the Flamethrower main weapon (heavy gunners, assault: Shoot sweeps
+//   a cone of fire), the Flamethrower item (a cone of flame that leaves the ground
 //   burning; heavy gunners, assault) and Incendiary Grenades (anyone).
 (
     info: (
@@ -89,6 +90,25 @@
             clip_size: 120,
             magazines: 1,
             look: Minigun,
+        ),
+        (
+            // A main weapon: Shoot hoses a 45-degree cone of fire out to the
+            // target (5 tiles at most). Never misses, ignores cover, burns
+            // everyone in the cone (friend or foe) and leaves it alight for
+            // 2 rounds. Each burst is one charge of fuel. Can't suppress.
+            id: "flamer",
+            name: "Flamethrower",
+            classes: ["heavy", "assault"],
+            damage_min: 2,
+            damage_max: 3,
+            crit_chance: 0,
+            optimal_range: 3.0,
+            max_range: 5.0,
+            clip_size: 4,
+            magazines: 2,
+            cone: 45.0,
+            ignite: 2,
+            look: Flamer,
         ),
         (
             id: "autocannon",
@@ -290,6 +310,13 @@
             description: "Minigun, a flamethrower and an incendiary grenade.",
             classes: ["heavy"],
             gear: (weapon: Some("minigun"), items: ["flamethrower_pack", "incendiary"]),
+        ),
+        (
+            id: "heavy_inferno",
+            name: "Heavy: Inferno",
+            description: "Flamethrower as the main weapon, and an incendiary grenade.",
+            classes: ["heavy"],
+            gear: (weapon: Some("flamer"), items: ["incendiary"]),
         ),
         (
             id: "laser_trooper",

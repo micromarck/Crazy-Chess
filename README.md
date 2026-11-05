@@ -158,7 +158,8 @@ TBSium/
   break down, malfunction and lose armour over time).
 * Arsenal (data module): laser rifles, a laser lance and scatter laser (beams),
   minigun, autocannon, a rocket launcher (straight-flying rockets that go off
-  at the first thing in the way), a flamethrower (a cone of fire) and
+  at the first thing in the way), a flamethrower (as a main weapon or a
+  backpack: a cone of fire) and
   incendiary grenades, a particle grenade (short throw, goes off two turns
   later: 5 damage in a 5x5 square plus shrapnel), and the Heavy Gunner class.
 * Fire: flamethrowers, incendiaries and exploding fuel barrels leave tiles

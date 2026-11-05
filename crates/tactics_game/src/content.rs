@@ -261,6 +261,12 @@ mod tests {
         let (rules, _) = build_ruleset();
         let pyro = Loadout { items: vec!["flamethrower_pack".into(), "incendiary".into()], ..Default::default() };
         assert!(rules.check_gear("heavy", &pyro).is_empty());
+        // The flamethrower as a main weapon.
+        let flamer = Loadout { weapon: Some("flamer".into()), ..Default::default() };
+        assert!(rules.check_gear("assault", &flamer).is_empty() && rules.check_gear("heavy", &flamer).is_empty());
+        assert!(!rules.check_gear("sniper", &flamer).is_empty());
+        assert!(rules.weapon("flamer").unwrap().cone > 0.0);
+        assert!(rules.check_gear("heavy", &rules.gear_for("heavy", Some("heavy_inferno"), &Loadout::default())).is_empty());
         assert!(rules.ability(&"fire_rocket".into()).unwrap().effect.attack_profile().unwrap().direct);
         let art = "
             ..............

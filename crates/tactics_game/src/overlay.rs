@@ -235,11 +235,19 @@ fn draw_targeting(mut gizmos: Gizmos, time: Res<Time<Real>>, state: Res<BattleSt
         }
         tile_rect(&mut gizmos, battle.map(), to, 0.9, color);
     }
+    // (A flame weapon turns Shoot into a cone.)
+    let def = &battle.with_weapon(unit, def);
+    let area_at = match (selection.aim, def.targeting) {
+        (Some(Target::Unit(t)), _) => battle.unit(t).map(|u| u.pos),
+        _ => area_at,
+    };
     if let (Some(profile), Some(hover)) = (def.effect.attack_profile(), area_at)
         && profile.is_area() {
-            let ok = battle
-                .validate(&Action::UseAbility { unit: id, ability: ability.clone(), target: Target::Tile(hover) })
-                .is_ok();
+            let target = match (def.targeting, battle.unit_at(hover)) {
+                (Targeting::Enemy | Targeting::Ally, Some(u)) => Target::Unit(u.id),
+                _ => Target::Tile(hover),
+            };
+            let ok = battle.validate(&Action::UseAbility { unit: id, ability: ability.clone(), target }).is_ok();
             let color = if ok { theme::EXPLOSION } else { theme::UI_DIM };
             // Rockets go off at the first thing in their way: show where.
             let point = battle.blast_point(unit.pos, profile, hover);

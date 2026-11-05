@@ -687,6 +687,8 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
                 (ProjectileStyle::Tracer, Some(tactics_core::unit::WeaponLook::Laser | tactics_core::unit::WeaponLook::Cannon)) => ProjectileStyle::Beam,
                 (s, _) => s,
             };
+            // Flame weapons: the Flames sweep is the visual, no projectile.
+            let style = if battle.unit(*attacker).is_some_and(|u| u.weapon.cone > 0.0) { ProjectileStyle::None } else { style };
             let from_attacker = *reaction || battle.unit(*attacker).is_some_and(|u| u.pos == *origin);
             if *reaction {
                 FloatingText::spawn(&mut p.commands, s + Vec3::Y * 1.6, "OVERWATCH".into(), theme::TRACER);

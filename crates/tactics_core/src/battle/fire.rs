@@ -388,4 +388,47 @@ mod tests {
         assert_eq!(b.unit(outside).unwrap().hp, hp, "3 tiles out: untouched");
         assert!(b.armed_charges().is_empty());
     }
+
+    /// A flamethrower as the main weapon: Shoot sweeps a cone out to the
+    /// target, burning everyone in it (friend or foe), never missing, and
+    /// leaves fire; it can't suppress.
+    #[test]
+    fn flamethrower_main_weapon_shoots_cones() {
+        use crate::unit::Weapon;
+        let mut r = rules();
+        r.add_weapon(Weapon {
+            id: "flamer".into(),
+            name: "Flamer".into(),
+            damage_min: 2,
+            damage_max: 2,
+            optimal_range: 3.0,
+            max_range: 5.0,
+            clip_size: 4,
+            cone: 45.0,
+            ignite: 2,
+            ..Default::default()
+        });
+        let mut c = r.class("rifleman").unwrap().clone();
+        c.id = "pyro".into();
+        c.weapon = "flamer".into();
+        c.abilities.push("suppress".into());
+        r.add_class(c);
+        r.add_module(&crate::modules::GrenadierModule);
+        let mut b = Battle::new(Map::from_ascii(&"..........\n".repeat(5)), r, 3);
+        let a = b.spawn("pyro", "A", Team::Player, GridPos::new(0, 2)).unwrap();
+        let e = b.spawn("sectoid", "E", Team::Enemy, GridPos::new(4, 2)).unwrap();
+        let near = b.spawn("sectoid", "E2", Team::Enemy, GridPos::new(2, 2)).unwrap();
+        b.spawn("sectoid", "Far", Team::Enemy, GridPos::new(9, 4)).unwrap();
+        let hp = b.unit(e).unwrap().hp;
+        assert!(b.validate(&Action::ability(a, "suppress", Target::Unit(e))).is_err(), "no suppressing with a flamer");
+        let previews = b.preview(a, &"shoot".into(), Target::Unit(e)).unwrap();
+        assert!(previews.iter().all(|(_, p)| p.hit_chance == 100) && previews.len() == 2, "{previews:?}");
+        let ev = b.apply(Action::ability(a, "shoot", Target::Unit(e))).unwrap();
+        assert!(ev.iter().any(|x| matches!(x, GameEvent::Flames { .. })));
+        assert!(!ev.iter().any(|x| matches!(x, GameEvent::Volley { .. })), "no bullets");
+        assert_eq!(b.unit(e).unwrap().hp, hp - 2 - 2, "burned, then burning at its turn start");
+        assert!(b.unit(near).unwrap().hp < hp);
+        assert!(b.on_fire(GridPos::new(3, 2)));
+        assert_eq!(b.unit(a).unwrap().weapon.ammo, 3, "one burst of fuel");
+    }
 }
