@@ -104,10 +104,10 @@
 
   <prop tag="armory_rack" kind="crate" x="8" y="8" cover="half" hp="4"/>
   <prop tag="gen_core" kind="barrel" x="25" y="20" cover="half" hp="3">
-    <script on="destroyed">message("The generator blows! The lights flicker."); explode(x, y, 2.0, 5);</script>
+    <script on="destroyed">message("The generator blows! The lights flicker."); explode(x, y, 2.0, 5); ignite(x, y, 2.0, 2);</script>
   </prop>
   <prop tag="gen_core_2" kind="barrel" x="29" y="20" cover="half" hp="3">
-    <script on="destroyed">explode(x, y, 2.0, 5);</script>
+    <script on="destroyed">explode(x, y, 2.0, 5); ignite(x, y, 2.0, 2);</script>
   </prop>
   <prop tag="sec_console" kind="console" x="39" y="4" cover="half"/>
   <prop tag="mess_table" kind="crate" x="12" y="20" cover="half" hp="3"/>

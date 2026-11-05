@@ -87,7 +87,7 @@
 
   <prop tag="truck" kind="car" x="16" y="15" cover="half" hp="8"/>
   <prop tag="fuel" kind="barrel" x="21" y="11" cover="half" hp="1">
-    <script on="destroyed">explode(x, y, 1.6, 3);</script>
+    <script on="destroyed">explode(x, y, 1.6, 3); ignite(x, y, 1.6, 2);</script>
   </prop>
   <prop tag="crate1" kind="crate" x="25" y="10" cover="half" hp="4"/>
   <prop tag="crate2" kind="crate" x="16" y="7" cover="half" hp="4"/>

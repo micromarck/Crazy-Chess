@@ -115,6 +115,9 @@ pub fn collect_ui_data(
         if u.status.defense_bonus > 0 {
             status.push(format!("Defending +{}", u.status.defense_bonus));
         }
+        if u.status.overclocked {
+            status.push(if u.status.bonus_shot { "OVERCLOCKED: extra shot ready, heat x2".into() } else { "OVERCLOCKED: heat x2".to_string() });
+        }
         if u.is_shut_down() {
             let turns = u.status.shutdown.saturating_sub(1);
             status.push(if turns > 0 {
@@ -325,8 +328,12 @@ fn abilities(b: &Battle, unit: &Unit, selection: &Selection) -> Vec<BTreeMap<Str
             } else {
                 "disabled"
             };
+            let attack = matches!(def.effect, AbilityEffect::Attack(_) | AbilityEffect::Suppress(_));
             let mut cost = match def.cost {
+                ApCost::Points(0) => "free".into(),
                 ApCost::Points(n) => format!("{n} AP"),
+                // Overclock's extra shot.
+                ApCost::EndsTurn if attack && unit.status.bonus_shot => "1 AP (overclock)".into(),
                 ApCost::EndsTurn => "ends turn".into(),
             };
             // Machines: what it does to the heat.
@@ -399,6 +406,15 @@ pub fn hover_info(state: &BattleState, selection: &Selection, touch: bool) -> St
             let ap = b.move_cost_ap(sel, cost);
             let cover = tactics_core::cover::best_cover_at(b.map(), hover);
             s = format!("{} - {ap} AP\nCover: {cover:?}", if ap > 1 { "Dash" } else { "Move" });
+            // Fire on the way (and at the end).
+            let burning = selection.range.as_ref().and_then(|r| r.path_to(hover)).map_or(0, |path| path.iter().filter(|p| b.on_fire(**p)).count());
+            if burning > 0 {
+                let rules = &b.rules().combat;
+                s.push_str(&format!("\nThrough {burning} burning tile{}: -{} HP", if burning == 1 { "" } else { "s" }, burning as i32 * rules.fire_step_damage));
+                if b.on_fire(hover) {
+                    s.push_str(&format!(", and -{} each turn it stays", rules.fire_damage));
+                }
+            }
             if let Some(u) = b.unit(sel) {
                 let heat = b.move_heat(u, ap);
                 if heat >= u.hp {
@@ -408,6 +424,21 @@ pub fn hover_info(state: &BattleState, selection: &Selection, touch: bool) -> St
                 }
             }
         }
+    }
+    // A burning tile under the cursor.
+    if let Some(hover) = selection.hovered
+        && let Some(turns) = b.fires().get(&hover)
+    {
+        let rules = &b.rules().combat;
+        if !s.is_empty() {
+            s.push('\n');
+        }
+        s.push_str(&format!(
+            "ON FIRE ({turns} round{}): -{} HP to step in, -{} at the start of each turn in it",
+            if *turns == 1 { "" } else { "s" },
+            rules.fire_step_damage,
+            rules.fire_damage
+        ));
     }
     if s.is_empty() {
         s = if touch {

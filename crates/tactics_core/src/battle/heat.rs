@@ -28,12 +28,14 @@ impl Battle {
             AbilityEffect::Attack(p) | AbilityEffect::Suppress(p) => p.damage == DamageSource::Weapon && !p.melee,
             _ => false,
         };
-        def.heat.max(0) + if fires_weapon { self.weapon_heat(unit) } else { 0 }
+        let heat = def.heat.max(0) + if fires_weapon { self.weapon_heat(unit) } else { 0 };
+        if unit.status.overclocked { heat * 2 } else { heat }
     }
 
     /// Heat moving with `ap` action points adds to `unit`.
     pub fn move_heat(&self, unit: &Unit, ap: u8) -> i32 {
-        unit.heat.map_or(0, |h| h.per_move.max(0) * ap as i32)
+        let heat = unit.heat.map_or(0, |h| h.per_move.max(0) * ap as i32);
+        if unit.status.overclocked { heat * 2 } else { heat }
     }
 
     /// Heat `action` would add to its unit (0 when it doesn't run on heat).
@@ -256,5 +258,80 @@ mod tests {
         b.apply_damage(f, 8, true, &mut ev);
         let a = ai::choose_action(&b, f, &AiConfig::default());
         assert_eq!(a, Action::ability(f, "shutdown", Target::None));
+    }
+
+    fn movement_rules() -> Ruleset {
+        let mut r = rules();
+        let mut frame = r.class("frame").unwrap().clone();
+        frame.stats.max_hp = 30;
+        frame.abilities.extend(["overclock".into(), "boost".into()]);
+        r.add_class(frame);
+        let mut soldier = r.class("rifleman").unwrap().clone();
+        soldier.abilities.push("jump".into());
+        r.add_class(soldier);
+        r.add_ability(
+            AbilityDef::new("overclock", "Overclock")
+                .with_cost(ApCost::Points(0))
+                .with_charges(3)
+                .with_targeting(Targeting::SelfOnly, AbilityRange::Fixed(0.0))
+                .with_effect(AbilityEffect::Overclock),
+        );
+        let leap = |id: &str, reach: f32, over_walls: bool| {
+            let mut d = AbilityDef::new(id, id)
+                .with_cost(ApCost::Points(1))
+                .with_targeting(Targeting::Tile, AbilityRange::Fixed(0.0))
+                .with_effect(AbilityEffect::Leap { reach, over_walls });
+            d.requires_los = false;
+            d
+        };
+        r.add_ability(leap("boost", 3.0, false));
+        r.add_ability(leap("jump", 2.0, true));
+        r
+    }
+
+    /// Overclock: one extra shot this turn, every shot at double heat.
+    #[test]
+    fn overclock_gives_an_extra_shot_at_double_heat() {
+        let mut b = Battle::new(Map::from_ascii("..........\n..........\n.........."), movement_rules(), 7);
+        let f = b.spawn("frame", "F", Team::Player, GridPos::new(0, 0)).unwrap();
+        let e = b.spawn("sectoid", "E", Team::Enemy, GridPos::new(6, 2)).unwrap();
+        b.spawn("sectoid", "E2", Team::Enemy, GridPos::new(9, 2)).unwrap();
+        b.unit_mut(e).hp = 99; // keep the target alive
+        b.apply(Action::ability(f, "overclock", Target::None)).unwrap();
+        assert_eq!(b.unit(f).unwrap().action_points, 2, "overclocking is free");
+        assert_eq!(b.heat_cost(&Action::ability(f, "shoot", Target::Unit(e))), 8, "double heat");
+        b.apply(Action::ability(f, "shoot", Target::Unit(e))).unwrap();
+        assert_eq!(b.unit(f).unwrap().action_points, 1, "the first shot costs 1 AP");
+        assert_eq!(heat(&b, f), 8);
+        b.apply(Action::ability(f, "shoot", Target::Unit(e))).unwrap();
+        assert_eq!(heat(&b, f), 16);
+        assert_eq!(b.active_team(), Team::Enemy, "the second shot ends the turn");
+        // Over at the end of the turn; 2 uses left.
+        assert!(!b.unit(f).unwrap().status.overclocked);
+        assert_eq!(b.charges_left(b.unit(f).unwrap(), b.ability(&"overclock".into()).unwrap()), Some(2));
+    }
+
+    /// Boost thrusters stop at walls; the jump pack goes over them.
+    #[test]
+    fn boost_is_stopped_by_walls_jump_is_not() {
+        let art = "
+            ..........
+            ...H......
+            ..........
+        ";
+        let mut b = Battle::new(Map::from_ascii(art), movement_rules(), 7);
+        let f = b.spawn("frame", "F", Team::Player, GridPos::new(1, 0)).unwrap();
+        let s = b.spawn("rifleman", "S", Team::Player, GridPos::new(1, 1)).unwrap();
+        b.spawn("sectoid", "E", Team::Enemy, GridPos::new(9, 2)).unwrap();
+        // Through the wall at (3,1): blocked for the boost.
+        assert!(b.validate(&Action::ability(f, "boost", Target::Tile(GridPos::new(6, 2)))).is_err());
+        // Open ground: fine, and far (3 x 6 tiles per AP).
+        assert!(b.validate(&Action::ability(f, "boost", Target::Tile(GridPos::new(9, 0)))).is_ok());
+        // The jump pack goes over the wall (2 x 6 tiles).
+        let ev = b.apply(Action::ability(s, "jump", Target::Tile(GridPos::new(6, 1)))).unwrap();
+        assert_eq!(b.unit(s).unwrap().pos, GridPos::new(6, 1));
+        assert!(ev.iter().any(|x| matches!(x, GameEvent::UnitLeaped { over_walls: true, .. })));
+        // Never onto a wall or past its reach.
+        assert!(b.validate(&Action::ability(f, "boost", Target::Tile(GridPos::new(3, 1)))).is_err());
     }
 }

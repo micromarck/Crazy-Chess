@@ -11,10 +11,17 @@
 //     with all heat vented. Any hit while shut down destroys it, so only do
 //     it out of sight.
 //   * COOLANT TANK (item): flush 6 heat for 1 AP, twice per battle.
+//   * OVERCLOCK (Strider, 3 per mission): this turn one extra shot, but all
+//     heat it makes is doubled.
+//   * BOOST THRUSTERS (item): rush in a straight line up to 3 moves; walls
+//     stop it (humans get the Arsenal's jump pack, which clears walls).
 //   * Its own arsenal (`restricted_gear`): frames can't carry soldiers'
 //     guns, and each frame has its own radical weapons:
 //       Strider (light)  - Twin Pulse Lasers, Needle Rail, Arc Thrower
-//       Bastion (heavy)  - Gatling Laser, Plasma Cannon, Missile Pod
+//       Bastion (heavy)  - Gatling Laser, Plasma Cannon, Missile Pod,
+//                          Inferno Projector (a cone of fire)
+//   * TOO BIG FOR LOW COVER (`no_half_cover`): half cover gives a frame
+//     nothing; only full cover (walls) protects it.
 //   * Medkits don't fix machines; machines feel no fear.
 (
     info: (
@@ -48,6 +55,50 @@
             effect: Cool(amount: 6),
         ),
         (
+            id: "overclock",
+            name: "Overclock",
+            description: "Free action, 3 times a mission: this turn your next shot costs only 1 AP (one extra shot), but every bit of heat you make is DOUBLED.",
+            cost: Points(0),
+            charges: Some(3),
+            targeting: SelfOnly,
+            range: Fixed(0.0),
+            requires_los: false,
+            effect: Overclock,
+        ),
+        (
+            id: "boost",
+            name: "Boost",
+            description: "Thrusters: rush in a straight line up to 3 times your normal move. Walls, holes, units and steep steps stop you. 1 AP, +4 heat, 1 turn cooldown.",
+            cost: Points(1),
+            cooldown: 1,
+            targeting: Tile,
+            range: Fixed(0.0),
+            requires_los: false,
+            heat: 4,
+            effect: Leap(reach: 3.0, over_walls: false),
+        ),
+        (
+            id: "inferno",
+            name: "Inferno Projector",
+            description: "Roast a 60-degree cone out to 5 tiles: 2-4 damage to everyone in it (friend or foe), ignoring cover; it burns for 3 rounds. +5 heat, 1 turn cooldown.",
+            cost: EndsTurn,
+            cooldown: 1,
+            targeting: Tile,
+            range: Fixed(5.0),
+            requires_los: true,
+            heat: 5,
+            effect: Attack(
+                can_miss: false,
+                half_cover_penalty: 0,
+                full_cover_penalty: 0,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                damage: Fixed(min: 2, max: 4),
+                cone: 60.0,
+                ignite: 3,
+            ),
+        ),
+        (
             id: "missile_salvo",
             name: "Missile Salvo",
             description: "Fire the missile pod at a tile: 3-5 damage to everyone within 1.5 tiles, wrecks walls, 10 fragments. Never misses. +8 heat. 1 per pod.",
@@ -71,7 +122,10 @@
     ],
 
     presentations: [
-        (ability: "missile_salvo", animation: "shoot", projectile: Arc, windup: 0.35),
+        (ability: "missile_salvo", animation: "shoot", projectile: Rocket, windup: 0.35),
+        (ability: "inferno", animation: "shoot", projectile: None, windup: 0.3),
+        (ability: "boost", projectile: None),
+        (ability: "overclock", projectile: None),
         (ability: "shutdown", animation: "hunker"),
     ],
 
@@ -195,6 +249,22 @@
             classes: ["frame_heavy"],
         ),
         (
+            id: "boost_thrusters",
+            name: "Boost Thrusters",
+            description: "Grants Boost: a straight-line rush of up to 3 moves (walls stop it). +4 heat.",
+            slot: Utility,
+            abilities: ["boost"],
+            classes: ["frame_light", "frame_heavy"],
+        ),
+        (
+            id: "inferno_projector",
+            name: "Inferno Projector",
+            description: "Grants Inferno Projector: a cone of fire (+5 heat, 1 turn cooldown).",
+            slot: Utility,
+            abilities: ["inferno"],
+            classes: ["frame_heavy"],
+        ),
+        (
             id: "heat_sink",
             name: "Heat Sink Array",
             description: "+5 heat capacity.",
@@ -219,12 +289,13 @@
             // max_hp = heat limit.
             stats: (max_hp: 12, mobility: 15, aim: 72, defense: 10, sight: 15.0, bravery: 100),
             weapon: "pulse_lasers",
-            abilities: ["shoot", "overwatch", "shutdown", "reload"],
+            abilities: ["shoot", "overclock", "overwatch", "shutdown", "reload"],
             model: "frame_light",
             fearless: true,
             body: (height: 1.2),
             heat: (cooling: 4, per_move: 1, per_shot: 2),
             restricted_gear: true,
+            no_half_cover: true,   // too big to hide behind low cover
             loadout: "strider_std",
         ),
         (
@@ -238,6 +309,7 @@
             body: (height: 1.8),
             heat: (cooling: 3, per_move: 3, per_shot: 4),
             restricted_gear: true,
+            no_half_cover: true,   // too big to hide behind low cover
             loadout: "bastion_std",
         ),
     ],
@@ -246,9 +318,9 @@
         (
             id: "strider_std",
             name: "Strider",
-            description: "Pulse lasers and a coolant tank.",
+            description: "Pulse lasers, a coolant tank and boost thrusters.",
             classes: ["frame_light"],
-            gear: (weapon: Some("pulse_lasers"), items: ["coolant_tank"]),
+            gear: (weapon: Some("pulse_lasers"), items: ["coolant_tank", "boost_thrusters"]),
         ),
         (
             id: "strider_rail",

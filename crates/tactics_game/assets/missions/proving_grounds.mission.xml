@@ -86,10 +86,10 @@
 
   <prop tag="hill_crate" kind="crate" x="6" y="5" cover="half" hp="4"/>
   <prop tag="west_barrel" kind="barrel" x="11" y="15" cover="half" hp="2">
-    <script on="destroyed">explode(x, y, 1.6, 4);</script>
+    <script on="destroyed">explode(x, y, 1.6, 4); ignite(x, y, 1.6, 2);</script>
   </prop>
   <prop tag="compound_barrel" kind="barrel" x="31" y="14" cover="half" hp="2">
-    <script on="destroyed">message("The fuel barrel explodes!"); explode(x, y, 1.8, 4);</script>
+    <script on="destroyed">message("The fuel barrel explodes!"); explode(x, y, 1.8, 4); ignite(x, y, 1.8, 2);</script>
   </prop>
   <prop tag="compound_console" kind="console" x="35" y="10" cover="half"/>
   <prop tag="crate_24_24" kind="crate" x="24" y="24" cover="half" hp="4"/>

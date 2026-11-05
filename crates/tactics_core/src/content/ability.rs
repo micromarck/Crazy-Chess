@@ -166,12 +166,28 @@ pub struct AttackProfile {
     /// Area attacks: fragments thrown out of the blast in every direction,
     /// each traced like a bullet (1 damage; friend or foe; walls stop them).
     pub shrapnel: u32,
+    /// `> 0` = a **cone** this many degrees wide from the user towards the
+    /// target tile, reaching as far as that tile (a flamethrower). Hits
+    /// everyone in it the user can see, friend or foe; cover counts from
+    /// the user.
+    pub cone: f32,
+    /// Sets the area (blast or cone) **on fire** for this many rounds
+    /// (see `CombatRules::fire_damage`). 0 = no fire.
+    pub ignite: u32,
+    /// Area attacks: flies **straight** from the user (a rocket) and
+    /// detonates at the first wall or unit in the way, not over them.
+    pub direct: bool,
 }
 
 impl AttackProfile {
     /// Traced as bullets (single target, can miss, not melee) rather than rolled.
     pub fn is_ballistic(&self) -> bool {
-        self.area_radius <= 0.0 && self.can_miss && !self.melee
+        !self.is_area() && self.can_miss && !self.melee
+    }
+
+    /// Hits an area (a blast or a cone) rather than one target.
+    pub fn is_area(&self) -> bool {
+        self.area_radius > 0.0 || self.cone > 0.0
     }
 }
 
@@ -194,6 +210,9 @@ impl Default for AttackProfile {
             rounds: None,
             melee: false,
             shrapnel: 0,
+            cone: 0.0,
+            ignite: 0,
+            direct: false,
         }
     }
 }
@@ -224,6 +243,16 @@ pub enum AbilityEffect {
     Shutdown { turns: u32 },
     /// Shed `amount` heat (coolant flush). Only for units that run on heat.
     Cool { amount: i32 },
+    /// Overclock: for the rest of the user's turn its next turn-ending
+    /// attack costs only 1 AP (an extra shot), and all heat it generates is
+    /// doubled.
+    Overclock,
+    /// Jump/boost straight to the target tile, up to `reach` times the
+    /// unit's normal move (tiles per action point). `over_walls`: flies over
+    /// anything (jump pack); otherwise walls, holes, units and steep steps
+    /// on the line stop it (boost thrusters). Overwatch can fire at the
+    /// landing; landing in fire burns.
+    Leap { reach: f32, over_walls: bool },
 }
 
 impl Default for AbilityEffect {
@@ -251,6 +280,7 @@ impl AbilityEffect {
     /// Short label for UIs and logs.
     pub fn kind_name(&self) -> &'static str {
         match self {
+            AbilityEffect::Attack(p) if p.cone > 0.0 => "Cone attack",
             AbilityEffect::Attack(p) if p.area_radius > 0.0 => "Area attack",
             AbilityEffect::Attack(_) => "Attack",
             AbilityEffect::Overwatch(_) => "Overwatch",
@@ -260,6 +290,8 @@ impl AbilityEffect {
             AbilityEffect::Suppress(_) => "Suppress",
             AbilityEffect::Shutdown { .. } => "Shutdown",
             AbilityEffect::Cool { .. } => "Cool down",
+            AbilityEffect::Overclock => "Overclock",
+            AbilityEffect::Leap { .. } => "Leap",
         }
     }
 }

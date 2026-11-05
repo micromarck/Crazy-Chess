@@ -35,6 +35,7 @@ pub mod coords;
 pub mod cutaway;
 pub mod editor;
 pub mod enemy_turn;
+pub mod fire;
 pub mod fog;
 pub mod html_ui;
 pub mod hud;
@@ -103,7 +104,7 @@ impl Plugin for TacticsPlugin {
             editor::EditorPlugin,
         ))
         .add_plugins((characters::CharactersPlugin, lab::LabPlugin, tooltip::TooltipPlugin, cutaway::CutawayPlugin, minimap::MinimapPlugin, settings::SettingsPlugin, looks::LooksPlugin, roster::RosterPlugin))
-            .add_plugins((fog::FogPlugin, touch::TouchPlugin, sky::SkyPlugin, loading::LoadingScreenPlugin));
+            .add_plugins((fog::FogPlugin, touch::TouchPlugin, sky::SkyPlugin, loading::LoadingScreenPlugin, fire::FirePlugin));
     }
 }
 

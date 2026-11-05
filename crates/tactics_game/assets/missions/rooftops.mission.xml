@@ -61,7 +61,7 @@
 
   <prop tag="uplink" kind="console" x="17" y="12" cover="half"/>
   <prop tag="barrel" kind="barrel" x="12" y="7" cover="half" hp="1">
-    <script on="destroyed">explode(x, y, 1.6, 3);</script>
+    <script on="destroyed">explode(x, y, 1.6, 3); ignite(x, y, 1.6, 2);</script>
   </prop>
 
   <!-- Objective 1: stand next to the uplink. -->

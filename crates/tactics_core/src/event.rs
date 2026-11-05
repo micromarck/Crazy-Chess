@@ -89,6 +89,15 @@ pub enum GameEvent {
     HeatChanged { unit: UnitId, delta: i32, heat: i32, max: i32 },
     /// A robot powered down (`shut_down`) or rebooted.
     Shutdown { unit: UnitId, shut_down: bool },
+    /// A unit jumped (`over_walls`: jump pack) or boosted straight from
+    /// `from` to `to`.
+    UnitLeaped { unit: UnitId, from: GridPos, to: GridPos, over_walls: bool },
+    /// Tiles caught fire (burning for `turns` rounds).
+    FireStarted { tiles: Vec<GridPos>, turns: u32 },
+    /// Tiles burned out.
+    FireOut { tiles: Vec<GridPos> },
+    /// A cone attack (flamethrower) sweeping `tiles` from `from`.
+    Flames { unit: UnitId, from: GridPos, tiles: Vec<GridPos> },
     /// A unit's hit points dropped to zero.
     UnitKilled { unit: UnitId },
     /// A unit's remaining action points changed.

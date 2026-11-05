@@ -37,6 +37,7 @@ use crate::unit::{Team, Unit, UnitId};
 use crate::visibility;
 
 mod ballistics;
+mod fire;
 mod heat;
 mod morale;
 mod stealth;
@@ -86,6 +87,8 @@ pub struct Battle {
     map_version: u32,
     /// The mission's background (for renderers).
     sky: crate::mission::SkyDef,
+    /// Burning tiles: rounds of fire left (see fire.rs).
+    fires: std::collections::BTreeMap<GridPos, u32>,
 }
 
 impl Battle {
@@ -117,6 +120,7 @@ impl Battle {
             wall_damage: Default::default(),
             map_version: 0,
             sky: Default::default(),
+            fires: Default::default(),
         }
     }
 
@@ -227,6 +231,7 @@ impl Battle {
             fearless: class.fearless,
             body: class.body,
             heat: class.heat,
+            no_half_cover: class.no_half_cover,
             gear: Loadout { weapon: Some(weapon_id), ..gear },
             appearance: None,
         };
@@ -363,6 +368,10 @@ impl Battle {
 
     /// Maximum reach of `def` when used by `unit`, in tiles.
     pub fn ability_range(&self, unit: &Unit, def: &AbilityDef) -> f32 {
+        // Leaps reach a multiple of the unit's normal move.
+        if let AbilityEffect::Leap { reach, .. } = def.effect {
+            return reach * (unit.stats.mobility / 2) as f32;
+        }
         match def.range {
             AbilityRange::Weapon => unit.weapon.max_range.min(unit.stats.sight),
             AbilityRange::Fixed(r) => r,
@@ -391,6 +400,7 @@ impl Battle {
         let AbilityEffect::Attack(profile) = &def.effect else {
             return Ok(Vec::new());
         };
+        let point = self.blast_point(user.pos, profile, point);
         Ok(self
             .attack_victims(user, profile, point, target)
             .into_iter()
@@ -495,6 +505,7 @@ impl Battle {
                     }
                     AbilityEffect::Reload if u.weapon.spare == 0 => return Err(ActionError::OutOfMagazines),
                     AbilityEffect::Suppress(_) if u.weapon.ammo <= 0 => return Err(ActionError::OutOfAmmo),
+                    AbilityEffect::Overclock if u.status.overclocked => return Err(ActionError::AlreadyActive),
                     _ => {}
                 }
                 let point = self.check_target(u, def, *target)?;
@@ -516,6 +527,9 @@ impl Battle {
                     && u.heat.is_none()
                 {
                     return Err(ActionError::NoHeat);
+                }
+                if let AbilityEffect::Leap { over_walls, .. } = def.effect {
+                    self.check_leap(u, point, over_walls)?;
                 }
                 Ok(())
             }
@@ -610,10 +624,46 @@ impl Battle {
             return;
         }
 
+        let attack = matches!(def.effect, AbilityEffect::Attack(_) | AbilityEffect::Suppress(_));
         match def.cost {
+            // Overclock's extra shot: a turn-ending attack costs just 1 AP.
+            crate::content::ApCost::EndsTurn if attack && self.units[unit.0 as usize].status.bonus_shot => {
+                self.unit_mut(unit).status.bonus_shot = false;
+                self.spend_ap(unit, 1, events);
+            }
             crate::content::ApCost::EndsTurn => self.spend_all_ap(unit, events),
             crate::content::ApCost::Points(n) => self.spend_ap(unit, n, events),
         }
+    }
+
+    /// Can `u` leap (jump / boost) to `to`? Lands on a free walkable tile;
+    /// without `over_walls` the straight line must be clear (no walls,
+    /// holes, units or steps higher than it can climb).
+    fn check_leap(&self, u: &Unit, to: GridPos, over_walls: bool) -> Result<(), ActionError> {
+        if to == u.pos || !self.map.is_walkable(to) || self.unit_at(to).is_some() {
+            return Err(ActionError::Unreachable(to));
+        }
+        if over_walls {
+            return Ok(());
+        }
+        let (dx, dy) = ((to.x - u.pos.x) as f32, (to.y - u.pos.y) as f32);
+        let steps = ((dx * dx + dy * dy).sqrt() * 4.0).ceil() as i32;
+        let mut last = u.pos;
+        for i in 1..=steps {
+            let k = i as f32 / steps as f32;
+            let p = GridPos::new((u.pos.x as f32 + dx * k).round() as i32, (u.pos.y as f32 + dy * k).round() as i32);
+            if p == last {
+                continue;
+            }
+            let blocked = !self.map.is_walkable(p)
+                || self.unit_at(p).is_some_and(|o| o.id != u.id)
+                || self.map.elevation(p) - self.map.elevation(last) > u.stats.climb.max(1);
+            if blocked {
+                return Err(ActionError::Unreachable(to));
+            }
+            last = p;
+        }
+        Ok(())
     }
 
     /// Executes an ability's effect. **Add new effect kinds here.**
@@ -648,12 +698,27 @@ impl Battle {
                 }
             }
             AbilityEffect::Attack(profile) => {
-                if profile.area_radius > 0.0 {
+                let user = self.units[unit.0 as usize].clone();
+                // Rockets go off at the first thing in their way.
+                let point = self.blast_point(user.pos, profile, point);
+                let tiles = if profile.is_area() { self.area_tiles(user.pos, profile, point) } else { Vec::new() };
+                if profile.cone > 0.0 {
+                    events.push(GameEvent::Flames { unit, from: user.pos, tiles: tiles.clone() });
+                } else if profile.area_radius > 0.0 {
                     events.push(GameEvent::Explosion { center: point, radius: profile.area_radius });
                 }
-                let user = self.units[unit.0 as usize].clone();
                 for (victim, origin) in self.attack_victims(&user, profile, point, target) {
                     self.resolve_attack(unit, victim, &def.id, origin, profile, false, events);
+                }
+                // Cones scorch the props they sweep.
+                if profile.cone > 0.0 {
+                    let props: Vec<_> = self.props.iter().filter(|p| p.alive && p.hp.is_some() && tiles.contains(&p.pos)).map(|p| p.id).collect();
+                    for id in props {
+                        self.damage_prop(id, 1, events);
+                    }
+                }
+                if profile.ignite > 0 && !self.is_over() {
+                    self.ignite(&tiles, profile.ignite, events);
                 }
                 // Blasts also hit destructible props.
                 if profile.area_radius > 0.0 {
@@ -689,6 +754,29 @@ impl Battle {
                 events.push(GameEvent::Shutdown { unit, shut_down: true });
             }
             AbilityEffect::Cool { amount } => self.add_heat(unit, -amount, events),
+            AbilityEffect::Overclock => {
+                let u = self.unit_mut(unit);
+                u.status.overclocked = true;
+                u.status.bonus_shot = true;
+                events.push(GameEvent::Callout { unit, text: "OVERCLOCKED".into() });
+            }
+            AbilityEffect::Leap { over_walls, .. } => {
+                let from = self.units[unit.0 as usize].pos;
+                self.unit_mut(unit).pos = point;
+                events.push(GameEvent::UnitLeaped { unit, from, to: point, over_walls: *over_walls });
+                if self.on_fire(point) && !self.burn_step(unit, events) {
+                    return;
+                }
+                if let Some((watcher, ability)) = self.find_overwatcher(unit) {
+                    self.unit_mut(watcher).status.overwatch = None;
+                    let profile = self.rules.ability(&ability).and_then(|d| d.effect.attack_profile().cloned()).unwrap_or_default();
+                    self.reaction_volley(watcher, unit, &ability, &profile, events);
+                    if !self.units[unit.0 as usize].is_alive() || self.is_over() {
+                        return;
+                    }
+                }
+                self.on_enter(unit, point, events);
+            }
             AbilityEffect::Heal { amount } => {
                 if let Some(healee) = self.unit_at(point).map(|u| u.id) {
                     let h = self.unit_mut(healee);
@@ -703,11 +791,14 @@ impl Battle {
 
     /// Units an attack affects, each with the origin used for cover/range.
     fn attack_victims(&self, user: &Unit, profile: &AttackProfile, point: GridPos, target: Target) -> Vec<(UnitId, GridPos)> {
-        if profile.area_radius > 0.0 {
+        if profile.is_area() {
+            // Cones (flamethrowers) are aimed from the user; blasts from their centre.
+            let origin = if profile.cone > 0.0 { user.pos } else { point };
+            let tiles = self.area_tiles(user.pos, profile, point);
             self.units
                 .iter()
-                .filter(|u| u.is_alive() && u.pos.distance(point) <= profile.area_radius)
-                .map(|u| (u.id, point))
+                .filter(|u| u.is_alive() && tiles.contains(&u.pos))
+                .map(|u| (u.id, origin))
                 .collect()
         } else if let Target::Unit(id) = target {
             vec![(id, self.shot_line(user.pos, point).0)]
@@ -749,6 +840,15 @@ impl Battle {
             }
             self.unit_mut(id).pos = step;
             segment.push(step);
+
+            // Walking into fire burns.
+            if self.on_fire(step) {
+                events.push(GameEvent::UnitMoved { unit: id, from: segment_start, path: std::mem::take(&mut segment) });
+                segment_start = step;
+                if !self.burn_step(id, events) || self.is_over() {
+                    return;
+                }
+            }
 
             if let Some((watcher, ability)) = self.find_overwatcher(id) {
                 // Flush the walked part first so the frontend animates in order.
@@ -909,6 +1009,9 @@ impl Battle {
     fn end_turn(&mut self, events: &mut Vec<GameEvent>) {
         for u in self.units.iter_mut().filter(|u| u.team == self.active_team) {
             u.action_points = 0;
+            // Overclock lasts the user's turn.
+            u.status.overclocked = false;
+            u.status.bonus_shot = false;
         }
         self.active_team = self.active_team.opponent();
         if self.active_team == Team::Player {
@@ -945,6 +1048,7 @@ impl Battle {
         }
         events.push(GameEvent::TurnStarted { team, round: self.round });
         self.heat_turn_start(team, events);
+        self.fire_turn_start(team, events);
         self.morale_turn_start(team, events);
         self.on_turn_start(events);
         self.check_victory(events);

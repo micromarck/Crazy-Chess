@@ -132,6 +132,8 @@ pub enum ProjectileStyle {
     Beam,
     /// Lobbed arc (grenades). Drawn from the user to the target point.
     Arc,
+    /// A rocket flying straight to the blast point, trailing smoke.
+    Rocket,
     /// Nothing drawn.
     None,
 }

@@ -62,10 +62,10 @@
 
   <!-- Props: cover you can destroy. Barrels explode when destroyed. -->
   <prop tag="barrel_dock" kind="barrel" x="18" y="1" cover="half" hp="2">
-    <script on="destroyed">message("The fuel barrel explodes!"); explode(x, y, 1.6, 4);</script>
+    <script on="destroyed">message("The fuel barrel explodes!"); explode(x, y, 1.6, 4); ignite(x, y, 1.6, 2);</script>
   </prop>
   <prop tag="barrel_yard" kind="barrel" x="15" y="4" cover="half" hp="2">
-    <script on="destroyed">explode(x, y, 1.6, 4);</script>
+    <script on="destroyed">explode(x, y, 1.6, 4); ignite(x, y, 1.6, 2);</script>
   </prop>
   <prop tag="crate_1" kind="crate" x="6" y="12" cover="half" hp="4"/>
   <prop tag="terminal" kind="console" x="5" y="2" cover="half"/>

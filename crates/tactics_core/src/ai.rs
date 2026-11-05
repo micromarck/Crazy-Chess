@@ -484,7 +484,7 @@ fn best_attack(battle: &Battle, unit: &Unit, config: &AiConfig) -> Option<(Actio
 
     for def in abilities(battle, unit) {
         let AbilityEffect::Attack(profile) = &def.effect else { continue };
-        let area = profile.area_radius > 0.0;
+        let area = profile.is_area();
         let targets: Vec<Target> = match def.targeting {
             Targeting::Enemy => enemies.iter().map(|e| Target::Unit(e.id)).collect(),
             Targeting::Tile => enemies.iter().map(|e| Target::Tile(e.pos)).collect(),
@@ -563,6 +563,7 @@ fn eval_tile(battle: &Battle, unit: &Unit, pos: GridPos, config: &AiConfig) -> T
         score += config.cover_weight
             * match cover.level {
                 CoverLevel::Full => 30.0,
+                CoverLevel::Half if unit.no_half_cover => -25.0,
                 CoverLevel::Half => 15.0,
                 CoverLevel::None => -25.0,
             };
@@ -596,6 +597,11 @@ fn eval_tile(battle: &Battle, unit: &Unit, pos: GridPos, config: &AiConfig) -> T
         score -= config.distance_weight * (nearest - unit.weapon.optimal_range).abs();
         let huddle = battle.living(unit.team).filter(|a| a.id != unit.id && a.pos.distance(pos) < 1.6).count();
         score -= config.cluster_penalty * huddle as f32;
+    }
+    // Fire: burns at the start of every turn spent there.
+    if battle.on_fire(pos) {
+        danger += rules.fire_damage as f32 * 2.0;
+        score -= 60.0;
     }
     TileEval { score, danger, exposed, nearest }
 }

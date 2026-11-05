@@ -325,6 +325,7 @@ impl Battle {
                 .collect(),
             props: self.props.iter().map(|p| WorldProp { tag: p.tag.clone(), pos: p.pos, hp: p.hp, alive: p.alive, door: p.door.map(|d| (d.open, d.locked)) }).collect(),
             map: Some(self.map.clone()),
+            fires: self.fires.keys().copied().collect(),
             flags: self.flags.clone(),
             zones: {
                 // Marked zones, plus unmarked ones that carry scripts.
@@ -476,6 +477,7 @@ impl Battle {
                     u.name = name;
                 }
             }
+            ScriptCommand::Ignite { pos, radius, turns } => self.ignite_area(pos, radius, turns, events),
             ScriptCommand::MarkUnit { unit, text } => match text {
                 Some(t) => {
                     self.unit_marks.insert(UnitId(unit), t);

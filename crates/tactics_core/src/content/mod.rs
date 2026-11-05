@@ -144,6 +144,10 @@ pub struct CombatRules {
     pub accuracy_multiplier: f32,
     /// Fear and its effects.
     pub morale: MoraleRules,
+    /// Damage to a unit that starts its turn standing in fire.
+    pub fire_damage: i32,
+    /// Damage for each burning tile a unit walks into.
+    pub fire_step_damage: i32,
 }
 
 impl Default for CombatRules {
@@ -160,6 +164,8 @@ impl Default for CombatRules {
             suppression_fear: 15,
             accuracy_multiplier: 1.3,
             morale: MoraleRules::default(),
+            fire_damage: 2,
+            fire_step_damage: 1,
         }
     }
 }

@@ -68,6 +68,8 @@ pub enum ScriptCommand {
     SetName { unit: u32, name: String },
     /// A label that stays over a unit (`None` removes it), e.g. a boss.
     MarkUnit { unit: u32, text: Option<String> },
+    /// Sets tiles within `radius` of `pos` on fire for `turns` rounds.
+    Ignite { pos: GridPos, radius: f32, turns: u32 },
     /// AI units of `team` head here while no enemy is in sight.
     AiGoal { team: Team, pos: GridPos },
     ClearAiGoal { team: Team },
@@ -117,6 +119,8 @@ pub struct ScriptWorld {
     pub alarm: bool,
     /// The squad is still concealed.
     pub concealed: bool,
+    /// Burning tiles.
+    pub fires: Vec<GridPos>,
 }
 
 #[derive(Debug, Clone)]
@@ -295,6 +299,12 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
         Ok(ScriptCommand::MarkUnit { unit: unit as u32, text: Some(text.to_string()).filter(|t| !t.is_empty()) })
     });
     cmd!("unmark_unit", |unit: INT| Ok(ScriptCommand::MarkUnit { unit: unit as u32, text: None }));
+    cmd!("ignite", |x: INT, y: INT, radius: FLOAT, turns: INT| {
+        Ok(ScriptCommand::Ignite { pos: grid(x, y), radius: radius as f32, turns: turns.clamp(0, 99) as u32 })
+    });
+    cmd!("ignite", |x: INT, y: INT, radius: INT, turns: INT| {
+        Ok(ScriptCommand::Ignite { pos: grid(x, y), radius: radius as f32, turns: turns.clamp(0, 99) as u32 })
+    });
     cmd!("ai_goal", |team: &str, x: INT, y: INT| {
         let team = parse_team(team).ok_or_else(|| fail(format!("unknown team '{team}'")))?;
         Ok(ScriptCommand::AiGoal { team, pos: grid(x, y) })
@@ -446,6 +456,8 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
     engine.register_fn("alarm", move || alarm);
     engine.register_fn("concealed", move || concealed);
     let w = world.clone();
+    engine.register_fn("on_fire", move |x: INT, y: INT| w.fires.contains(&grid(x, y)));
+    let w = world.clone();
     engine.register_fn("unit_stunned", move |id: INT| -> INT { w.units.iter().find(|u| u.id as INT == id).map_or(0, |u| u.stunned as INT) });
     // Doors: tags (one entry per door), state and the first panel's tile.
     let w = world.clone();
@@ -523,6 +535,7 @@ mod tests {
             zones: vec![("pad".into(), GridPos::new(0, 0), GridPos::new(1, 0))],
             alarm: false,
             concealed: true,
+            fires: Vec::new(),
             seed: 42,
         }
     }

@@ -112,6 +112,10 @@ pub fn preview_attack(
     if cover.level != CoverLevel::None && target.body.above(cover_height) {
         cover.level = CoverLevel::None;
     }
+    // Too big for low cover (robot frames): half cover counts for nothing.
+    if cover.level == CoverLevel::Half && target.no_half_cover {
+        cover.level = CoverLevel::None;
+    }
     let distance = origin.distance(target.pos);
     let weapon = &attacker.weapon;
     let mut breakdown: Vec<(String, i32)> = Vec::new();
@@ -249,6 +253,7 @@ mod tests {
             ai: Default::default(),
             fear: 0,
             heat: None,
+            no_half_cover: false,
             fearless: false,
             body: Default::default(),
             gear: Default::default(),
