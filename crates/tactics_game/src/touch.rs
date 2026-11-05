@@ -33,6 +33,7 @@ impl Plugin for TouchPlugin {
         let forced = forced_touch();
         app.insert_resource(TouchMode { active: cfg!(target_os = "android") || forced, forced })
             .init_resource::<UiDrag>()
+            .add_systems(Startup, fold_log_on_touchscreens)
             .add_systems(PreUpdate, detect_touch_mode)
             .add_systems(Update, (apply_ui_scale, apply_edge_margin, scroll_ui).in_set(FrameSet::Input));
     }
@@ -53,7 +54,48 @@ fn forced_touch() -> bool {
     }
     #[cfg(target_arch = "wasm32")]
     {
-        false
+        is_touch_device()
+    }
+}
+
+/// Web: a phone or tablet (a coarse pointer, i.e. a finger, is the main
+/// input). Such devices start in touch mode and stay there.
+#[cfg(target_arch = "wasm32")]
+pub fn is_touch_device() -> bool {
+    let Some(w) = web_sys::window() else { return false };
+    w.match_media("(pointer: coarse)").ok().flatten().is_some_and(|m| m.matches())
+}
+
+/// Switches fullscreen on or off. Web: the page goes fullscreen (needs the
+/// tap that asked for it, which a HUD button is) and phones lock to
+/// landscape where the browser allows it. Desktop: borderless fullscreen.
+/// Android (native) is always fullscreen: nothing to do.
+pub fn toggle_fullscreen(window: &mut Window) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = window;
+        let Some(w) = web_sys::window() else { return };
+        let Some(doc) = w.document() else { return };
+        if doc.fullscreen_element().is_some() {
+            doc.exit_fullscreen();
+        } else if let Some(root) = doc.document_element() {
+            let _ = root.request_fullscreen();
+            if let Ok(screen) = w.screen() {
+                let _ = screen.orientation().lock(web_sys::OrientationLockType::Landscape);
+            }
+        }
+    }
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    {
+        use bevy::window::{MonitorSelection, WindowMode};
+        window.mode = match window.mode {
+            WindowMode::Windowed => WindowMode::BorderlessFullscreen(MonitorSelection::Current),
+            _ => WindowMode::Windowed,
+        };
+    }
+    #[cfg(target_os = "android")]
+    {
+        let _ = window;
     }
 }
 
@@ -91,6 +133,14 @@ fn detect_touch_mode(
     // without a finger down means the mouse is in use again.
     if !mode.forced && touches.iter().next().is_none() && (buttons.get_just_pressed().next().is_some() || cursor.read().count() > 0) && mode.active {
         mode.active = false;
+    }
+}
+
+/// Phones and tablets start with the mission log folded (it covers a lot of
+/// a small screen); a tap opens it.
+fn fold_log_on_touchscreens(mode: Res<TouchMode>, mut flags: ResMut<crate::html_ui::UiFlags>) {
+    if mode.active {
+        flags.0.insert("log_hidden".into(), true);
     }
 }
 

@@ -285,6 +285,14 @@ wasm and asset loading from `file://`. In the browser, the roster and
 settings are saved in localStorage. User module and HUD files (`modules/`,
 `ui/`) are desktop-only.
 
+On phones and tablets the web version starts in touch mode. It renders at
+up to 1.5x pixel density, keeps every gesture for the game (no browser
+pinch-zoom or pull-to-refresh), and asks for landscape. The **Full screen**
+button in the toolbar hides the browser bars and locks landscape where the
+browser allows it. It is also installable: "Add to Home Screen" (manifest
+and icons in `crates/tactics_game/web/`) opens it fullscreen in landscape,
+which is the way to go full screen on iPhones.
+
 The same workflow publishes the game on **GitHub Pages** at
 `https://<owner>.github.io/<repo>/`. One-time setup: Settings -> Pages ->
 Source: **GitHub Actions** (and, if you build from a branch other than the

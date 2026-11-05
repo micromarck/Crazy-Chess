@@ -108,6 +108,20 @@ impl Plugin for TacticsPlugin {
     }
 }
 
+/// The window's size. Web on phones and tablets: render at no more than 1.5
+/// pixels per CSS pixel (their screens are 2-3x; full density would make the
+/// GPU draw several times the pixels for little visible gain).
+fn window_resolution() -> WindowResolution {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let dpr = web_sys::window().map_or(1.0, |w| w.device_pixel_ratio()) as f32;
+        if touch::is_touch_device() && dpr > 1.5 {
+            return WindowResolution::new(1280, 720).with_scale_factor_override(1.5);
+        }
+    }
+    WindowResolution::new(1280, 720)
+}
+
 /// Builds and runs the app. Shared by every platform's entry point.
 pub fn run() {
     App::new()
@@ -116,7 +130,7 @@ pub fn run() {
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         title: "Tactics".into(),
-                        resolution: WindowResolution::new(1280, 720),
+                        resolution: window_resolution(),
                         // Web: let the <canvas> follow its parent element's size.
                         fit_canvas_to_parent: true,
                         // Web: keep browser shortcuts (F5, Ctrl+R...) working.
