@@ -162,6 +162,15 @@ impl BattleState {
 
     /// Applies an action and queues its events for animation.
     /// Returns the error (also logged) if the action was illegal.
+    /// Applies `action` and returns its events instead of queueing them
+    /// (the caller presents them, e.g. a horde's moves together).
+    pub fn apply_quietly(&mut self, action: Action) -> Result<Vec<GameEvent>, ActionError> {
+        let events = self.battle.apply(action)?;
+        self.revision += 1;
+        self.stats.record(&self.battle, &events);
+        Ok(events)
+    }
+
     pub fn apply(&mut self, action: Action, playback: &mut Playback) -> Result<(), ActionError> {
         match self.battle.apply(action.clone()) {
             Ok(events) => {
