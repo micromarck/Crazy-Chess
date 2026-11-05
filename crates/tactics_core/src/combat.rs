@@ -248,6 +248,7 @@ mod tests {
             status: UnitStatus::default(),
             ai: Default::default(),
             fear: 0,
+            heat: None,
             fearless: false,
             body: Default::default(),
             gear: Default::default(),

@@ -47,6 +47,12 @@ pub enum WeaponLook {
     Lmg,
     Pistol,
     Plasma,
+    /// A long emitter with glowing coils; fires beams.
+    Laser,
+    /// Rotary multi-barrel gun.
+    Minigun,
+    /// A heavy, short, fat-barrelled cannon (fires beams).
+    Cannon,
     /// Nothing held (built-in weapons of drones, claws...).
     None,
 }
@@ -101,6 +107,9 @@ pub struct Weapon {
     /// Model id (a `ModelDef`, e.g. a glTF) drawn at the `weapon` socket
     /// instead of the built-in look.
     pub model: Option<String>,
+    /// Heat each attack with it adds to a unit that runs on heat (see
+    /// [`HeatRules`]); 0 = the unit's `per_shot`. Ignored by everyone else.
+    pub heat: i32,
 }
 
 impl Default for Weapon {
@@ -127,6 +136,7 @@ impl Default for Weapon {
             spare: 0,
             look: WeaponLook::Rifle,
             model: None,
+            heat: 0,
         }
     }
 }
@@ -207,6 +217,23 @@ impl Body {
     }
 }
 
+/// **Heat** instead of health (robot frames). The unit's `max_hp` is its heat
+/// limit and its HP is the headroom left: `heat = max_hp - hp`. Damage adds
+/// heat; so do its own attacks (the weapon's `heat`, or `per_shot`) and
+/// moving (`per_move` per action point). At the start of each of its turns
+/// it sheds `cooling`. Reaching the limit destroys it. The Shutdown ability
+/// vents everything, at a price (see `AbilityEffect::Shutdown`).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
+pub struct HeatRules {
+    /// Heat shed at the start of each of the unit's turns.
+    pub cooling: i32,
+    /// Heat per action point spent moving.
+    pub per_move: i32,
+    /// Heat per attack with a weapon that has no `heat` of its own.
+    pub per_shot: i32,
+}
+
 /// A script every unit of a class carries, wherever it is spawned (missions,
 /// generated maps, `spawn_unit`). Same language and API as mission unit
 /// scripts; `unit` is the unit itself. Events: `turn_start` (its team's
@@ -255,6 +282,12 @@ pub struct UnitClass {
     pub hooks: Vec<ClassHook>,
     /// Default loadout preset (see [`LoadoutDef`](crate::content::LoadoutDef)).
     pub loadout: Option<String>,
+    /// Runs on heat instead of health (see [`HeatRules`]).
+    pub heat: Option<HeatRules>,
+    /// May only use weapons and items that name this class in their
+    /// `classes` (gear open to everyone is off limits): robot frames have
+    /// their own arsenal.
+    pub restricted_gear: bool,
 }
 
 /// Temporary conditions on a unit. A future "status effect" module type will
@@ -268,6 +301,10 @@ pub struct UnitStatus {
     /// Pinned by suppressive fire: (suppressor, its ability). Aim penalty;
     /// moving draws fire. Lasts until the suppressor's next turn.
     pub suppressed_by: Option<(UnitId, AbilityId)>,
+    /// Shut down (Shutdown ability): counts down at the start of each of
+    /// the unit's turns; offline (no AP) while above 1, and on reaching 0 it
+    /// reboots with all heat vented. Any damage while shut down destroys it.
+    pub shutdown: u32,
     /// Knocked out (script `stun`): the unit's team's next this-many turns
     /// give it no action points.
     pub stunned: u32,
@@ -322,6 +359,8 @@ pub struct Unit {
     pub fearless: bool,
     /// Copied from the class: hitbox and hover height.
     pub body: Body,
+    /// Copied from the class: runs on heat instead of health.
+    pub heat: Option<HeatRules>,
     /// What the unit carries (resolved at spawn).
     pub gear: crate::content::Loadout,
     /// Looks (`None` = derived from the name by the frontend).
@@ -336,6 +375,16 @@ impl Unit {
     /// Can this unit still do something this turn?
     pub fn can_act(&self) -> bool {
         self.is_alive() && self.action_points > 0
+    }
+
+    /// Current heat (0 for units that don't run on heat).
+    pub fn heat(&self) -> i32 {
+        if self.heat.is_some() { self.stats.max_hp - self.hp.max(0) } else { 0 }
+    }
+
+    /// Shut down (offline, see [`UnitStatus::shutdown`]).
+    pub fn is_shut_down(&self) -> bool {
+        self.status.shutdown > 0
     }
 
     /// Does the unit know this ability?

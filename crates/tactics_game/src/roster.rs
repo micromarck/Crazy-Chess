@@ -49,8 +49,18 @@ impl Plugin for RosterPlugin {
 /// Most soldiers deployed at once.
 pub const SQUAD_SIZE: usize = 6;
 const FILE: &str = "tbsium_roster.ron";
-/// Classes a recruit can be (the player classes of the base modules).
-const PLAYER_CLASSES: [&str; 4] = ["rifleman", "assault", "sniper", "grenadier"];
+/// Classes a recruit can be (the player classes of the bundled modules;
+/// ones whose module isn't loaded are skipped).
+const SOLDIER_CLASSES: [&str; 5] = ["rifleman", "assault", "sniper", "grenadier", "heavy"];
+/// Robot frames (the Robot Frames module): built, not recruited.
+const ROBOT_CLASSES: [&str; 2] = ["frame_light", "frame_heavy"];
+
+/// The classes of the same family as `class` (soldiers retrain as
+/// soldiers, frames refit as frames) that the rules know.
+fn family(class: &str, rules: &Ruleset) -> Vec<&'static str> {
+    let list: &[&'static str] = if ROBOT_CLASSES.contains(&class) { &ROBOT_CLASSES } else { &SOLDIER_CLASSES };
+    list.iter().copied().filter(|c| rules.class(c).is_some()).collect()
+}
 
 /// One saved soldier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -211,22 +221,38 @@ impl Roster {
         self.dirty = true;
     }
 
-    fn recruit(&mut self) -> u32 {
+    /// Adds a recruit (a soldier, or with `robot` a robot frame) of a
+    /// random class the rules know.
+    fn recruit(&mut self, rules: &Ruleset, robot: bool) -> Option<u32> {
+        let classes = family(if robot { ROBOT_CLASSES[0] } else { SOLDIER_CLASSES[0] }, rules);
+        if classes.is_empty() {
+            return None;
+        }
         let id = self.next_id;
         self.next_id += 1;
         let seed = name_seed(&format!("recruit-{id}-{}", self.soldiers.len())) ^ (id as u64).wrapping_mul(0x9E37_79B9);
-        let class = PLAYER_CLASSES[(seed % PLAYER_CLASSES.len() as u64) as usize];
+        let class = classes[(seed % classes.len() as u64) as usize];
         let in_squad = self.squad().count() < SQUAD_SIZE;
+        let name = if robot { self.designation(class, seed) } else { self.unique_name(seed) };
         self.soldiers.push(SoldierRecord {
             id,
-            name: self.unique_name(seed),
+            name,
             class: class.into(),
             appearance: Appearance::random(seed),
             loadout: None,
             in_squad,
             ..Default::default()
         });
-        id
+        Some(id)
+    }
+
+    /// A robot's name: model letter and serial, e.g. "Strider S-07".
+    fn designation(&self, class: &str, seed: u64) -> String {
+        let (model, letter) = if class == "frame_heavy" { ("Bastion", 'B') } else { ("Strider", 'S') };
+        (0..100u64)
+            .map(|i| format!("{model} {letter}-{:02}", (seed.wrapping_add(i * 37) % 90) + 10))
+            .find(|n| !self.soldiers.iter().any(|s| &s.name == n))
+            .unwrap_or_else(|| format!("{model} {letter}-{}", self.next_id))
     }
 
     fn unique_name(&self, seed: u64) -> String {
@@ -247,7 +273,10 @@ impl Roster {
                 return None;
             }
             "recruit" => {
-                let id = self.recruit();
+                let robot = rest.trim() == "robot";
+                let Some(id) = self.recruit(rules, robot) else {
+                    return Some("No robot frames are loaded (Robot Frames module)".into());
+                };
                 self.selected = Some(id);
                 let s = self.get(id)?;
                 format!("Recruited {} ({})", s.name, s.class)
@@ -273,8 +302,12 @@ impl Roster {
             }
             "class" => {
                 let s = self.selected_mut()?;
-                let i = PLAYER_CLASSES.iter().position(|c| *c == s.class).map_or(0, |i| (i + 1) % PLAYER_CLASSES.len());
-                s.class = PLAYER_CLASSES[i].into();
+                let classes = family(&s.class, rules);
+                if classes.is_empty() {
+                    return None;
+                }
+                let i = classes.iter().position(|c| *c == s.class).map_or(0, |i| (i + 1) % classes.len());
+                s.class = classes[i].into();
                 // Gear from another class may not fit: fall back to the class default.
                 if !rules.check_gear(&s.class, &rules.gear_for(&s.class, s.loadout.as_deref(), &s.gear)).is_empty() {
                     s.loadout = None;

@@ -30,6 +30,8 @@ pub const BUNDLED_DATA_MODULES: &[(&str, &str)] = &[
     ("mercenaries.ron", include_str!("../assets/modules/mercenaries.ron")),
     ("corrupted_robots.ron", include_str!("../assets/modules/corrupted_robots.ron")),
     ("facility_ai.ron", include_str!("../assets/modules/facility_ai.ron")),
+    ("arsenal.ron", include_str!("../assets/modules/arsenal.ron")),
+    ("robot_frames.ron", include_str!("../assets/modules/robot_frames.ron")),
 ];
 
 /// Folder (relative to the working directory) scanned for user modules on desktop.
@@ -182,6 +184,94 @@ mod tests {
         b.apply_script_command(tactics_core::script::ScriptCommand::Kill { unit: officer.0 }, &mut events);
         assert!(b.unit(grunt).unwrap().fear > fear, "the line wavers");
         assert!(script_errors(&events).is_empty(), "{:?}", script_errors(&events));
+    }
+
+    /// Robot frames: their own arsenal only (and soldiers can't take it),
+    /// default loadouts spawn, heat rules come from the class, and the
+    /// missile pod heats the frame. The Arsenal's lasers and heavy weapons
+    /// go to the right soldiers.
+    #[test]
+    fn robot_frames_and_arsenal() {
+        use tactics_core::content::Loadout;
+        let (rules, _) = build_ruleset();
+        let gear = |w: &str| Loadout { weapon: Some(w.into()), ..Default::default() };
+        // Frames: own weapons only.
+        assert!(rules.check_gear("frame_light", &gear("pulse_lasers")).is_empty());
+        assert!(rules.check_gear("frame_light", &gear("needle_rail")).is_empty());
+        assert!(!rules.check_gear("frame_light", &gear("gatling_laser")).is_empty(), "heavy gun on a light frame");
+        assert!(!rules.check_gear("frame_light", &gear("rifle")).is_empty(), "soldiers' guns are off limits");
+        assert!(!rules.check_gear("frame_heavy", &gear("laser_rifle")).is_empty());
+        assert!(rules.check_gear("frame_heavy", &gear("plasma_cannon")).is_empty());
+        assert!(!rules.check_gear("rifleman", &gear("pulse_lasers")).is_empty(), "and soldiers can't take theirs");
+        // Soldiers: lasers and heavy weapons.
+        assert!(rules.check_gear("rifleman", &gear("laser_rifle")).is_empty());
+        assert!(rules.check_gear("sniper", &gear("laser_lance")).is_empty());
+        assert!(!rules.check_gear("rifleman", &gear("laser_lance")).is_empty());
+        assert!(rules.check_gear("heavy", &gear("minigun")).is_empty());
+        assert!(rules.check_gear("grenadier", &gear("autocannon")).is_empty());
+        assert!(!rules.check_gear("sniper", &gear("minigun")).is_empty());
+
+        let mut b = Battle::new(Map::from_ascii(&"....................\n".repeat(8)), rules, 5);
+        let light = b.spawn("frame_light", "S-07", Team::Player, GridPos::new(0, 0)).unwrap();
+        let heavy = b.spawn("frame_heavy", "B-12", Team::Player, GridPos::new(1, 0)).unwrap();
+        let gunner = b.spawn("heavy", "Gunner", Team::Player, GridPos::new(2, 0)).unwrap();
+        let e = b.spawn("sectoid", "E", Team::Enemy, GridPos::new(10, 4)).unwrap();
+        b.spawn("sectoid", "E2", Team::Enemy, GridPos::new(19, 7)).unwrap();
+        let u = b.unit(heavy).unwrap();
+        assert!(u.heat.is_some() && u.heat() == 0);
+        assert_eq!(u.weapon.id, "gatling_laser");
+        assert!(u.has_ability(&"missile_salvo".into()) && u.has_ability(&"coolant_flush".into()) && u.has_ability(&"shutdown".into()));
+        assert!(b.unit(light).unwrap().has_ability(&"coolant_flush".into()));
+        assert_eq!(b.unit(gunner).unwrap().weapon.id, "minigun");
+        assert!(b.unit(gunner).unwrap().has_ability(&"fire_rocket".into()));
+        assert!(b.unit(gunner).unwrap().heat.is_none());
+        // Missile salvo: +8 heat; the gatling laser: +6.
+        let target = b.unit(e).unwrap().pos;
+        assert_eq!(b.heat_cost(&Action::ability(heavy, "missile_salvo", Target::Tile(target))), 8);
+        assert_eq!(b.heat_cost(&Action::ability(heavy, "shoot", Target::Unit(e))), 6);
+        b.apply(Action::ability(heavy, "missile_salvo", Target::Tile(target))).unwrap();
+        assert_eq!(b.unit(heavy).unwrap().heat(), 8);
+    }
+
+    /// AI vs AI with robot frames in the squad: only legal actions, the AI
+    /// never overheats its own frames, and the frames get hot and cool off.
+    #[test]
+    fn robot_frames_fight_without_cooking_themselves() {
+        use tactics_core::ai::{self, AiConfig};
+        let (rules, _) = build_ruleset();
+        let art = "
+            ....................
+            ....H.....hh....H...
+            ....H...........H...
+            ..hh......H.....hh..
+            ..........H.........
+            ....................
+        ";
+        let mut seen_hot = 0;
+        let mut overheated = 0;
+        for seed in 0..6 {
+            let mut b = Battle::new(Map::from_ascii(art), rules.clone(), seed);
+            b.spawn("frame_light", "S-07", Team::Player, GridPos::new(0, 0)).unwrap();
+            b.spawn("frame_heavy", "B-12", Team::Player, GridPos::new(1, 0)).unwrap();
+            b.spawn("frame_heavy", "B-30", Team::Player, GridPos::new(0, 1)).unwrap();
+            b.spawn("heavy", "Gunner", Team::Player, GridPos::new(2, 0)).unwrap();
+            let mercs = ["merc_gunner", "merc_rifleman", "merc_marksman", "merc_breacher", "merc_rifleman", "merc_officer"];
+            for (i, class) in mercs.iter().enumerate() {
+                b.spawn(class, format!("E{i}"), Team::Enemy, GridPos::new(19 - (i as i32 % 3), 3 + (i as i32 / 3) * 2)).unwrap();
+            }
+            let config = AiConfig::default();
+            for _ in 0..800 {
+                if b.is_over() || b.round() > 25 {
+                    break;
+                }
+                let action = ai::next_team_action(&b, &config);
+                let ev = b.apply(action.clone()).unwrap_or_else(|e| panic!("illegal {action:?}: {e}"));
+                overheated += ev.iter().filter(|e| matches!(e, GameEvent::Callout { text, .. } if text == "OVERHEATED")).count();
+                seen_hot += ev.iter().filter(|e| matches!(e, GameEvent::HeatChanged { delta, .. } if *delta > 0)).count();
+            }
+        }
+        assert_eq!(overheated, 0, "the AI cooked its own frame");
+        assert!(seen_hot > 10, "frames heat up as they fight ({seen_hot})");
     }
 
     #[test]

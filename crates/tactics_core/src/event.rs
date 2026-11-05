@@ -83,6 +83,12 @@ pub enum GameEvent {
     },
     /// A unit regained hit points.
     UnitHealed { unit: UnitId, amount: i32 },
+    /// A unit that runs on heat got hotter (`delta` > 0: shooting, moving)
+    /// or cooler (`delta` < 0: cooling, venting). `heat` / `max` = now.
+    /// (Damage adds heat too, reported as `UnitDamaged`.)
+    HeatChanged { unit: UnitId, delta: i32, heat: i32, max: i32 },
+    /// A robot powered down (`shut_down`) or rebooted.
+    Shutdown { unit: UnitId, shut_down: bool },
     /// A unit's hit points dropped to zero.
     UnitKilled { unit: UnitId },
     /// A unit's remaining action points changed.

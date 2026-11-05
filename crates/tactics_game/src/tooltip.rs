@@ -181,7 +181,12 @@ pub fn tooltip_text(state: &BattleState, selection: &Selection) -> String {
             format!("  {}", b.rules().combat.morale.level(friend.fear).name())
         };
         let hint = if friend.id == sel { "" } else if friend.can_act() { "\nClick to select" } else { "\nNo AP left" };
-        return format!("{}  HP {}/{}  {} AP{morale}{hint}", friend.name, friend.hp, friend.stats.max_hp, friend.action_points);
+        let vital = if friend.heat.is_some() {
+            format!("HEAT {}/{}{}", friend.heat(), friend.stats.max_hp, if friend.is_shut_down() { " SHUT DOWN" } else { "" })
+        } else {
+            format!("HP {}/{}", friend.hp, friend.stats.max_hp)
+        };
+        return format!("{}  {vital}  {} AP{morale}{hint}", friend.name, friend.action_points);
     }
 
     // An enemy: primary attack odds.
@@ -456,7 +461,8 @@ fn unit_mark_labels(
     let battle = &state.battle;
     let mut seen = Vec::new();
     for (e, mark, mut text, mut node, mut vis) in &mut labels {
-        let label = battle.unit_mark(mark.0).filter(|_| battle.unit(mark.0).is_some_and(|u| u.is_alive()));
+        let label = mark_text(battle, mark.0);
+        let label = label.as_deref();
         let Some(label) = label else {
             commands.entity(e).despawn();
             continue;
@@ -482,7 +488,7 @@ fn unit_mark_labels(
         }
     }
     for (visual, ..) in &units {
-        if seen.contains(&visual.id) || battle.unit_mark(visual.id).is_none() {
+        if seen.contains(&visual.id) || mark_text(battle, visual.id).is_none() {
             continue;
         }
         seen.push(visual.id);
@@ -498,6 +504,13 @@ fn unit_mark_labels(
             Pickable::IGNORE,
         ));
     }
+}
+
+/// The label over a unit: a script's mark (`mark_unit`), else SHUT DOWN
+/// for a powered-down machine.
+fn mark_text(battle: &Battle, id: UnitId) -> Option<String> {
+    let u = battle.unit(id).filter(|u| u.is_alive())?;
+    battle.unit_mark(id).map(str::to_string).or_else(|| u.is_shut_down().then(|| "SHUT DOWN".to_string()))
 }
 
 /// "4 rounds x 38%" for bursts and pellets, "38%" for single shots.

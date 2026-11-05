@@ -37,6 +37,7 @@ use crate::unit::{Team, Unit, UnitId};
 use crate::visibility;
 
 mod ballistics;
+mod heat;
 mod morale;
 mod stealth;
 mod world;
@@ -225,6 +226,7 @@ impl Battle {
             fear: 0,
             fearless: class.fearless,
             body: class.body,
+            heat: class.heat,
             gear: Loadout { weapon: Some(weapon_id), ..gear },
             appearance: None,
         };
@@ -498,9 +500,22 @@ impl Battle {
                 let point = self.check_target(u, def, *target)?;
                 if let AbilityEffect::Heal { .. } = def.effect {
                     let healee = self.unit_at(point).ok_or(ActionError::WrongTarget)?;
+                    if healee.heat.is_some() {
+                        return Err(ActionError::CantHealMachine);
+                    }
                     if healee.hp >= healee.stats.max_hp {
                         return Err(ActionError::NothingToHeal);
                     }
+                }
+                if let AbilityEffect::Cool { .. } = def.effect
+                    && u.heat() <= 0
+                {
+                    return Err(ActionError::NoHeat);
+                }
+                if let AbilityEffect::Shutdown { .. } = def.effect
+                    && u.heat.is_none()
+                {
+                    return Err(ActionError::NoHeat);
                 }
                 Ok(())
             }
@@ -585,7 +600,15 @@ impl Battle {
             u.charges.insert(ability.clone(), left.saturating_sub(1));
         }
 
+        let heat = self.ability_heat(&self.units[unit.0 as usize], &def);
         self.run_effect(unit, &def, point, target, events);
+        // Firing (or straining) a machine heats it up.
+        if heat > 0 && self.units[unit.0 as usize].is_alive() {
+            self.add_heat(unit, heat, events);
+        }
+        if !self.units[unit.0 as usize].is_alive() {
+            return;
+        }
 
         match def.cost {
             crate::content::ApCost::EndsTurn => self.spend_all_ap(unit, events),
@@ -657,6 +680,15 @@ impl Battle {
                 u.weapon.ammo = u.weapon.clip_size;
                 u.weapon.spare = u.weapon.spare.saturating_sub(1);
             }
+            AbilityEffect::Shutdown { turns } => {
+                let u = self.unit_mut(unit);
+                // +1: the countdown's last step is the reboot (see UnitStatus::shutdown).
+                u.status.shutdown = turns + 1;
+                u.status.overwatch = None;
+                u.status.defense_bonus = 0;
+                events.push(GameEvent::Shutdown { unit, shut_down: true });
+            }
+            AbilityEffect::Cool { amount } => self.add_heat(unit, -amount, events),
             AbilityEffect::Heal { amount } => {
                 if let Some(healee) = self.unit_at(point).map(|u| u.id) {
                     let h = self.unit_mut(healee);
@@ -699,6 +731,14 @@ impl Battle {
         let ap_cost = self.move_cost_ap(id, cost);
         // AP is paid up front: being interrupted does not refund it (XCOM rule).
         self.spend_ap(id, ap_cost, events);
+        // So is a machine's heat for moving.
+        let heat = self.move_heat(&self.units[id.0 as usize], ap_cost);
+        if heat > 0 {
+            self.add_heat(id, heat, events);
+            if !self.units[id.0 as usize].is_alive() {
+                return;
+            }
+        }
 
         let mut segment_start = self.units[id.0 as usize].pos;
         let mut segment: Vec<GridPos> = Vec::new();
@@ -784,6 +824,15 @@ impl Battle {
     /// Reaction fire (overwatch, suppression): a ballistic volley that spends
     /// ammo, or a rolled attack for non-ballistic profiles.
     fn reaction_volley(&mut self, shooter: UnitId, target: UnitId, ability: &AbilityId, profile: &AttackProfile, events: &mut Vec<GameEvent>) {
+        self.reaction_fire(shooter, target, ability, profile, events);
+        // Reaction fire heats a machine like any other shot.
+        let heat = self.weapon_heat(&self.units[shooter.0 as usize]);
+        if heat > 0 && self.units[shooter.0 as usize].is_alive() {
+            self.add_heat(shooter, heat, events);
+        }
+    }
+
+    fn reaction_fire(&mut self, shooter: UnitId, target: UnitId, ability: &AbilityId, profile: &AttackProfile, events: &mut Vec<GameEvent>) {
         if profile.is_ballistic() {
             let cap = Some(self.units[shooter.0 as usize].weapon.ammo.max(0) as u32);
             let fired = self.fire_volley(shooter, target, ability, profile, cap, true, false, events);
@@ -886,6 +935,7 @@ impl Battle {
                 u.status.stunned -= 1;
                 u.action_points = 0;
             }
+
             u.status.overwatch = None;
             u.status.defense_bonus = 0;
             u.cooldowns.retain(|_, turns| {
@@ -894,6 +944,7 @@ impl Battle {
             });
         }
         events.push(GameEvent::TurnStarted { team, round: self.round });
+        self.heat_turn_start(team, events);
         self.morale_turn_start(team, events);
         self.on_turn_start(events);
         self.check_victory(events);

@@ -156,6 +156,15 @@ TBSium/
   `assets/modules/zombies.ron`); Mercenaries and Corrupted Robots (pure data
   modules with class scripts: an officer who holds the line, machines that
   break down, malfunction and lose armour over time).
+* Arsenal (data module): laser rifles, a laser lance and scatter laser (beams),
+  minigun, autocannon and rocket launcher, and the Heavy Gunner class.
+* Robot Frames (data module): player robots that run on **heat instead of
+  health**: hits, shots and moving heat them up, they cool each turn, and
+  they're destroyed at the heat limit. **Shutdown** vents all heat after two
+  offline turns (but any hit while shut down destroys them); coolant tanks
+  shed heat at once. Light Strider and heavy Bastion frames each have their
+  own radical arsenal (pulse lasers, needle rail, arc thrower; gatling
+  laser, plasma cannon, missile pod). Build them in the Barracks.
 * 2 action points per unit; move (1 AP) or dash (2 AP), blue/yellow range overlay.
 * Directional half/full cover, flanking (+crit), cover shields on hover.
 * Hit chance = aim − defence − cover − hunker ± range falloff, shown with a full breakdown.

@@ -1,0 +1,178 @@
+// Arsenal: laser and heavy weapons for the human squad, plus the Heavy
+// Gunner class that carries the big ones. Pick them per soldier in the
+// Loadout screen (each weapon's `classes` says who can carry it).
+//
+// Lasers: almost no spread, fewer but sharper hits, beams instead of tracers.
+//   Laser Rifle (anyone), Laser Lance (snipers), Scatter Laser (assault).
+// Heavy: Minigun (heavy gunners), Autocannon (heavy gunners, grenadiers) and
+//   the Rocket Launcher item (a 2-tile blast; heavy gunners, grenadiers).
+(
+    info: (
+        id: "arsenal",
+        name: "Arsenal",
+        version: "1.0",
+        author: "Tactics",
+        description: "Laser rifles, a laser lance and scatter laser; the minigun, autocannon and rocket launcher; and the Heavy Gunner class.",
+    ),
+
+    weapons: [
+        // --- Lasers ---
+        (
+            id: "laser_rifle",
+            name: "Laser Rifle",
+            damage_min: 1,
+            damage_max: 2,
+            crit_chance: 10,
+            crit_bonus: 1,
+            optimal_range: 8.0,
+            max_range: 16.0,
+            burst: 3,
+            spread: 0.3,
+            clip_size: 18,
+            magazines: 3,
+            look: Laser,
+        ),
+        (
+            id: "laser_lance",
+            name: "Laser Lance",
+            classes: ["sniper"],
+            damage_min: 5,
+            damage_max: 7,
+            crit_chance: 20,
+            crit_bonus: 2,
+            optimal_range: 14.0,
+            max_range: 26.0,
+            burst: 1,
+            spread: 0.05,
+            min_range: 5.0,
+            close_penalty: 8,
+            clip_size: 4,
+            magazines: 3,
+            look: Laser,
+        ),
+        (
+            id: "scatter_laser",
+            name: "Scatter Laser",
+            classes: ["assault"],
+            damage_min: 1,
+            damage_max: 2,
+            crit_chance: 10,
+            optimal_range: 3.0,
+            max_range: 9.0,
+            burst: 1,
+            pellets: 6,
+            spread: 2.2,
+            ignores_cover: true,
+            clip_size: 6,
+            magazines: 3,
+            look: Laser,
+        ),
+        // --- Heavy weapons ---
+        (
+            id: "minigun",
+            name: "Minigun",
+            classes: ["heavy"],
+            damage_min: 1,
+            damage_max: 1,
+            crit_chance: 5,
+            crit_bonus: 1,
+            optimal_range: 6.0,
+            max_range: 13.0,
+            burst: 12,
+            spread: 2.2,
+            clip_size: 120,
+            magazines: 1,
+            look: Minigun,
+        ),
+        (
+            id: "autocannon",
+            name: "Autocannon",
+            classes: ["heavy", "grenadier"],
+            damage_min: 3,
+            damage_max: 4,
+            crit_chance: 10,
+            crit_bonus: 2,
+            optimal_range: 9.0,
+            max_range: 18.0,
+            burst: 2,
+            spread: 0.9,
+            clip_size: 8,
+            magazines: 3,
+            look: Lmg,
+        ),
+    ],
+
+    abilities: [
+        (
+            id: "fire_rocket",
+            name: "Fire Rocket",
+            description: "Fire at a tile: 4-6 damage to everyone within 2 tiles, wrecks walls and props, 14 fragments fly further. Never misses. One rocket per launcher.",
+            cost: EndsTurn,
+            charges: Some(1),
+            targeting: Tile,
+            range: Fixed(15.0),
+            requires_los: true,
+            effect: Attack(
+                can_miss: false,
+                half_cover_penalty: 0,
+                full_cover_penalty: 0,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                damage: Fixed(min: 4, max: 6),
+                area_radius: 2.0,
+                shrapnel: 14,
+            ),
+        ),
+    ],
+
+    presentations: [
+        (ability: "fire_rocket", animation: "shoot", projectile: Arc, windup: 0.4),
+    ],
+
+    items: [
+        (
+            id: "rocket_launcher",
+            name: "Rocket Launcher",
+            description: "Grants Fire Rocket (one rocket per launcher).",
+            slot: Utility,
+            abilities: ["fire_rocket"],
+            charges: Some(1),
+            classes: ["heavy", "grenadier"],
+        ),
+    ],
+
+    classes: [
+        (
+            id: "heavy",
+            name: "Heavy Gunner",
+            stats: (max_hp: 12, mobility: 10, aim: 62, defense: 0, sight: 13.0, bravery: 60),
+            weapon: "minigun",
+            abilities: ["shoot", "suppress", "overwatch", "hunker", "reload"],
+            model: "soldier",
+            loadout: "heavy_std",
+        ),
+    ],
+
+    loadouts: [
+        (
+            id: "heavy_std",
+            name: "Heavy Gunner",
+            description: "Minigun and a rocket launcher.",
+            classes: ["heavy"],
+            gear: (weapon: Some("minigun"), items: ["rocket_launcher"]),
+        ),
+        (
+            id: "heavy_cannon",
+            name: "Heavy: Autocannon",
+            description: "Autocannon and two rocket launchers.",
+            classes: ["heavy"],
+            gear: (weapon: Some("autocannon"), items: ["rocket_launcher", "rocket_launcher"]),
+        ),
+        (
+            id: "laser_trooper",
+            name: "Laser Trooper",
+            description: "Laser rifle for any soldier.",
+            gear: (weapon: Some("laser_rifle")),
+        ),
+    ],
+)

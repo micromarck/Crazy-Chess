@@ -80,6 +80,7 @@ pub fn collect_ui_data(
         v.set("unit.name", &u.name);
         v.set("unit.class", b.rules().class(&u.class).map_or(u.class.as_str(), |c| c.name.as_str()));
         v.set("unit.hp", u.hp);
+        v.set("unit.vital", vital(u));
         v.set("unit.max_hp", u.stats.max_hp);
         v.set("unit.hp_percent", (100 * u.hp / u.stats.max_hp.max(1)).clamp(0, 100));
         v.set("unit.ap", u.action_points);
@@ -114,6 +115,14 @@ pub fn collect_ui_data(
         if u.status.defense_bonus > 0 {
             status.push(format!("Defending +{}", u.status.defense_bonus));
         }
+        if u.is_shut_down() {
+            let turns = u.status.shutdown.saturating_sub(1);
+            status.push(if turns > 0 {
+                format!("SHUT DOWN: {turns} more turn{} - any hit destroys it", if turns == 1 { "" } else { "s" })
+            } else {
+                "SHUT DOWN: reboots next turn - any hit destroys it".into()
+            });
+        }
         v.set("unit.status", status.join(", "));
     }
 
@@ -129,7 +138,15 @@ pub fn collect_ui_data(
     let move_cost = match (mover, selection.move_target, selection.range.as_ref()) {
         (Some(u), Some(to), Some(range)) => range.cost(to).map(|c| {
             let ap = b.move_cost_ap(u.id, c);
-            if ap >= u.action_points { format!("Dash here ({ap} AP, ends the turn)") } else { format!("Move here ({ap} AP)") }
+            let heat = b.move_heat(u, ap);
+            let heat = if heat <= 0 {
+                String::new()
+            } else if heat >= u.hp {
+                format!(", +{heat} heat: OVERHEATS!")
+            } else {
+                format!(", +{heat} heat")
+            };
+            if ap >= u.action_points { format!("Dash here ({ap} AP{heat}, ends the turn)") } else { format!("Move here ({ap} AP{heat})") }
         }),
         _ => None,
     };
@@ -255,7 +272,10 @@ pub fn collect_ui_data(
                     ("name", u.name.clone()),
                     ("hp", u.hp.to_string()),
                     ("max_hp", u.stats.max_hp.to_string()),
-                    ("hp_percent", (100 * u.hp / u.stats.max_hp.max(1)).clamp(0, 100).to_string()),
+                    ("vital", vital(u).trim_start_matches("HP ").to_string()),
+                    // Machines: the bar is heat (fills as it heats up).
+                    ("hp_percent", if u.heat.is_some() { 100 * u.heat() / u.stats.max_hp.max(1) } else { 100 * u.hp / u.stats.max_hp.max(1) }.clamp(0, 100).to_string()),
+                    ("fill", if u.heat.is_some() { "heat-fill" } else { "hp-fill" }.to_string()),
                     ("ap", u.action_points.to_string()),
                     ("fear", if u.fearless { String::new() } else {
                         match b.rules().combat.morale.level(u.fear) {
@@ -305,10 +325,15 @@ fn abilities(b: &Battle, unit: &Unit, selection: &Selection) -> Vec<BTreeMap<Str
             } else {
                 "disabled"
             };
-            let cost = match def.cost {
+            let mut cost = match def.cost {
                 ApCost::Points(n) => format!("{n} AP"),
                 ApCost::EndsTurn => "ends turn".into(),
             };
+            // Machines: what it does to the heat.
+            let heat = b.ability_heat(unit, def);
+            if heat > 0 {
+                cost += &if heat >= unit.hp { format!(" +{heat}H OVERHEAT") } else { format!(" +{heat}H") };
+            }
             Some(item(&[
                 ("id", id.to_string()),
                 ("name", def.name.clone()),
@@ -345,9 +370,12 @@ pub fn hover_info(state: &BattleState, selection: &Selection, touch: bool) -> St
                     for (victim, p) in &previews {
                         if let Some(v) = b.unit(*victim) {
                             s.push_str(&format!(
-                                "{}  HP {}/{}\nHIT {}%   CRIT {}%   DMG {}-{}\n",
-                                v.name, v.hp, v.stats.max_hp, p.hit_chance, p.crit_chance, p.damage.0, p.damage.1
+                                "{}  {}\nHIT {}%   CRIT {}%   DMG {}-{}\n",
+                                v.name, vital(v), p.hit_chance, p.crit_chance, p.damage.0, p.damage.1
                             ));
+                            if v.is_shut_down() {
+                                s.push_str("  SHUT DOWN: any hit destroys it\n");
+                            }
                             for (label, value) in &p.breakdown {
                                 s.push_str(&format!("  {label}: {value:+}\n"));
                             }
@@ -358,10 +386,27 @@ pub fn hover_info(state: &BattleState, selection: &Selection, touch: bool) -> St
                 Some(Err(e)) => s.push_str(&e.to_string()),
                 None => s.push_str("Pick a target (Esc to cancel)"),
             }
+            // Machines: heat this costs the user.
+            if let Some(u) = b.unit(sel) {
+                let heat = b.ability_heat(u, def);
+                if heat >= u.hp {
+                    s.push_str(&format!("\n+{heat} HEAT: {} WILL OVERHEAT AND BE DESTROYED", u.name.to_uppercase()));
+                } else if heat > 0 {
+                    s.push_str(&format!("\n+{heat} heat ({} -> {}/{})", u.heat(), u.heat() + heat, u.stats.max_hp));
+                }
+            }
         } else if let Some(cost) = selection.range.as_ref().and_then(|r| r.cost(hover)).filter(|c| *c > 0) {
             let ap = b.move_cost_ap(sel, cost);
             let cover = tactics_core::cover::best_cover_at(b.map(), hover);
             s = format!("{} - {ap} AP\nCover: {cover:?}", if ap > 1 { "Dash" } else { "Move" });
+            if let Some(u) = b.unit(sel) {
+                let heat = b.move_heat(u, ap);
+                if heat >= u.hp {
+                    s.push_str(&format!("\n+{heat} HEAT: OVERHEATS AND IS DESTROYED"));
+                } else if heat > 0 {
+                    s.push_str(&format!("\n+{heat} heat ({} -> {}/{})", u.heat(), u.heat() + heat, u.stats.max_hp));
+                }
+            }
         }
     }
     if s.is_empty() {
@@ -372,4 +417,13 @@ pub fn hover_info(state: &BattleState, selection: &Selection, touch: bool) -> St
         };
     }
     s.trim_end().to_string()
+}
+
+/// "HP 7/10", or for machines "HEAT 5/20 (-4/turn)" ("OFFLINE" while shut down).
+fn vital(u: &Unit) -> String {
+    match u.heat {
+        Some(_) if u.is_shut_down() => format!("HEAT {}/{} OFFLINE", u.heat(), u.stats.max_hp),
+        Some(h) => format!("HEAT {}/{} (-{}/turn)", u.heat(), u.stats.max_hp, h.cooling),
+        None => format!("HP {}/{}", u.hp, u.stats.max_hp),
+    }
 }

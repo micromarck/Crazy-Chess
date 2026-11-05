@@ -1,0 +1,342 @@
+// Robot Frames: combat robots the player can field (Barracks -> recruit, or
+// change a soldier's class). Written as a data module on top of the engine's
+// heat rules:
+//
+//   * HEAT INSTEAD OF HEALTH (`heat` on the class): the class's max_hp is
+//     its heat limit. Getting hit adds heat (the damage), so do its own
+//     shots (each weapon's `heat`) and moving (`per_move` per action point).
+//     It sheds `cooling` at the start of each of its turns. At the limit it
+//     is destroyed.
+//   * SHUTDOWN (ability): power down for 2 of its own turns, then reboot
+//     with all heat vented. Any hit while shut down destroys it, so only do
+//     it out of sight.
+//   * COOLANT TANK (item): flush 6 heat for 1 AP, twice per battle.
+//   * Its own arsenal (`restricted_gear`): frames can't carry soldiers'
+//     guns, and each frame has its own radical weapons:
+//       Strider (light)  - Twin Pulse Lasers, Needle Rail, Arc Thrower
+//       Bastion (heavy)  - Gatling Laser, Plasma Cannon, Missile Pod
+//   * Medkits don't fix machines; machines feel no fear.
+(
+    info: (
+        id: "robot_frames",
+        name: "Robot Frames",
+        version: "1.0",
+        author: "Tactics",
+        description: "Player combat robots that run on heat instead of health: light Strider and heavy Bastion frames, their own radical arsenal, Shutdown and coolant.",
+    ),
+
+    abilities: [
+        (
+            id: "shutdown",
+            name: "Shutdown",
+            description: "Power down for 2 turns, then reboot with ALL heat vented. While shut down, any hit destroys the frame. Ends the turn.",
+            cost: EndsTurn,
+            targeting: SelfOnly,
+            range: Fixed(0.0),
+            requires_los: false,
+            effect: Shutdown(turns: 2),
+        ),
+        (
+            id: "coolant_flush",
+            name: "Coolant Flush",
+            description: "Vent 6 heat. 1 AP, 2 per tank.",
+            cost: Points(1),
+            charges: Some(2),
+            targeting: SelfOnly,
+            range: Fixed(0.0),
+            requires_los: false,
+            effect: Cool(amount: 6),
+        ),
+        (
+            id: "missile_salvo",
+            name: "Missile Salvo",
+            description: "Fire the missile pod at a tile: 3-5 damage to everyone within 1.5 tiles, wrecks walls, 10 fragments. Never misses. +8 heat. 1 per pod.",
+            cost: EndsTurn,
+            charges: Some(1),
+            targeting: Tile,
+            range: Fixed(16.0),
+            requires_los: true,
+            heat: 8,
+            effect: Attack(
+                can_miss: false,
+                half_cover_penalty: 0,
+                full_cover_penalty: 0,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                damage: Fixed(min: 3, max: 5),
+                area_radius: 1.5,
+                shrapnel: 10,
+            ),
+        ),
+    ],
+
+    presentations: [
+        (ability: "missile_salvo", animation: "shoot", projectile: Arc, windup: 0.35),
+        (ability: "shutdown", animation: "hunker"),
+    ],
+
+    // ---------------------------------------------------------------------
+    // The arsenal. Light frame: fast, precise, hot-running exotic guns.
+    // Heavy frame: enormous firepower that cooks it if it isn't careful.
+    // ---------------------------------------------------------------------
+    weapons: [
+        // --- Strider (light) ---
+        (
+            id: "pulse_lasers",
+            name: "Twin Pulse Lasers",
+            classes: ["frame_light"],
+            damage_min: 1,
+            damage_max: 2,
+            crit_chance: 10,
+            crit_bonus: 1,
+            optimal_range: 7.0,
+            max_range: 15.0,
+            burst: 4,
+            spread: 0.35,
+            clip_size: 24,
+            magazines: 3,
+            heat: 2,
+            look: Laser,
+        ),
+        (
+            id: "needle_rail",
+            name: "Needle Rail",
+            classes: ["frame_light"],
+            // One hypersonic slug: punches straight through cover.
+            damage_min: 4,
+            damage_max: 6,
+            crit_chance: 25,
+            crit_bonus: 3,
+            optimal_range: 12.0,
+            max_range: 22.0,
+            burst: 1,
+            spread: 0.05,
+            ignores_cover: true,
+            min_range: 4.0,
+            close_penalty: 8,
+            clip_size: 2,
+            magazines: 4,
+            heat: 5,
+            look: Sniper,
+        ),
+        (
+            id: "arc_thrower",
+            name: "Arc Thrower",
+            classes: ["frame_light"],
+            // Lightning that jumps around cover at short range.
+            damage_min: 2,
+            damage_max: 3,
+            crit_chance: 10,
+            optimal_range: 3.0,
+            max_range: 7.0,
+            burst: 1,
+            pellets: 3,
+            spread: 3.5,
+            ignores_cover: true,
+            clip_size: 6,
+            magazines: 3,
+            heat: 3,
+            look: Plasma,
+        ),
+        // --- Bastion (heavy) ---
+        (
+            id: "gatling_laser",
+            name: "Gatling Laser",
+            classes: ["frame_heavy"],
+            damage_min: 1,
+            damage_max: 2,
+            crit_chance: 5,
+            crit_bonus: 1,
+            optimal_range: 7.0,
+            max_range: 15.0,
+            burst: 8,
+            spread: 1.4,
+            clip_size: 48,
+            magazines: 2,
+            heat: 6,
+            look: Minigun,
+        ),
+        (
+            id: "plasma_cannon",
+            name: "Plasma Cannon",
+            classes: ["frame_heavy"],
+            damage_min: 5,
+            damage_max: 7,
+            crit_chance: 15,
+            crit_bonus: 3,
+            optimal_range: 9.0,
+            max_range: 16.0,
+            burst: 1,
+            spread: 0.5,
+            clip_size: 3,
+            magazines: 3,
+            heat: 9,
+            look: Cannon,
+        ),
+    ],
+
+    items: [
+        (
+            id: "coolant_tank",
+            name: "Coolant Tank",
+            description: "Grants Coolant Flush: vent 6 heat for 1 AP, twice.",
+            slot: Utility,
+            abilities: ["coolant_flush"],
+            charges: Some(2),
+            classes: ["frame_light", "frame_heavy"],
+        ),
+        (
+            id: "missile_pod",
+            name: "Missile Pod",
+            description: "Grants Missile Salvo (1 salvo per pod): a 1.5-tile blast at up to 16 tiles. +8 heat.",
+            slot: Utility,
+            abilities: ["missile_salvo"],
+            charges: Some(1),
+            classes: ["frame_heavy"],
+        ),
+        (
+            id: "heat_sink",
+            name: "Heat Sink Array",
+            description: "+5 heat capacity.",
+            slot: Armor,
+            stats: (max_hp: 5),
+            classes: ["frame_light", "frame_heavy"],
+        ),
+        (
+            id: "ablative_plating",
+            name: "Ablative Plating",
+            description: "+15 defence, -1 tile of movement.",
+            slot: Armor,
+            stats: (defense: 15, mobility: -2),
+            classes: ["frame_heavy"],
+        ),
+    ],
+
+    classes: [
+        (
+            id: "frame_light",
+            name: "Strider Frame",
+            // max_hp = heat limit.
+            stats: (max_hp: 12, mobility: 15, aim: 72, defense: 10, sight: 15.0, bravery: 100),
+            weapon: "pulse_lasers",
+            abilities: ["shoot", "overwatch", "shutdown", "reload"],
+            model: "frame_light",
+            fearless: true,
+            body: (height: 1.2),
+            heat: (cooling: 4, per_move: 1, per_shot: 2),
+            restricted_gear: true,
+            loadout: "strider_std",
+        ),
+        (
+            id: "frame_heavy",
+            name: "Bastion Frame",
+            stats: (max_hp: 20, mobility: 8, aim: 62, defense: 20, sight: 13.0, bravery: 100),
+            weapon: "gatling_laser",
+            abilities: ["shoot", "suppress", "overwatch", "shutdown", "reload"],
+            model: "frame_heavy",
+            fearless: true,
+            body: (height: 1.8),
+            heat: (cooling: 3, per_move: 3, per_shot: 4),
+            restricted_gear: true,
+            loadout: "bastion_std",
+        ),
+    ],
+
+    loadouts: [
+        (
+            id: "strider_std",
+            name: "Strider",
+            description: "Pulse lasers and a coolant tank.",
+            classes: ["frame_light"],
+            gear: (weapon: Some("pulse_lasers"), items: ["coolant_tank"]),
+        ),
+        (
+            id: "strider_rail",
+            name: "Strider: Rail",
+            description: "Needle rail sniper with a heat sink.",
+            classes: ["frame_light"],
+            gear: (weapon: Some("needle_rail"), armor: Some("heat_sink"), items: ["coolant_tank"]),
+        ),
+        (
+            id: "bastion_std",
+            name: "Bastion",
+            description: "Gatling laser and a missile pod.",
+            classes: ["frame_heavy"],
+            gear: (weapon: Some("gatling_laser"), items: ["missile_pod", "coolant_tank"]),
+        ),
+        (
+            id: "bastion_siege",
+            name: "Bastion: Siege",
+            description: "Plasma cannon, plating and a missile pod.",
+            classes: ["frame_heavy"],
+            gear: (weapon: Some("plasma_cannon"), armor: Some("ablative_plating"), items: ["missile_pod"]),
+        ),
+    ],
+
+    // ---------------------------------------------------------------------
+    // Look: sleek light frame, hulking heavy frame (team colours).
+    // ---------------------------------------------------------------------
+    skeletons: [
+        (
+            id: "frame_light",
+            extends: "humanoid",
+            bones: [
+                (name: "head", parent: "neck", offset: (0.0, 0.03, 0.0),
+                 shape: Box(size: (0.2, 0.12, 0.24)), shape_offset: (0.0, 0.07, -0.02), color: Dark),
+                (name: "optic", parent: "head", offset: (0.0, 0.08, -0.14),
+                 shape: Box(size: (0.16, 0.035, 0.02)), color: Accent),
+                (name: "chest", parent: "spine", offset: (0.0, 0.22, 0.0),
+                 shape: Box(size: (0.36, 0.2, 0.24)), shape_offset: (0.0, 0.08, 0.0), color: Team),
+                (name: "radiator", parent: "chest", offset: (0.0, 0.1, 0.14),
+                 shape: Box(size: (0.26, 0.18, 0.05)), color: Dark),
+                (name: "fin_l", parent: "radiator", offset: (-0.1, 0.0, 0.04),
+                 shape: Box(size: (0.02, 0.2, 0.08)), color: Accent),
+                (name: "fin_r", parent: "radiator", offset: (0.1, 0.0, 0.04),
+                 shape: Box(size: (0.02, 0.2, 0.08)), color: Accent),
+                (name: "shin_l", parent: "thigh_l", offset: (0.0, -0.27, 0.0),
+                 shape: Box(size: (0.09, 0.26, 0.11)), shape_offset: (0.0, -0.12, 0.02), color: Dark),
+                (name: "shin_r", parent: "thigh_r", offset: (0.0, -0.27, 0.0),
+                 shape: Box(size: (0.09, 0.26, 0.11)), shape_offset: (0.0, -0.12, 0.02), color: Dark),
+            ],
+        ),
+        (
+            id: "frame_heavy",
+            extends: "humanoid",
+            bones: [
+                (name: "head", parent: "neck", offset: (0.0, 0.02, -0.05),
+                 shape: Box(size: (0.24, 0.14, 0.2)), shape_offset: (0.0, 0.06, 0.0), color: Dark),
+                (name: "optic", parent: "head", offset: (0.0, 0.07, -0.11),
+                 shape: Box(size: (0.18, 0.05, 0.02)), color: Accent),
+                (name: "chest", parent: "spine", offset: (0.0, 0.22, 0.0),
+                 shape: Box(size: (0.64, 0.36, 0.38)), shape_offset: (0.0, 0.1, 0.0), color: Team),
+                (name: "vents", parent: "chest", offset: (0.0, 0.14, 0.2),
+                 shape: Box(size: (0.4, 0.2, 0.06)), color: Accent),
+                (name: "stack_l", parent: "chest", offset: (-0.2, 0.36, 0.14),
+                 shape: Capsule(radius: 0.04, length: 0.2), shape_offset: (0.0, 0.1, 0.0), color: Dark),
+                (name: "stack_r", parent: "chest", offset: (0.2, 0.36, 0.14),
+                 shape: Capsule(radius: 0.04, length: 0.2), shape_offset: (0.0, 0.1, 0.0), color: Dark),
+                (name: "pauldron_l", parent: "chest", offset: (-0.38, 0.22, 0.0),
+                 shape: Box(size: (0.2, 0.16, 0.3)), color: Dark),
+                (name: "pauldron_r", parent: "chest", offset: (0.38, 0.22, 0.0),
+                 shape: Box(size: (0.2, 0.16, 0.3)), color: Dark),
+                (name: "forearm_l", parent: "upper_arm_l", offset: (0.0, -0.26, 0.0),
+                 shape: Box(size: (0.15, 0.26, 0.15)), shape_offset: (0.0, -0.12, 0.0), color: Team),
+                (name: "forearm_r", parent: "upper_arm_r", offset: (0.0, -0.26, 0.0),
+                 shape: Box(size: (0.15, 0.26, 0.15)), shape_offset: (0.0, -0.12, 0.0), color: Team),
+                (name: "thigh_l", parent: "hips", offset: (-0.13, -0.05, 0.0),
+                 shape: Box(size: (0.16, 0.28, 0.18)), shape_offset: (0.0, -0.14, 0.0), color: Dark),
+                (name: "thigh_r", parent: "hips", offset: (0.13, -0.05, 0.0),
+                 shape: Box(size: (0.16, 0.28, 0.18)), shape_offset: (0.0, -0.14, 0.0), color: Dark),
+                (name: "foot_l", parent: "shin_l", offset: (0.0, -0.23, 0.0),
+                 shape: Box(size: (0.18, 0.07, 0.3)), shape_offset: (0.0, 0.0, -0.04), color: Dark),
+                (name: "foot_r", parent: "shin_r", offset: (0.0, -0.23, 0.0),
+                 shape: Box(size: (0.18, 0.07, 0.3)), shape_offset: (0.0, 0.0, -0.04), color: Dark),
+            ],
+        ),
+    ],
+
+    models: [
+        (id: "frame_light", skeleton: "frame_light", fallback: Soldier, scale: 1.05),
+        (id: "frame_heavy", skeleton: "frame_heavy", fallback: Soldier, scale: 1.35),
+    ],
+)
