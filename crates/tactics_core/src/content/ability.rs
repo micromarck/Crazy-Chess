@@ -218,6 +218,12 @@ pub enum AbilityEffect {
     /// user's next turn: worse aim, more fear, and if it moves the user fires
     /// at it again.
     Suppress(AttackProfile),
+    /// Robot frames: power down for `turns` of the user's own turns (no
+    /// actions), then reboot with all heat vented. Any damage taken while
+    /// shut down destroys the unit.
+    Shutdown { turns: u32 },
+    /// Shed `amount` heat (coolant flush). Only for units that run on heat.
+    Cool { amount: i32 },
 }
 
 impl Default for AbilityEffect {
@@ -252,6 +258,8 @@ impl AbilityEffect {
             AbilityEffect::Reload => "Reload",
             AbilityEffect::Heal { .. } => "Heal",
             AbilityEffect::Suppress(_) => "Suppress",
+            AbilityEffect::Shutdown { .. } => "Shutdown",
+            AbilityEffect::Cool { .. } => "Cool down",
         }
     }
 }
@@ -283,6 +291,9 @@ pub struct AbilityDef {
     pub requires_los: bool,
     /// What it does.
     pub effect: AbilityEffect,
+    /// Heat it adds to a user that runs on heat, on top of the weapon's
+    /// heat for weapon attacks (see [`HeatRules`](crate::unit::HeatRules)).
+    pub heat: i32,
 }
 
 impl Default for AbilityDef {
@@ -300,6 +311,7 @@ impl Default for AbilityDef {
             // Most abilities need to see their target; opt out explicitly.
             requires_los: true,
             effect: AbilityEffect::default(),
+            heat: 0,
         }
     }
 }

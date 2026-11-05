@@ -45,7 +45,7 @@ pub fn command(arg: &str, rules: &mut Ruleset) -> Option<String> {
         "weapon" => {
             let ids: Vec<Option<String>> = snapshot
                 .weapons()
-                .filter(|w| w.classes.is_empty() || w.classes.contains(&member.class))
+                .filter(|w| snapshot.check_gear(&member.class, &Loadout { weapon: Some(w.id.clone()), ..Default::default() }).is_empty())
                 .filter(|w| is_player_weapon(&snapshot, &w.id))
                 .map(|w| Some(w.id.clone()))
                 .collect();
@@ -92,9 +92,12 @@ pub fn normalize(mut gear: Loadout) -> Loadout {
     gear
 }
 
-/// Weapons the enemy uses (plasma pistol, drone laser) aren't offered.
+/// Weapons the enemy uses (plasma pistol, drone laser) aren't offered:
+/// only those made for named classes, used by soldiers or in a loadout.
 fn is_player_weapon(rules: &Ruleset, id: &str) -> bool {
-    rules.classes().any(|c| c.weapon == id && c.model == "soldier") || rules.loadouts().any(|l| l.gear.weapon.as_deref() == Some(id))
+    rules.weapon(id).is_some_and(|w| !w.classes.is_empty())
+        || rules.classes().any(|c| c.weapon == id && c.model == "soldier")
+        || rules.loadouts().any(|l| l.gear.weapon.as_deref() == Some(id))
 }
 
 fn item_choices(rules: &Ruleset, member: &SquadMember, slot: ItemSlot) -> Vec<Option<String>> {
@@ -102,7 +105,14 @@ fn item_choices(rules: &Ruleset, member: &SquadMember, slot: ItemSlot) -> Vec<Op
         .chain(
             rules
                 .items()
-                .filter(|i| i.slot == slot && (i.classes.is_empty() || i.classes.contains(&member.class)))
+                .filter(|i| i.slot == slot)
+                .filter(|i| {
+                    let gear = match slot {
+                        ItemSlot::Armor => Loadout { armor: Some(i.id.clone()), ..Default::default() },
+                        ItemSlot::Utility => Loadout { items: vec![i.id.clone()], ..Default::default() },
+                    };
+                    rules.check_gear(&member.class, &gear).is_empty()
+                })
                 .map(|i| Some(i.id.clone())),
         )
         .collect()

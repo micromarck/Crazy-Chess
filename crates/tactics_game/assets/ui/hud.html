@@ -128,6 +128,7 @@
   .member.done { color: #7a808c; }
   .hp-track { width: 140px; height: 5px; background: #00000080; margin-top: 3px; }
   .hp-fill { height: 5px; background: #3f8cf2; }
+  .heat-fill { height: 5px; background: #f2862a; }
 
   #targeting {
     position: absolute;
@@ -297,6 +298,7 @@
   </div>
   <div class="gear-buttons" style="margin-top: 6px">
     <button class="gear" data-command="roster:recruit"><span class="key">new soldier</span><span>Recruit</span></button>
+    <button class="gear" data-command="roster:recruit:robot"><span class="key">new robot</span><span>Build frame</span></button>
     <button class="gear" data-command="toggle:loadout"><span class="key">weapons</span><span>Loadouts</span></button>
     <button class="gear" data-command="apply_loadout"><span class="key">squad changes</span><span>Restart mission</span></button>
   </div>
@@ -364,8 +366,8 @@
   <span class="dim" style="font-size: 11px; margin-bottom: 4px">SQUAD</span>
   <div data-for="m in squad">
     <button class="member {{ m.state }}" data-command="select:{{ m.id }}">
-      <span>{{ m.name }}  {{ m.hp }}/{{ m.max_hp }}  <span class="fear-tag">{{ m.fear }}</span></span>
-      <div class="hp-track"><div class="hp-fill" style="width: {{ m.hp_percent }}%"></div></div>
+      <span>{{ m.name }}  {{ m.vital }}  <span class="fear-tag">{{ m.fear }}</span></span>
+      <div class="hp-track"><div class="{{ m.fill }}" style="width: {{ m.hp_percent }}%"></div></div>
     </button>
   </div>
 </div>
@@ -375,7 +377,7 @@
   <div data-if="unit.selected">
     <span class="title" style="font-size: 16px">{{ unit.name }}</span>
     <span class="dim">{{ unit.class }}</span>
-    <span>HP {{ unit.hp }}/{{ unit.max_hp }}    AP {{ unit.ap }}/{{ unit.max_ap }}</span>
+    <span>{{ unit.vital }}    AP {{ unit.ap }}/{{ unit.max_ap }}</span>
     <span>{{ unit.weapon }}  ammo {{ unit.ammo }}/{{ unit.clip }}  mags {{ unit.mags }}</span>
     <span class="dim">Aim {{ unit.aim }}  Mobility {{ unit.mobility }}  Def {{ unit.defense }}</span>
     <span class="dim">{{ unit.gear }}</span>

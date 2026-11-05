@@ -269,6 +269,7 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `range` | `Weapon` \| `Fixed(tiles)` | `Weapon` | `Weapon` = weapon max range capped by sight. |
 | `requires_los` | bool | `true` | Must see the target (tile). |
 | `effect` | see below | `Attack(())` | What happens. |
+| `heat` | int | `0` | Heat it adds to a user that runs on heat (on top of the weapon's `heat` for weapon attacks). See *Heat* below. |
 
 ### Effects (`AbilityEffect`)
 
@@ -279,7 +280,9 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `Defend(defense_bonus: n)` | int | Hunker: +defence until your next turn. |
 | `Suppress(profile)` | `AttackProfile` | Fires a long burst (`rounds`) at the target and pins it: −`combat.suppression_aim` aim and +`combat.suppression_fear` fear, and the gunner fires again if it moves. Lasts until the gunner's next turn. |
 | `Reload` | — | Refills the magazine from a spare one (fails with no spares left). |
-| `Heal(amount: n)` | int | Restores HP, never above max. |
+| `Heal(amount: n)` | int | Restores HP, never above max. Not on machines (units that run on heat). |
+| `Shutdown(turns: n)` | int | Machines only: offline for the user's next `n` turns, then reboots with **all heat vented**. Any damage while shut down destroys it. |
+| `Cool(amount: n)` | int | Machines only: sheds `n` heat (coolant). |
 
 ### Attack stats (`AttackProfile`)
 
@@ -327,8 +330,8 @@ The result is the `Volley` event, one `Bullet` per round. Area attacks and
 
 | Section | Type | Key fields |
 |---|---|---|
-| `weapons` | `Weapon` | `id, name, damage_min, damage_max, crit_chance, crit_bonus, optimal_range, max_range, clip_size, burst` (rounds per shot, 1), `pellets` (rays per round, 1; shotguns 8), `spread` (extra degrees of scatter, 0.6), `magazines` (spare magazines, 3), `ignores_cover` (shots can't be blocked or penalised by the target's cover; the Shotgun), `min_range` + `close_penalty` (closer than `min_range` tiles: no close bonus and `close_penalty` aim lost per tile; the Sniper Rifle: 5 and 10), `classes` (who may carry it; empty = anyone), `look` (`Rifle`, `Shotgun`, `Sniper`, `Smg`, `Lmg`, `Pistol`, `Plasma`, `None`), `model` (custom held model id) |
-| `classes` | `UnitClass` | `id, name, stats: (max_hp, mobility, aim, defense, sight, climb, bravery), weapon, abilities: [...], model, fearless, loadout`, `hooks` (class scripts, see below), `horde` (mindless swarm AI: close in and strike, cheap enough for hundreds; their deaths play in the background, all at once, without a kill camera), `hearing` (tiles: gunfire this close wakes it while dormant), `body: (hover, height, muzzle)` (hitbox in metres: `hover` lifts flyers like drones off the ground — their shots pass over heads, enemies aim high, half cover beneath them does not count; `muzzle: Some(m)` sets the gun height) |
+| `weapons` | `Weapon` | `id, name, damage_min, damage_max, crit_chance, crit_bonus, optimal_range, max_range, clip_size, burst` (rounds per shot, 1), `pellets` (rays per round, 1; shotguns 8), `spread` (extra degrees of scatter, 0.6), `magazines` (spare magazines, 3), `ignores_cover` (shots can't be blocked or penalised by the target's cover; the Shotgun), `min_range` + `close_penalty` (closer than `min_range` tiles: no close bonus and `close_penalty` aim lost per tile; the Sniper Rifle: 5 and 10), `classes` (who may carry it; empty = anyone), `look` (`Rifle`, `Shotgun`, `Sniper`, `Smg`, `Lmg`, `Pistol`, `Plasma`, `Laser`, `Minigun`, `Cannon`, `None`; `Laser` and `Cannon` fire beams), `model` (custom held model id), `heat` (heat per attack for units that run on heat; 0 = the class's `per_shot`) |
+| `classes` | `UnitClass` | `id, name, stats: (max_hp, mobility, aim, defense, sight, climb, bravery), weapon, abilities: [...], model, fearless, loadout`, `hooks` (class scripts, see below), `horde` (mindless swarm AI: close in and strike, cheap enough for hundreds; their deaths play in the background, all at once, without a kill camera), `hearing` (tiles: gunfire this close wakes it while dormant), `body: (hover, height, muzzle)` (hitbox in metres: `hover` lifts flyers like drones off the ground — their shots pass over heads, enemies aim high, half cover beneath them does not count; `muzzle: Some(m)` sets the gun height), `heat: (cooling, per_move, per_shot)` (runs on heat instead of health, see *Heat*), `restricted_gear` (only weapons/items whose `classes` name it: a separate arsenal) |
 | `squads` | `SquadDef` | `id` (`"player"` / `"enemy"` are deployed), `members: [(class, name, loadout, gear, appearance)]` (the Barracks roster replaces `"player"` in game) |
 | `items` | `ItemDef` | `id, name, description, slot (Armor / Utility), stats: (max_hp, mobility, aim, defense, sight, bravery), abilities, charges, classes, model, socket` |
 | `loadouts` | `LoadoutDef` | `id, name, description, classes, gear: (weapon, armor, items: [...])` |
@@ -408,6 +411,38 @@ override them in a module's `combat: (morale: (...))`, or set
 
 ```ron
 combat: (morale: (shaken_at: 30, panicked_at: 60, ally_killed_near: 35)),
+```
+
+---
+
+### Heat (robot frames)
+
+A class with `heat` runs on heat instead of health (the Robot Frames
+module's Strider and Bastion). Its `max_hp` is the **heat limit** and its
+HP is the headroom left (`heat = max_hp - hp`), so:
+
+* **getting hit** adds heat (the damage);
+* **its own attacks** add the weapon's `heat` (or the class's `per_shot`),
+  plus the ability's `heat` (a missile salvo); overwatch heats it when it fires;
+* **moving** adds `per_move` per action point spent;
+* at the start of each of its turns it sheds `cooling`;
+* at the limit it is **destroyed** (the UI warns before an action would do
+  that, and the AI never does it to itself);
+* a `Shutdown` ability vents everything after a couple of offline turns,
+  but any hit while shut down destroys it; `Cool` abilities (coolant)
+  shed some heat at once. Medkits don't work on machines.
+
+```ron
+classes: [(
+    id: "frame_heavy", name: "Bastion Frame",
+    stats: (max_hp: 20, mobility: 8, aim: 62, defense: 20, sight: 13.0),
+    weapon: "gatling_laser",
+    abilities: ["shoot", "suppress", "overwatch", "shutdown", "reload"],
+    heat: (cooling: 3, per_move: 3, per_shot: 4),
+    restricted_gear: true,   // its own arsenal only
+)],
+weapons: [(id: "gatling_laser", name: "Gatling Laser", classes: ["frame_heavy"],
+           damage_min: 1, damage_max: 2, burst: 8, heat: 6, look: Minigun)],
 ```
 
 ---

@@ -491,7 +491,9 @@ impl Ruleset {
     /// Is this gear legal for `class`? Returns the problems.
     pub fn check_gear(&self, class: &str, gear: &Loadout) -> Vec<String> {
         let mut problems = Vec::new();
-        let allowed = |list: &[String]| list.is_empty() || list.iter().any(|c| c == class);
+        // Restricted classes (robot frames) only take gear made for them.
+        let restricted = self.class(class).is_some_and(|c| c.restricted_gear);
+        let allowed = |list: &[String]| (!restricted && list.is_empty()) || list.iter().any(|c| c == class);
         if let Some(w) = &gear.weapon {
             match self.weapons.get(w) {
                 None => problems.push(format!("unknown weapon '{w}'")),

@@ -203,6 +203,28 @@ fn first_legal(battle: &Battle, unit: &Unit, target: Target, pred: impl Fn(&Abil
 
 /// Chooses the next action for a single unit.
 pub fn choose_action(battle: &Battle, id: UnitId, config: &AiConfig) -> Action {
+    let action = choose_action_inner(battle, id, config);
+    // Machines never cook themselves: anything that would overheat is
+    // swapped for venting or holding still.
+    if battle.overheats(&action)
+        && let Some(unit) = battle.unit(id)
+    {
+        return heat_relief(battle, unit).unwrap_or(Action::Wait { unit: id });
+    }
+    action
+}
+
+/// For a hot machine: a coolant flush, or a shutdown if no enemy can see it
+/// (being hit while shut down is fatal).
+fn heat_relief(battle: &Battle, unit: &Unit) -> Option<Action> {
+    let cool = first_legal(battle, unit, Target::None, |e| matches!(e, AbilityEffect::Cool { .. }));
+    cool.or_else(|| {
+        let watched = battle.living(unit.team.opponent()).any(|e| battle.can_unit_see(e, unit.pos));
+        (!watched).then(|| first_legal(battle, unit, Target::None, |e| matches!(e, AbilityEffect::Shutdown { .. }))).flatten()
+    })
+}
+
+fn choose_action_inner(battle: &Battle, id: UnitId, config: &AiConfig) -> Action {
     let Some(unit) = battle.unit(id) else {
         return Action::EndTurn;
     };
@@ -233,6 +255,14 @@ pub fn choose_action(battle: &Battle, id: UnitId, config: &AiConfig) -> Action {
     }
     let config = &config;
     let stance = |pred: fn(&AbilityEffect) -> bool| first_legal(battle, unit, Target::None, pred);
+
+    // 0b. Running hot (machines): vent before it gets critical.
+    if unit.heat.is_some()
+        && unit.heat() * 10 >= unit.stats.max_hp * 6
+        && let Some(a) = heat_relief(battle, unit)
+    {
+        return a;
+    }
 
     // 1. Reload when empty.
     if unit.weapon.ammo <= 0
@@ -338,7 +368,7 @@ fn suppress_action(battle: &Battle, unit: &Unit, config: &AiConfig) -> Option<Ac
 fn best_heal(battle: &Battle, unit: &Unit, config: &AiConfig) -> Option<Action> {
     let mut wounded: Vec<&Unit> = battle
         .living(unit.team)
-        .filter(|a| (a.hp as f32) <= a.stats.max_hp as f32 * config.heal_below)
+        .filter(|a| a.heat.is_none() && (a.hp as f32) <= a.stats.max_hp as f32 * config.heal_below)
         .collect();
     wounded.sort_by_key(|a| (a.hp, a.id));
     wounded.into_iter().find_map(|ally| {
@@ -362,9 +392,11 @@ fn threat_of(battle: &Battle, unit: &Unit) -> f32 {
 fn target_value(battle: &Battle, v: &Unit, p: &crate::combat::ShotPreview, config: &AiConfig) -> f32 {
     let p_hit = p.hit_chance as f32 / 100.0;
     let mut value = p.expected_damage();
+    // A shut-down machine dies to any hit.
+    let hp = if v.is_shut_down() { 1 } else { v.hp };
     // Likely kills are worth a lot (the whole volley's expected damage).
-    value += 10.0 * (value / v.hp.max(1) as f32).min(1.0) * if value >= v.hp as f32 { 1.0 } else { 0.5 };
-    let missing = 1.0 - v.hp as f32 / v.stats.max_hp.max(1) as f32;
+    value += 10.0 * (value / hp.max(1) as f32).min(1.0) * if value >= hp as f32 { 1.0 } else { 0.5 };
+    let missing = 1.0 - hp as f32 / v.stats.max_hp.max(1) as f32;
     value + p_hit * (config.focus_fire_weight * missing + config.threat_weight * threat_of(battle, v))
 }
 

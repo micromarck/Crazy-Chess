@@ -369,6 +369,8 @@ fn default_slot(def: &AbilityDef) -> &'static str {
         AbilityEffect::Reload => "reload",
         AbilityEffect::Heal { .. } => "heal",
         AbilityEffect::Suppress(_) => "overwatch",
+        AbilityEffect::Shutdown { .. } => "hunker",
+        AbilityEffect::Cool { .. } => "reload",
     }
 }
 
@@ -492,6 +494,11 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             }
             frame(&p.director, &mut p.rig, p.settings.action_camera, s, t);
             let style = battle.rules().presentation_of(ability).map_or(ProjectileStyle::Tracer, |pr| pr.projectile);
+            // Laser and cannon weapons fire beams whatever the ability says.
+            let style = match (style, battle.unit(*attacker).map(|u| u.weapon.look)) {
+                (ProjectileStyle::Tracer, Some(tactics_core::unit::WeaponLook::Laser | tactics_core::unit::WeaponLook::Cannon)) => ProjectileStyle::Beam,
+                (s, _) => s,
+            };
             let style = if matches!(style, ProjectileStyle::None | ProjectileStyle::Arc) { ProjectileStyle::Tracer } else { style };
             let per_round = battle.unit(*attacker).map_or(1, |u| u.weapon.pellets.max(1) as usize);
             let per_round = if per_round > 1 && bullets.len() % per_round == 0 { per_round } else { 1 };
@@ -521,6 +528,11 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             p.log.push(format!("  {} {verb} {} ({hit_chance}%): {result}", name(*attacker), name(*target)));
 
             let style = battle.rules().presentation_of(ability).map_or(ProjectileStyle::Tracer, |pr| pr.projectile);
+            // Laser and cannon weapons fire beams whatever the ability says.
+            let style = match (style, battle.unit(*attacker).map(|u| u.weapon.look)) {
+                (ProjectileStyle::Tracer, Some(tactics_core::unit::WeaponLook::Laser | tactics_core::unit::WeaponLook::Cannon)) => ProjectileStyle::Beam,
+                (s, _) => s,
+            };
             let from_attacker = *reaction || battle.unit(*attacker).is_some_and(|u| u.pos == *origin);
             if *reaction {
                 FloatingText::spawn(&mut p.commands, s + Vec3::Y * 1.6, "OVERWATCH".into(), theme::TRACER);
@@ -549,6 +561,36 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             }
         }
 
+        GameEvent::HeatChanged { unit, delta, heat, max } => {
+            let (text, color) = if *delta > 0 { (format!("+{delta} HEAT"), theme::HEAT) } else { (format!("{delta} HEAT"), theme::COOL) };
+            if *heat >= *max {
+                p.log.push(format!("  {} overheats!", name(*unit)));
+            } else if *delta < 0 {
+                p.log.push(format!("  {} cools to {heat}/{max} heat", name(*unit)));
+            } else {
+                p.log.push(format!("  {} heats up to {heat}/{max}", name(*unit)));
+            }
+            if battle.is_revealed(*unit)
+                && let Some(pos) = pos_of(*unit)
+            {
+                FloatingText::spawn(&mut p.commands, pos + Vec3::Y * 1.5, text, color);
+            }
+            vec![Anim::Wait { remaining: 0.25 }]
+        }
+        GameEvent::Shutdown { unit, shut_down } => {
+            if *shut_down {
+                p.log.push(format!("  {} shuts down to vent its heat (any hit will destroy it)", name(*unit)));
+            } else {
+                p.log.push(format!("  {} reboots, all heat vented", name(*unit)));
+            }
+            if battle.is_revealed(*unit)
+                && let Some(pos) = pos_of(*unit)
+            {
+                let (text, color) = if *shut_down { ("SHUTDOWN", theme::COOL) } else { ("REBOOT", theme::HEAL) };
+                FloatingText::spawn(&mut p.commands, pos + Vec3::Y * 1.9, text.into(), color);
+            }
+            vec![Anim::Wait { remaining: 0.4 }]
+        }
         GameEvent::UnitHealed { unit, amount } => {
             p.log.push(format!("  {} recovers {amount} HP", name(*unit)));
             if let Some(pos) = pos_of(*unit) {

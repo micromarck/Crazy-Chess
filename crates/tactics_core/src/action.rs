@@ -77,6 +77,10 @@ pub enum ActionError {
     OutOfMagazines,
     AlreadyFullAmmo,
     NothingToHeal,
+    /// Medkits don't fix machines that run on heat.
+    CantHealMachine,
+    /// Cooling a unit that doesn't run on heat, or has none to shed.
+    NoHeat,
 }
 
 impl fmt::Display for ActionError {
@@ -100,6 +104,8 @@ impl fmt::Display for ActionError {
             ActionError::AlreadyFullAmmo => write!(f, "magazine is already full"),
             ActionError::OutOfMagazines => write!(f, "no spare magazines left"),
             ActionError::NothingToHeal => write!(f, "target is at full health"),
+            ActionError::CantHealMachine => write!(f, "medkits can't fix machines"),
+            ActionError::NoHeat => write!(f, "no heat to shed"),
         }
     }
 }

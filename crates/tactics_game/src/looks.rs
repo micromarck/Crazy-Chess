@@ -150,7 +150,12 @@ pub struct Outfit {
 
 impl Outfit {
     pub fn of(unit: &Unit, rules: &Ruleset) -> Self {
-        let appearance = unit.appearance.or_else(|| (unit.team == Team::Player).then(|| Appearance::from_name(&unit.name)));
+        // Machines (they run on heat) keep their own colours: no skin, hair or kit.
+        let appearance = if unit.heat.is_some() {
+            None
+        } else {
+            unit.appearance.or_else(|| (unit.team == Team::Player).then(|| Appearance::from_name(&unit.name)))
+        };
         let weapon = rules.weapon(&unit.weapon.id).unwrap_or(&unit.weapon);
         Self {
             appearance,
@@ -255,6 +260,31 @@ pub fn weapon_parts(look: WeaponLook, scoped: bool) -> Vec<Part> {
             ball([0.0, 0.05, -0.08], [0.05, 0.05, 0.05], Glow),
             barrel([0.0, 0.03, -0.17], 0.035, 0.08, Glow),
         ],
+        WeaponLook::Laser => vec![
+            cube([0.0, 0.02, -0.08], [0.055, 0.08, 0.32], Gun),
+            barrel([0.0, 0.035, -0.36], 0.03, 0.26, GunLight),
+            barrel([0.0, 0.035, -0.22], 0.05, 0.03, Glow),
+            barrel([0.0, 0.035, -0.32], 0.05, 0.03, Glow),
+            barrel([0.0, 0.035, -0.42], 0.05, 0.03, Glow),
+            cube([0.0, 0.0, 0.14], [0.05, 0.08, 0.16], Trim),
+            cube([0.0, -0.07, -0.1], [0.035, 0.1, 0.06], GunLight),
+        ],
+        WeaponLook::Minigun => vec![
+            cube([0.0, 0.02, -0.04], [0.12, 0.13, 0.26], Gun),
+            barrel([0.035, 0.055, -0.36], 0.025, 0.42, Gun),
+            barrel([-0.035, 0.055, -0.36], 0.025, 0.42, Gun),
+            barrel([0.0, 0.0, -0.36], 0.025, 0.42, Gun),
+            barrel([0.0, 0.03, -0.5], 0.11, 0.04, Trim),
+            cube([0.0, -0.11, 0.0], [0.14, 0.12, 0.14], Trim),
+            cube([0.0, 0.12, -0.06], [0.03, 0.04, 0.16], GunLight),
+        ],
+        WeaponLook::Cannon => vec![
+            cube([0.0, 0.03, -0.06], [0.14, 0.15, 0.3], Gun),
+            barrel([0.0, 0.04, -0.34], 0.1, 0.32, Gun),
+            barrel([0.0, 0.04, -0.5], 0.13, 0.05, Glow),
+            ball([0.0, 0.04, -0.16], [0.12, 0.12, 0.12], Glow),
+            cube([0.0, -0.1, 0.06], [0.1, 0.1, 0.16], Trim),
+        ],
         WeaponLook::None => Vec::new(),
     };
     if scoped && !matches!(look, WeaponLook::Sniper | WeaponLook::None) {
@@ -272,6 +302,9 @@ pub fn foregrip(look: WeaponLook) -> Option<f32> {
         WeaponLook::Sniper => Some(0.24),
         WeaponLook::Smg => Some(0.16),
         WeaponLook::Lmg => Some(0.24),
+        WeaponLook::Laser => Some(0.24),
+        WeaponLook::Minigun => Some(0.2),
+        WeaponLook::Cannon => Some(0.22),
         WeaponLook::Pistol | WeaponLook::Plasma | WeaponLook::None => None,
     }
 }
@@ -635,7 +668,7 @@ mod tests {
 
     #[test]
     fn every_weapon_look_has_parts_except_none() {
-        for look in [WeaponLook::Rifle, WeaponLook::Shotgun, WeaponLook::Sniper, WeaponLook::Smg, WeaponLook::Lmg, WeaponLook::Pistol, WeaponLook::Plasma] {
+        for look in [WeaponLook::Rifle, WeaponLook::Shotgun, WeaponLook::Sniper, WeaponLook::Smg, WeaponLook::Lmg, WeaponLook::Pistol, WeaponLook::Plasma, WeaponLook::Laser, WeaponLook::Minigun, WeaponLook::Cannon] {
             assert!(!weapon_parts(look, false).is_empty(), "{look:?}");
             assert!(weapon_parts(look, true).len() >= weapon_parts(look, false).len());
         }

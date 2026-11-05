@@ -523,8 +523,16 @@ impl Battle {
         events: &mut Vec<GameEvent>,
     ) {
         let Some(t) = self.units.get_mut(target.0 as usize).filter(|u| u.is_alive()) else { return };
-        let amount = amount.max(0).min(t.hp.max(0) + 1_000);
+        let mut amount = amount.max(0).min(t.hp.max(0) + 1_000);
+        // A shut-down machine can't take a single hit.
+        let helpless = t.is_shut_down() && amount > 0 && amount < t.hp;
+        if helpless {
+            amount = t.hp;
+        }
         t.hp -= amount;
+        if helpless {
+            events.push(GameEvent::Callout { unit: target, text: "HIT WHILE SHUT DOWN".into() });
+        }
         let died = t.hp <= 0;
         if died {
             t.hp = 0;

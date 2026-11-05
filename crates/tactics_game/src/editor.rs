@@ -83,7 +83,7 @@ pub fn fields_for(def: &AbilityDef) -> Vec<EditField> {
         }
         AbilityEffect::Defend { .. } => f.push(DefenseBonus),
         AbilityEffect::Heal { .. } => f.push(HealAmount),
-        AbilityEffect::Reload => {}
+        AbilityEffect::Reload | AbilityEffect::Shutdown { .. } | AbilityEffect::Cool { .. } => {}
     }
     f
 }

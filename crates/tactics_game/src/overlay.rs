@@ -312,10 +312,23 @@ fn draw_health_bars(
         };
         // Pips a hit would take: certain (min damage) and possible (max).
         let (dmin, dmax) = preview.iter().find(|(v, _, _)| *v == *id).map_or((0, 0), |(_, lo, hi)| (*lo, *hi));
+        // Machines: a heat gauge filling up from the left (orange), with
+        // the heat a hit would add flashing after it; blue while shut down.
+        let heat = unit.heat.map(|_| unit.heat());
         for i in 0..max {
             let a = start + right * (pip * i as f32 + 0.01);
             let b = a + right * (pip - 0.02);
-            let c = if i >= unit.hp {
+            let c = if let Some(heat) = heat {
+                if i < heat {
+                    if unit.is_shut_down() { theme::COOL } else { theme::HEAT.mix(&theme::TARGET, i as f32 / max as f32) }
+                } else if i < heat + dmin {
+                    theme::TARGET.with_alpha(0.4 + 0.6 * flash)
+                } else if i < heat + dmax {
+                    theme::EXPLOSION.with_alpha(0.3 + 0.5 * flash)
+                } else {
+                    Color::srgb(0.22, 0.24, 0.28)
+                }
+            } else if i >= unit.hp {
                 Color::srgb(0.2, 0.2, 0.2)
             } else if i >= unit.hp - dmin {
                 theme::TARGET.with_alpha(0.4 + 0.6 * flash)
