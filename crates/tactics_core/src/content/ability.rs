@@ -204,6 +204,15 @@ pub struct AttackProfile {
     /// at whoever is there (if anyone); previews show nothing for units the
     /// user's team can't see, so it gives nothing away (or the AI any cheats).
     pub blind: bool,
+    /// Damage per shrapnel fragment (default 1).
+    pub shrapnel_damage: i32,
+    /// The fragments are the punch (frag grenades): they hit units inside
+    /// the blast as well as outside it.
+    pub fragmentation: bool,
+    /// **Spray and pray** (machine guns): `> 0` = hose half a magazine into
+    /// a wedge this many degrees wide towards the target tile. Every round
+    /// flies wild (no aim) and hits the first thing in its way, friend or foe.
+    pub spray: f32,
 }
 
 impl AttackProfile {
@@ -247,6 +256,9 @@ impl Default for AttackProfile {
             slam: false,
             gas: 0,
             blind: false,
+            shrapnel_damage: 1,
+            fragmentation: false,
+            spray: 0.0,
         }
     }
 }

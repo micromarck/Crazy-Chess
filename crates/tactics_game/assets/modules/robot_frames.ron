@@ -339,7 +339,7 @@
             name: "Bastion Frame",
             stats: (max_hp: 20, mobility: 8, aim: 62, defense: 20, sight: 13.0, bravery: 100),
             weapon: "gatling_laser",
-            abilities: ["shoot", "suppress", "overwatch", "idle", "shutdown", "reload", "slam"],
+            abilities: ["shoot", "suppress", "spray_and_pray", "overwatch", "idle", "shutdown", "reload", "slam"],
             model: "frame_heavy",
             fearless: true,
             body: (height: 1.8),

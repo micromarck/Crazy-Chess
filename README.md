@@ -222,6 +222,12 @@ TBSium/
   disturbed and unhinged soldiers lose aim and may snap; at 100 they're lost),
   and **vines** that spread across the floor every round and **burn**, like
   the symbiotes themselves (double damage from fire).
+* **Spray and pray**: machine guns (LMG, minigun, gatling laser) can hose half
+  a magazine into a 40-degree wedge - no aim at all, every round hits the first
+  thing in its way, friend or foe.
+* **Frag grenades** do their damage with fragments: 24 of them at 2 damage,
+  hitting everyone around the throw (inside the blast too) unless walls or
+  cover stop them; the blast itself is small. Rockets still hit with the blast.
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).

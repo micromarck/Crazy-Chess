@@ -317,6 +317,9 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `slam` | `false` | A **slam** (big robots): aimed at an adjacent enemy, but hits everyone within `area_radius` of the user (friend or foe, the user excepted) and damages props and walls around it. |
 | `gas` | `0` | Area attacks: fills the area with **gas** for this many rounds (it thins at the start of each round). Living units with a tile in gas can't aim (attacks that can miss get 0% and bullets fly wild) and stagger to a random tile, no further than they meant to go, when they move. Machines are immune. With `damage: Fixed(min: 0, max: 0)` the throw hurts nobody and makes no blast. |
 | `blind` | `false` | **Blind fire**: aimed at a tile (`targeting: Tile`, `requires_los: false`) rather than a seen unit; with `range: Weapon` it reaches the gun's full `max_range`, not just as far as the user can see. The shots go at whoever is on the tile (walls in the way still stop them); into an empty tile the burst is simply spent. Previews show nothing for units the user's team can't see. The base game's Blind Fire uses it at -30 aim. |
+| `shrapnel_damage` | `1` | Damage per shrapnel fragment. |
+| `fragmentation` | `false` | The fragments are the punch (frag grenades): they also hit units inside the blast, not just beyond it. The base game's Frag Grenade: a 1-2 blast, 24 fragments of 2. |
+| `spray` | `0` | **Spray and pray** (machine guns): `> 0` = hose half a magazine (what's left of it) into a wedge this many degrees wide towards the target tile (`targeting: Tile`). Every round flies wild, with no aim, out to the gun's range and hits the first unit, wall or cover in its way, friend or foe. Previews show no odds. The base game's Spray and Pray: 40 degrees (grenadiers, heavy gunners, Bastion frames). |
 
 Hit chance:
 

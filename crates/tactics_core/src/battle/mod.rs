@@ -492,6 +492,9 @@ impl Battle {
         let AbilityEffect::Attack(profile) = &def.effect else {
             return Ok(Vec::new());
         };
+        if profile.spray > 0.0 {
+            return Ok(Vec::new()); // wild fire: no odds to show
+        }
         let point = self.blast_point(user.pos, profile, point);
         Ok(self
             .attack_victims(user, profile, point, target)
@@ -788,6 +791,15 @@ impl Battle {
     /// Executes an ability's effect. **Add new effect kinds here.**
     fn run_effect(&mut self, unit: UnitId, def: &AbilityDef, point: GridPos, target: Target, events: &mut Vec<GameEvent>) {
         match &def.effect {
+            AbilityEffect::Attack(profile) if profile.spray > 0.0 => {
+                // Half a magazine (whatever's left of it, at least one round).
+                let u = &self.units[unit.0 as usize];
+                let rounds = (u.weapon.clip_size / 2).max(1).min(u.weapon.ammo.max(0)) as u32;
+                if rounds > 0 {
+                    self.unit_mut(unit).weapon.ammo -= rounds as i32;
+                    self.spray_fire(unit, point, profile.spray, rounds, events);
+                }
+            }
             AbilityEffect::Attack(profile) if profile.is_ballistic() => {
                 let victim = match target {
                     Target::Unit(id) => Some(id),
@@ -869,7 +881,15 @@ impl Battle {
                     self.damage_props_in_area(point, profile.area_radius, damage, events);
                     self.damage_walls_in_area(point, profile.area_radius, damage, events);
                     if profile.shrapnel > 0 && !self.is_over() {
-                        self.shrapnel(Some(unit), point, profile.area_radius, profile.shrapnel, events);
+                        self.shrapnel_with(
+                            Some(unit),
+                            point,
+                            profile.area_radius,
+                            profile.shrapnel,
+                            profile.shrapnel_damage,
+                            profile.fragmentation,
+                            events,
+                        );
                     }
                 }
             }
