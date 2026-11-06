@@ -861,6 +861,11 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             p.anim.write(AnimCommand::OneShot { unit: *unit, slot: "hit".into() });
             vec![Anim::Wait { remaining: 0.25 }]
         }
+        GameEvent::GasReleased { tiles, turns } => {
+            p.log.push(format!("  Gas fills {} tiles ({turns} rounds)", tiles.len()));
+            vec![]
+        }
+        GameEvent::GasCleared { .. } => vec![],
         GameEvent::UnitStunned { unit, turns } => {
             if let Some(pos) = pos_of(*unit) {
                 FloatingText::spawn(&mut p.commands, pos + Vec3::Y * (CHEST + 0.9), "STUNNED".to_string(), theme::UI_DIM);

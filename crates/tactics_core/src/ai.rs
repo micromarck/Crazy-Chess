@@ -409,6 +409,7 @@ fn attack_value_from(battle: &Battle, unit: &Unit, pos: GridPos, config: &AiConf
     }
     let mut ghost = unit.clone();
     ghost.pos = pos;
+    ghost.status.gassed = unit.machine == crate::unit::Machine::None && battle.gassed(pos);
     let range = battle.ability_range(unit, def);
     let map = battle.map();
     battle
@@ -545,6 +546,7 @@ fn eval_tile(battle: &Battle, unit: &Unit, pos: GridPos, config: &AiConfig) -> T
     let primary = battle.primary_attack(unit).and_then(|d| d.effect.attack_profile());
     let mut ghost = unit.clone();
     ghost.pos = pos;
+    ghost.status.gassed = unit.machine == crate::unit::Machine::None && battle.gassed(pos);
 
     let mut score = 0.0;
     let mut danger = 0.0;
@@ -607,6 +609,10 @@ fn eval_tile(battle: &Battle, unit: &Unit, pos: GridPos, config: &AiConfig) -> T
     if battle.on_fire(pos) {
         danger += rules.fire_damage as f32 * 2.0;
         score -= 60.0;
+    }
+    // Gas: no aim, and the next move goes anywhere (machines don't care).
+    if battle.gassed(pos) && unit.machine == crate::unit::Machine::None {
+        score -= 50.0;
     }
     TileEval { score, danger, exposed, nearest }
 }

@@ -172,7 +172,9 @@ TBSium/
   later: 5 damage in a 5x5 square plus shrapnel), melee weapons (combat
   knife, machete, sledgehammer), a **taser** (shorts out light and medium
   robots on the spot, 9 damage to heavy ones, stuns people), an **adrenaline
-  shot** (+2 AP now for half your remaining health; free at 1 HP), and the Heavy
+  shot** (+2 AP now for half your remaining health; free at 1 HP), **scanner
+  armor** (sees 50% further), a **gas grenade** (a cloud where nobody living
+  can aim and every move staggers somewhere random; robots are immune), and the Heavy
   Gunner class. Big robots (Bastion frames, wardens, loaders) can **slam** the
   ground, hitting everyone next to them.
 * Fire: flamethrowers, incendiaries and exploding fuel barrels leave tiles

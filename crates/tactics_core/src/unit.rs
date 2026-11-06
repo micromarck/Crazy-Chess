@@ -348,6 +348,9 @@ pub struct UnitStatus {
     /// Knocked out (script `stun`): the unit's team's next this-many turns
     /// give it no action points.
     pub stunned: u32,
+    /// Standing in gas (see `Battle::gas`): can't aim (hit chance 0, shots
+    /// fly wild) and moves stagger to random tiles. Never set on machines.
+    pub gassed: bool,
 }
 
 /// Behaviour state of an AI-controlled unit (mission mechanics).

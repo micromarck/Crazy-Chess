@@ -42,6 +42,7 @@ mod big_tests;
 #[cfg(test)]
 mod melee_tests;
 mod fire;
+mod gas;
 mod heat;
 mod morale;
 mod stealth;
@@ -95,6 +96,8 @@ pub struct Battle {
     fires: std::collections::BTreeMap<GridPos, u32>,
     /// Charges waiting to go off (delayed grenades, see fire.rs).
     charges_armed: Vec<fire::ArmedCharge>,
+    /// Gassed tiles: rounds of gas left (see gas.rs).
+    gas: std::collections::BTreeMap<GridPos, u32>,
 }
 
 impl Battle {
@@ -128,6 +131,7 @@ impl Battle {
             sky: Default::default(),
             fires: Default::default(),
             charges_armed: Vec::new(),
+            gas: Default::default(),
         }
     }
 
@@ -191,8 +195,10 @@ impl Battle {
         let mut charges: std::collections::BTreeMap<AbilityId, u32> = Default::default();
         let items: Vec<ItemDef> =
             gear.armor.iter().chain(gear.items.iter()).filter_map(|id| self.rules.item(id).cloned()).collect();
+        let mut sight_percent = 0;
         for item in &items {
             let m = item.stats;
+            sight_percent += m.sight_percent;
             stats.max_hp = (stats.max_hp + m.max_hp).max(1);
             stats.mobility = (stats.mobility as i32 + m.mobility).max(2) as u32;
             stats.aim += m.aim;
@@ -213,6 +219,9 @@ impl Battle {
                     abilities.push(a.clone());
                 }
             }
+        }
+        if sight_percent != 0 {
+            stats.sight = (stats.sight * (1.0 + sight_percent as f32 / 100.0)).max(1.0);
         }
 
         let id = UnitId(self.units.len() as u32);
@@ -639,6 +648,7 @@ impl Battle {
             Action::Wait { unit } => self.spend_all_ap(unit, &mut events),
             Action::EndTurn => {
                 self.end_turn(&mut events);
+                self.refresh_gassed();
                 return Ok(events);
             }
         }
@@ -647,6 +657,7 @@ impl Battle {
         if !self.is_over() && !self.active_team_can_act() {
             self.end_turn(&mut events);
         }
+        self.refresh_gassed();
         Ok(events)
     }
 
@@ -790,13 +801,20 @@ impl Battle {
                 // Rockets go off at the first thing in their way.
                 let point = self.blast_point(user.pos, profile, point);
                 let tiles = if profile.is_area() { self.area_tiles(user.pos, profile, point) } else { Vec::new() };
+                // A pure gas grenade hurts nobody: no attack rolls, no blast.
+                let harmless = profile.damage == crate::content::DamageSource::Fixed { min: 0, max: 0 } && profile.damage_bonus <= 0;
                 if profile.cone > 0.0 {
                     events.push(GameEvent::Flames { unit, from: user.pos, tiles: tiles.clone() });
-                } else if profile.area_radius > 0.0 {
+                } else if profile.area_radius > 0.0 && !harmless {
                     events.push(GameEvent::Explosion { center: point, radius: profile.area_radius });
                 }
-                for (victim, origin) in self.attack_victims(&user, profile, point, target) {
-                    self.resolve_attack(unit, victim, &def.id, origin, profile, false, events);
+                if !harmless {
+                    for (victim, origin) in self.attack_victims(&user, profile, point, target) {
+                        self.resolve_attack(unit, victim, &def.id, origin, profile, false, events);
+                    }
+                }
+                if profile.gas > 0 && !self.is_over() {
+                    self.release_gas(&tiles, profile.gas, events);
                 }
                 // Cones scorch the props they sweep.
                 if profile.cone > 0.0 {
@@ -809,7 +827,7 @@ impl Battle {
                     self.ignite(&tiles, profile.ignite, events);
                 }
                 // Blasts also hit destructible props.
-                if profile.area_radius > 0.0 {
+                if profile.area_radius > 0.0 && !harmless {
                     let (lo, hi) = match profile.damage {
                         crate::content::DamageSource::Weapon => (user.weapon.damage_min, user.weapon.damage_max),
                         crate::content::DamageSource::Fixed { min, max } => (min, max),
@@ -943,6 +961,8 @@ impl Battle {
     /// Moves step by step so overwatchers can interrupt mid-path.
     fn do_move(&mut self, id: UnitId, to: GridPos, events: &mut Vec<GameEvent>) {
         let range = self.movement_range(id);
+        // Choking on gas: the unit staggers somewhere at random (as far as it meant to go).
+        let to = self.stagger(id, to, &range, events);
         let path = range.path_to(to).unwrap_or_default();
         let cost = range.cost(to).unwrap_or(0);
         let ap_cost = self.move_cost_ap(id, cost);
@@ -1195,6 +1215,8 @@ impl Battle {
         events.push(GameEvent::TurnStarted { team, round: self.round });
         self.heat_turn_start(team, events);
         self.fire_turn_start(team, events);
+        self.gas_turn_start(team, events);
+        self.refresh_gassed();
         self.charges_turn_start(team, events);
         self.morale_turn_start(team, events);
         self.on_turn_start(events);

@@ -38,6 +38,8 @@ pub struct StatModifiers {
     pub aim: i32,
     pub defense: i32,
     pub sight: f32,
+    /// Sight range bonus in percent of the total (a scanner: 50 = half as far again).
+    pub sight_percent: i32,
     /// Fear resistance (see `MoraleRules`).
     pub bravery: i32,
     /// Extra spare magazines (ammo pouches).

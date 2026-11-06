@@ -211,6 +211,13 @@ pub fn preview_attack(
         breakdown.push(("Flanked (crit)".into(), profile.flank_crit_bonus));
     }
 
+    // Choking on gas: no aim at all. Rolled attacks can't hit; bullets fly wild.
+    let (hit_chance, sigma) = if attacker.status.gassed && profile.can_miss {
+        breakdown.push(("Gassed: can't aim".into(), -hit_chance));
+        (0, sigma.max(1.2))
+    } else {
+        (hit_chance, sigma)
+    };
     let mut damage = (damage.0 + profile.damage_bonus, damage.1 + profile.damage_bonus);
     let mut crit_damage = crit_damage;
     // Shock weapons: small and mid-sized machines short out, big ones take a jolt.

@@ -16,6 +16,10 @@
 //   robots outright, take 9 off heavy ones, and stun anyone else for a turn.
 // Adrenaline Shot (anyone): costs half your remaining health (nothing at
 //   1 HP) and gives 2 extra action points this turn. Free to use.
+// Scanner Armor (armour, anyone): sensors that see 50% further.
+// Gas Grenade (anyone): a cloud 2 tiles round for 3 rounds. Anyone living in
+//   it can't aim (no chance to hit; bullets fly wild) and staggers to a random
+//   tile when they move. Robots don't breathe.
 // Fire: the Flamethrower main weapon (heavy gunners, assault: Shoot sweeps
 //   a cone of fire), the Flamethrower item (a cone of flame that leaves the ground
 //   burning; heavy gunners, assault) and Incendiary Grenades (anyone).
@@ -135,6 +139,26 @@
     ],
 
     abilities: [
+        (
+            id: "gas_grenade",
+            name: "Gas Grenade",
+            description: "Throw at a tile: a cloud of gas 2 tiles round for 3 rounds. Anyone living in it can't aim (no chance to hit, shots fly wild) and staggers to a random spot when they move. Robots are immune. 1 AP.",
+            cost: Points(1),
+            charges: Some(1),
+            targeting: Tile,
+            range: Fixed(10.0),
+            requires_los: true,
+            effect: Attack(
+                can_miss: false,
+                half_cover_penalty: 0,
+                full_cover_penalty: 0,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                damage: Fixed(min: 0, max: 0),
+                area_radius: 2.0,
+                gas: 3,
+            ),
+        ),
         (
             id: "adrenaline",
             name: "Adrenaline Shot",
@@ -316,6 +340,7 @@
     ],
 
     presentations: [
+        (ability: "gas_grenade", animation: "throw", projectile: Arc, windup: 0.3),
         (ability: "adrenaline", animation: "heal", projectile: None, windup: 0.2),
         (ability: "stab", animation: "throw", projectile: None, windup: 0.25),
         (ability: "hack", animation: "throw", projectile: None, windup: 0.3),
@@ -329,6 +354,21 @@
     ],
 
     items: [
+        (
+            id: "scanner_armor",
+            name: "Scanner Armor",
+            description: "Light armour full of sensors: sees 50% further.",
+            slot: Armor,
+            stats: (sight_percent: 50),
+        ),
+        (
+            id: "gas",
+            name: "Gas Grenade",
+            description: "Grants Gas Grenade: a cloud (3 rounds) where nobody can aim and every move goes astray.",
+            slot: Utility,
+            abilities: ["gas_grenade"],
+            charges: Some(1),
+        ),
         (
             id: "adrenaline_shot",
             name: "Adrenaline Shot",

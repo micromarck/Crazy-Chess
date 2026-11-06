@@ -195,6 +195,11 @@ pub struct AttackProfile {
     /// `area_radius` of the user (friend or foe, the user excepted) and
     /// damages props and walls around it.
     pub slam: bool,
+    /// Area attacks: fills the area with **gas** for this many rounds. Living
+    /// units in gas can't aim (their attacks that can miss have no chance to
+    /// hit; bullets fly wild) and stagger to a random tile when they move.
+    /// Machines don't breathe. 0 = no gas.
+    pub gas: u32,
 }
 
 impl AttackProfile {
@@ -236,6 +241,7 @@ impl Default for AttackProfile {
             shock: None,
             stun: 0,
             slam: false,
+            gas: 0,
         }
     }
 }
