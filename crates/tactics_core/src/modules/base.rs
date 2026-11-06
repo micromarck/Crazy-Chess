@@ -14,6 +14,7 @@ pub struct BaseModule;
 /// Ids of the base abilities, for code that wants to refer to them.
 pub mod ids {
     pub const SHOOT: &str = "shoot";
+    pub const BLIND_FIRE: &str = "blind_fire";
     pub const OVERWATCH: &str = "overwatch";
     pub const HUNKER: &str = "hunker";
     pub const RELOAD: &str = "reload";
@@ -117,6 +118,7 @@ fn register_presentation(rules: &mut Ruleset) {
         camera_chance: 50,
         ..present(ids::SHOOT, "shoot")
     });
+    rules.add_presentation(present(ids::BLIND_FIRE, "shoot"));
     rules.add_presentation(AbilityPresentation {
         projectile: ProjectileStyle::None,
         ..present(ids::OVERWATCH, "overwatch")
@@ -143,6 +145,18 @@ fn register_abilities(rules: &mut Ruleset) {
             .with_ammo_cost(1)
             .with_targeting(Targeting::Enemy, AbilityRange::Weapon)
             .with_effect(AbilityEffect::Attack(AttackProfile::default())),
+    );
+
+    // Blind fire: shoot at a tile you can't see (round a corner, into the
+    // dark, over a wall): whoever is there takes the burst, at -30 aim.
+    rules.add_ability(
+        AbilityDef::new(ids::BLIND_FIRE, "Blind Fire")
+            .with_description("Fire your weapon at a tile you don't need to see (-30 aim): whoever is there takes the burst; walls in the way still stop it. Ends the turn.")
+            .with_cost(ApCost::EndsTurn)
+            .with_ammo_cost(1)
+            .with_targeting(Targeting::Tile, AbilityRange::Weapon)
+            .with_los(false)
+            .with_effect(AbilityEffect::Attack(AttackProfile { accuracy_bonus: -30, blind: true, ..Default::default() })),
     );
 
     // Reaction shot: same cover rules, but -15 accuracy.
@@ -298,7 +312,7 @@ fn register_items(rules: &mut Ruleset) {
 fn register_classes(rules: &mut Ruleset) {
     register_items(rules);
     let basic = || {
-        [ids::SHOOT, ids::OVERWATCH, ids::HUNKER, ids::RELOAD]
+        [ids::SHOOT, ids::BLIND_FIRE, ids::OVERWATCH, ids::HUNKER, ids::RELOAD]
             .map(AbilityId::new)
             .to_vec()
     };

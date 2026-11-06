@@ -209,6 +209,9 @@ TBSium/
   (half cover); grenades throw traced shrapnel past the blast.
 * Magazines: bursts use 4–6 rounds of a larger clip, reloads use up spare
   magazines (an ammo pouch adds one).
+* **Blind fire**: shoot at a tile you can't see (into the dark past your
+  sight, out to the gun's full range) at -30 aim; whoever is there takes the
+  burst, and the preview gives nothing away.
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).

@@ -457,7 +457,7 @@
             name: "Heavy Gunner",
             stats: (max_hp: 12, mobility: 10, aim: 62, defense: 0, sight: 13.0, bravery: 60),
             weapon: "minigun",
-            abilities: ["shoot", "suppress", "overwatch", "hunker", "reload"],
+            abilities: ["shoot", "blind_fire", "suppress", "overwatch", "hunker", "reload"],
             model: "soldier",
             loadout: "heavy_std",
         ),

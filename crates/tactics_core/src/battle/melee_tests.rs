@@ -137,3 +137,33 @@ fn an_adrenaline_shot_trades_half_your_health_for_two_action_points() {
     let u = b.unit(a).unwrap();
     assert_eq!((u.hp, u.action_points), (1, ap + 4));
 }
+
+#[test]
+fn blind_fire_shoots_at_a_tile_beyond_sight_without_giving_anything_away() {
+    use crate::event::GameEvent;
+    let mut b = Battle::new(Map::from_ascii(&"....................\n".repeat(3)), Ruleset::standard(), 1);
+    let a = b.spawn("rifleman", "A", Team::Player, GridPos::new(0, 1)).unwrap();
+    let e = b.spawn("rifleman", "E", Team::Enemy, GridPos::new(16, 1)).unwrap();
+    assert!(!b.team_sees_unit(Team::Player, b.unit(e).unwrap()), "16 tiles: past a rifleman's sight (14)");
+    // A normal shot can't reach what you can't see; blind fire can (rifle: 18).
+    assert!(b.validate(&Action::ability(a, "shoot", Target::Unit(e))).is_err());
+    let blind = Action::ability(a, "blind_fire", Target::Tile(GridPos::new(16, 1)));
+    assert!(b.validate(&blind).is_ok());
+    // The preview doesn't say whether anyone's there.
+    assert!(b.preview(a, &AbilityId::new("blind_fire"), Target::Tile(GridPos::new(16, 1))).unwrap().is_empty());
+    let ammo = b.unit(a).unwrap().weapon.ammo;
+    let ev = b.apply(blind).unwrap();
+    assert!(ev.iter().any(|x| matches!(x, GameEvent::Volley { target, .. } if *target == e)), "the burst goes at whoever is there");
+    assert!(b.unit(a).unwrap().weapon.ammo < ammo);
+}
+
+#[test]
+fn blind_fire_into_nothing_spends_the_burst() {
+    let mut b = Battle::new(Map::from_ascii(&"....................\n".repeat(3)), Ruleset::standard(), 1);
+    let a = b.spawn("rifleman", "A", Team::Player, GridPos::new(0, 1)).unwrap();
+    b.spawn("rifleman", "E", Team::Enemy, GridPos::new(19, 2)).unwrap();
+    let ammo = b.unit(a).unwrap().weapon.ammo;
+    b.apply(Action::ability(a, "blind_fire", Target::Tile(GridPos::new(12, 0)))).unwrap();
+    assert_eq!(b.unit(a).unwrap().weapon.ammo, ammo - 4, "a rifle burst");
+    assert_eq!(b.unit(a).unwrap().action_points, 0, "ends the turn");
+}

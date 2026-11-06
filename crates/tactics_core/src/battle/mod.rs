@@ -447,6 +447,10 @@ impl Battle {
         if let AbilityEffect::Leap { reach, .. } = def.effect {
             return reach * (unit.stats.mobility / 2) as f32;
         }
+        // Blind fire reaches as far as the gun, not as far as the eye.
+        if def.effect.attack_profile().is_some_and(|p| p.blind) && def.range == AbilityRange::Weapon {
+            return unit.weapon.max_range;
+        }
         match def.range {
             AbilityRange::Weapon => unit.weapon.max_range.min(unit.stats.sight),
             AbilityRange::Fixed(r) => r,
@@ -480,6 +484,8 @@ impl Battle {
         Ok(self
             .attack_victims(user, profile, point, target)
             .into_iter()
+            // Blind fire: no hints about who's out there.
+            .filter(|(victim, _)| !profile.blind || self.team_sees_unit(user.team, &self.units[victim.0 as usize]))
             .map(|(victim, origin)| {
                 let v = &self.units[victim.0 as usize];
                 (victim, preview_attack(&self.rules.combat, &self.map, origin, user, v, profile))
@@ -767,6 +773,13 @@ impl Battle {
                     Target::Unit(id) => Some(id),
                     _ => self.unit_at(point).map(|u| u.id),
                 };
+                if victim.is_none() && profile.blind {
+                    // Blind fire into nothing: the burst is spent all the same.
+                    let u = self.unit_mut(unit);
+                    let burst = if profile.rounds.is_some() { profile.rounds.unwrap_or(1) as i32 } else { u.weapon.burst.max(1) as i32 };
+                    u.weapon.ammo = (u.weapon.ammo - burst).max(0);
+                    events.push(GameEvent::Callout { unit, text: "BLIND FIRE".into() });
+                }
                 if let Some(victim) = victim {
                     let uses_ammo = def.ammo_cost > 0;
                     let cap = uses_ammo.then(|| self.units[unit.0 as usize].weapon.ammo.max(0) as u32);

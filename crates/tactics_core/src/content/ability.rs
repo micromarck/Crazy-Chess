@@ -200,6 +200,10 @@ pub struct AttackProfile {
     /// hit; bullets fly wild) and stagger to a random tile when they move.
     /// Machines don't breathe. 0 = no gas.
     pub gas: u32,
+    /// **Blind fire**: aimed at a tile, not a unit you can see. The shots go
+    /// at whoever is there (if anyone); previews show nothing for units the
+    /// user's team can't see, so it gives nothing away (or the AI any cheats).
+    pub blind: bool,
 }
 
 impl AttackProfile {
@@ -242,6 +246,7 @@ impl Default for AttackProfile {
             stun: 0,
             slam: false,
             gas: 0,
+            blind: false,
         }
     }
 }
