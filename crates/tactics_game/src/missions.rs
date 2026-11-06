@@ -517,6 +517,90 @@ mod tests {
         }
     }
 
+    /// Dead Signal: the symbiotes are all there; a log unlocks the next
+    /// bulkhead; stepping through arms the seal, and at the end of the turn
+    /// everyone left behind dies. Then both sides play a while without
+    /// script errors.
+    #[test]
+    fn station_logs_and_bulkheads() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(MISSION_DIR);
+        let mut def = parse_mission(&std::fs::read_to_string(dir.join("station.mission.xml")).unwrap()).unwrap();
+        let h = def.map.height();
+        let m = |x: i32, y: i32| GridPos::new(x, h - 1 - y); // mission -> grid
+        let (rules, _) = crate::content::build_ruleset();
+        {
+            let (b, warnings) = Battle::from_mission(rules.clone(), &def, 3);
+            assert!(warnings.is_empty(), "{warnings:?}");
+            let n = |c: &str| b.living(Team::Enemy).filter(|u| u.class == c).count();
+            assert_eq!((n("symb_choir"), n("symb_amalgam"), n("symb_puppeteer")), (1, 1, 4));
+            assert!(n("symb_host") >= 10 && n("symb_crawler") >= 8);
+        }
+        // Start the squad in the dockmaster's office, next to the first log.
+        def.deploys[0].pos = m(11, 3);
+        let (mut b, _) = Battle::from_mission(rules.clone(), &def, 3);
+        let ev = b.begin();
+        assert!(!ev.iter().any(|e| matches!(e, GameEvent::ScriptError { .. })), "{ev:?}");
+        assert!(!b.vines().is_empty(), "the growth is planted");
+        let door = |b: &Battle| b.door_at(m(16, 19)).and_then(|p| p.door).unwrap();
+        assert!(door(&b).locked, "bulkhead 1 starts locked");
+
+        let squad: Vec<_> = b.living(Team::Player).map(|u| u.id).collect();
+        let reader = squad[0];
+        // Walk (greedily) towards a tile; ends turns as needed (the enemy just passes).
+        let walk = |b: &mut Battle, id, goal: GridPos| {
+            for _ in 0..40 {
+                if b.unit(id).unwrap().pos == goal || b.is_over() {
+                    return;
+                }
+                if b.active_team() != Team::Player || b.unit(id).unwrap().action_points == 0 {
+                    b.apply(Action::EndTurn).unwrap();
+                    continue;
+                }
+                let here = b.unit(id).unwrap().pos;
+                let best = b.movement_range(id).iter().map(|(p, _)| p).min_by(|a, c| a.distance(goal).total_cmp(&c.distance(goal)));
+                match best {
+                    Some(to) if to.distance(goal) < here.distance(goal) => {
+                        let ev = b.apply(Action::Move { unit: id, to }).unwrap();
+                        assert!(!ev.iter().any(|e| matches!(e, GameEvent::ScriptError { .. })), "{ev:?}");
+                    }
+                    _ => {
+                        b.apply(Action::EndTurn).unwrap();
+                    }
+                }
+            }
+        };
+        walk(&mut b, reader, m(13, 2));
+        assert_eq!(b.flags().get("log1"), Some(&1), "read the dockmaster's log");
+        assert!(!door(&b).locked, "and it unlocked bulkhead 1");
+        assert!(b.unit(reader).unwrap().insanity > 0, "the logs are disturbing");
+        // Through the bulkhead, alone: the rest stay in the office.
+        walk(&mut b, reader, m(19, 19));
+        assert!(b.unit(reader).unwrap().pos.x > 16, "{:?}", b.unit(reader).unwrap().pos);
+        assert_eq!(b.flags().get("seal1"), Some(&1), "the seal is armed");
+        while b.active_team() == Team::Player {
+            b.apply(Action::EndTurn).unwrap();
+        }
+        assert_eq!(b.flags().get("seal1"), Some(&2), "sealed at the end of the turn");
+        assert!(b.unit(reader).unwrap().is_alive());
+        for &id in &squad[1..] {
+            assert!(!b.unit(id).unwrap().is_alive(), "{} was left behind", b.unit(id).unwrap().name);
+        }
+        assert!(door(&b).locked && !door(&b).open, "sealed for good");
+        assert!(b.unit(reader).unwrap().insanity >= 10, "watching them die");
+
+        // Both sides play for a while: no script errors.
+        let (mut b, _) = Battle::from_mission(rules, &def, 9);
+        b.begin();
+        let config = AiConfig::default();
+        for _ in 0..1500 {
+            if b.round() >= 10 || b.is_over() {
+                break;
+            }
+            let ev = b.apply(ai::next_team_action(&b, &config)).unwrap();
+            assert!(!ev.iter().any(|e| matches!(e, GameEvent::ScriptError { .. })), "{ev:?}");
+        }
+    }
+
     /// The other dinosaur missions build cleanly, keep every big beast on
     /// walkable tiles while both sides play them out, and their scripts run.
     #[test]

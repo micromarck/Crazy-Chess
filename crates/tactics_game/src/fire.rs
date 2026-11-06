@@ -19,7 +19,7 @@ impl Plugin for FirePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FireVisuals>()
             .add_systems(Startup, setup)
-            .add_systems(Update, (sync_fires, flicker, flame_bursts, burst_flames, sync_gas, drift_gas).chain().in_set(FrameSet::Present));
+            .add_systems(Update, (sync_fires, flicker, flame_bursts, burst_flames, sync_gas, drift_gas, sync_vines, writhe).chain().in_set(FrameSet::Present));
     }
 }
 
@@ -43,6 +43,9 @@ struct FireAssets {
     scorch_mat: Handle<StandardMaterial>,
     puff: Handle<Mesh>,
     gas_mat: Handle<StandardMaterial>,
+    vine_mat: Handle<StandardMaterial>,
+    tendril: Handle<Mesh>,
+    tendril_mat: Handle<StandardMaterial>,
 }
 
 #[derive(Resource, Default)]
@@ -50,6 +53,14 @@ struct FireVisuals {
     fires: HashMap<GridPos, Entity>,
     scorches: HashMap<GridPos, Entity>,
     gas: HashMap<GridPos, Entity>,
+    vines: HashMap<GridPos, Entity>,
+}
+
+/// A tendril sprouting from a vine tile (sways slowly).
+#[derive(Component)]
+struct Tendril {
+    phase: f32,
+    base: Quat,
 }
 
 /// One drifting puff of a gas cloud.
@@ -100,6 +111,20 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             ..default()
         }),
         puff: meshes.add(Sphere::new(0.42)),
+        vine_mat: materials.add(StandardMaterial {
+            base_color: Color::srgba(0.28, 0.06, 0.24, 0.85),
+            emissive: LinearRgba::rgb(0.12, 0.0, 0.1),
+            alpha_mode: AlphaMode::Blend,
+            perceptual_roughness: 0.4,
+            ..default()
+        }),
+        tendril: meshes.add(Capsule3d::new(0.035, 0.32)),
+        tendril_mat: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.42, 0.08, 0.34),
+            emissive: LinearRgba::rgb(0.35, 0.02, 0.3),
+            perceptual_roughness: 0.3,
+            ..default()
+        }),
         gas_mat: materials.add(StandardMaterial {
             base_color: Color::srgba(0.62, 0.78, 0.22, 0.28),
             emissive: LinearRgba::rgb(0.06, 0.09, 0.0),
@@ -125,7 +150,7 @@ fn sync_fires(
 ) {
     if resets.read().count() > 0 {
         let visuals = &mut *visuals;
-        for (_, e) in visuals.fires.drain().chain(visuals.scorches.drain()).chain(visuals.gas.drain()) {
+        for (_, e) in visuals.fires.drain().chain(visuals.scorches.drain()).chain(visuals.gas.drain()).chain(visuals.vines.drain()) {
             commands.entity(e).despawn();
         }
     }
@@ -264,5 +289,57 @@ fn drift_gas(time: Res<Time>, mut puffs: Query<(&GasPuff, &mut Transform)>) {
     for (g, mut tr) in &mut puffs {
         let w = t * 0.6 + g.phase;
         tr.translation = g.base + Vec3::new(0.12 * w.sin(), 0.06 * (w * 1.7).sin(), 0.12 * (w * 0.8).cos());
+    }
+}
+
+/// Symbiote vines (`Battle::vines`): a glistening purple mat on the deck with a
+/// few tendrils sprouting from it.
+fn sync_vines(mut commands: Commands, state: Res<BattleState>, assets: Res<FireAssets>, mut visuals: ResMut<FireVisuals>) {
+    let b = &state.battle;
+    let vines = b.vines();
+    let gone: Vec<GridPos> = visuals.vines.keys().copied().filter(|p| !vines.contains(p)).collect();
+    for p in gone {
+        if let Some(e) = visuals.vines.remove(&p) {
+            commands.entity(e).despawn();
+        }
+    }
+    let new: Vec<GridPos> = vines.iter().copied().filter(|p| !visuals.vines.contains_key(p)).collect();
+    for p in new {
+        let root = commands
+            .spawn((
+                Mesh3d(assets.scorch.clone()),
+                MeshMaterial3d(assets.vine_mat.clone()),
+                Transform::from_translation(tile_top(b.map(), p) + Vec3::Y * 0.02)
+                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2))
+                    .with_scale(Vec3::splat(1.05)),
+                NotShadowCaster,
+            ))
+            .id();
+        for k in 0..2u32 {
+            if jitter(p, k + 90) < 0.35 {
+                continue;
+            }
+            let off = Vec3::new(jitter(p, k + 91) - 0.5, jitter(p, k + 92) - 0.5, 0.0) * 0.7;
+            let base = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2 + (jitter(p, k + 93) - 0.5) * 0.9)
+                * Quat::from_rotation_z((jitter(p, k + 94) - 0.5) * 0.9);
+            commands.spawn((
+                Mesh3d(assets.tendril.clone()),
+                MeshMaterial3d(assets.tendril_mat.clone()),
+                // Child of the (rotated) mat: local -Z is up out of the deck.
+                Transform::from_translation(off + Vec3::new(0.0, 0.0, 0.18)).with_rotation(base),
+                Tendril { phase: jitter(p, k + 95) * std::f32::consts::TAU, base },
+                NotShadowCaster,
+                ChildOf(root),
+            ));
+        }
+        visuals.vines.insert(p, root);
+    }
+}
+
+fn writhe(time: Res<Time>, mut tendrils: Query<(&Tendril, &mut Transform)>) {
+    let t = time.elapsed_secs();
+    for (v, mut tr) in &mut tendrils {
+        let w = t * 1.3 + v.phase;
+        tr.rotation = v.base * Quat::from_rotation_x(0.25 * w.sin()) * Quat::from_rotation_y(0.2 * (w * 0.7).cos());
     }
 }

@@ -298,6 +298,10 @@ work exactly like `<unit>` scripts above.
 | `zone_count(tag, team)` | living units of `team` (`""` = all) inside the zone `tag` (e.g. the whole squad on the evac pad: `zone_count("evac", "player") >= alive_count("player")`) |
 | `objective(text)` | set the HUD objective |
 | `fear(unit)`, `add_fear(unit, n)` | read / change a unit's fear (0-100; gains scaled by bravery, fearless units ignore it) |
+| `insanity(unit)`, `add_insanity(unit, n)` | read / change a unit's insanity (0-100; 30 Disturbed, 60 Unhinged, 100 Lost to the other side; see MODULES.md) |
+| `rage(unit)`, `add_rage(unit, n)` | read / change a unit's rage (units with class `rage` rules) |
+| `mind_control(unit, turns)`, `release_mind(unit)`, `controlled(unit)` | hand a unit to the other side for `turns` of its turns / give it back / is it controlled |
+| `plant_vines(x, y, r)`, `clear_vines(x, y, r)`, `set_vine_growth(percent)`, `vines_at(x, y)`, `vine_count()` | symbiote vines: grow, remove, how fast they spread each round, read them |
 | `raise_alarm()`, `alarm()`, `concealed()` | concealment / alarm |
 | `wake(unit)`, `wake_all()`, `unit_dormant(unit)` | dormant pods |
 | `open_door(tag)`, `close_door(tag)`, `lock_door(tag, locked)` | doors |

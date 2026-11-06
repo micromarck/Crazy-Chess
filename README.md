@@ -67,7 +67,10 @@ lost expedition's drive from a jungle of raptors, a 2x2 Hornback and a 3x3
 Tyrant), *Raptor Run* (run a canyon to the evac before the chopper leaves
 while packs pour out of the side ravines), *Tyrant Hunt* (kill a Tyrant, and
 its mate, round a research station whose doorways are too narrow for them)
-and *Nest Raid* (steal three raptor eggs at night). See
+and *Nest Raid* (steal three raptor eggs at night); with the Symbiotes module,
+*Dead Signal* (a long exploration of an abandoned space station: find the crew's
+logs to open each bulkhead, which seals behind you and kills anyone left on the
+other side). See
 **[MISSIONS.md](MISSIONS.md)**.
 
 The HUD is an **HTML/CSS layout** (`assets/ui/hud.html`) rendered natively on
@@ -212,6 +215,13 @@ TBSium/
 * **Blind fire**: shoot at a tile you can't see (into the dark past your
   sight, out to the gun's full range) at -30 aim; whoever is there takes the
   burst, and the preview gives nothing away.
+* **Symbiotes** (data module): Crawlers, infected Hosts, mind-controlling
+  Puppeteers, the 2x2 Amalgam and the Choir. **Mind control** (soldiers fight
+  for the other side for a few turns), **rage** (hits and kindred deaths make
+  them hit harder and move further), **insanity** (horrors wear soldiers down:
+  disturbed and unhinged soldiers lose aim and may snap; at 100 they're lost),
+  and **vines** that spread across the floor every round and **burn**, like
+  the symbiotes themselves (double damage from fire).
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).
