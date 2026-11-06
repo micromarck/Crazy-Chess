@@ -222,8 +222,8 @@ TBSium/
   disturbed and unhinged soldiers lose aim and may snap; at 100 they're lost),
   and **vines** that spread across the floor every round and **burn**, like
   the symbiotes themselves (double damage from fire).
-* **Spray and pray**: machine guns (LMG, minigun, gatling laser) can hose half
-  a magazine into a 40-degree wedge - no aim at all, every round hits the first
+* **Spray and pray**: machine guns (LMG, minigun, gatling laser) can sweep half
+  a magazine across a 40-degree arc - no aim at all, every round hits the first
   thing in its way, friend or foe.
 * **Frag grenades** do their damage with fragments: 24 of them at 2 damage,
   hitting everyone around the throw (inside the blast too) unless walls or

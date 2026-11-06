@@ -288,9 +288,10 @@ impl Battle {
         self.land_rays(&fragments, attacker, events);
     }
 
-    /// **Spray and pray**: `rounds` bullets hosed into a `cone`-degree wedge
-    /// towards `point`, each flying wild (no aim at all) out to the gun's
-    /// range and hitting the first thing in its way, friend or foe.
+    /// **Spray and pray**: `rounds` bullets **swept** across a `cone`-degree
+    /// arc centred on `point`, left to right in firing order, each one
+    /// scattering wildly (no aim) out to the gun's range and hitting the
+    /// first thing in its way, friend or foe.
     pub(super) fn spray_fire(&mut self, shooter: UnitId, point: GridPos, cone: f32, rounds: u32, events: &mut Vec<GameEvent>) {
         let u = &self.units[shooter.0 as usize];
         let from = u.pos;
@@ -301,16 +302,17 @@ impl Battle {
         let half = cone.to_radians() / 2.0;
         let mut dirs = Vec::with_capacity(rounds as usize);
         let mut damage = Vec::with_capacity(rounds as usize);
-        for _ in 0..rounds {
-            let u01 = (self.rng.next_u64() >> 11) as f32 / (1u64 << 53) as f32;
-            let yaw = aim + (u01 * 2.0 - 1.0) * half + gaussian(&mut self.rng) * 0.05;
+        for i in 0..rounds {
+            // The barrel traverses steadily across the arc; every round kicks off-line.
+            let sweep = (i as f32 + 0.5) / rounds as f32 * 2.0 - 1.0;
+            let yaw = aim - sweep * half + gaussian(&mut self.rng) * 0.07;
             // Aimed at chest height out there; the kick throws some high or into the deck.
             let pitch = -0.02 + gaussian(&mut self.rng) * 0.05;
             dirs.push([yaw.cos() * pitch.cos(), yaw.sin() * pitch.cos(), pitch.sin()]);
             damage.push(self.rng.range_inclusive(lo, hi).max(1));
         }
         let bullets = self.fly_rays(origin, from, &dirs, range, &damage, |u| u.id != shooter);
-        events.push(GameEvent::Shrapnel { attacker: Some(shooter), center: origin, fragments: bullets.clone() });
+        events.push(GameEvent::Spray { attacker: shooter, muzzle: origin, bullets: bullets.clone() });
         self.land_rays(&bullets, Some(shooter), events);
     }
 
@@ -608,7 +610,7 @@ mod tests {
     }
 
     #[test]
-    fn spray_and_pray_hoses_half_a_magazine_into_a_wedge() {
+    fn spray_and_pray_sweeps_half_a_magazine_across_an_arc() {
         let mut hit_enemies = 0;
         let mut hit_beside = 0;
         for seed in 0..10 {
@@ -626,12 +628,18 @@ mod tests {
             let rays: Vec<crate::event::Bullet> = ev
                 .iter()
                 .filter_map(|x| match x {
-                    GameEvent::Shrapnel { fragments, .. } => Some(fragments.clone()),
+                    GameEvent::Spray { bullets, .. } => Some(bullets.clone()),
                     _ => None,
                 })
                 .flatten()
                 .collect();
             assert_eq!(rays.len() as i32, clip / 2);
+            // A sweep: the first rounds go to one side of the aim line, the last to the other.
+            let off = |r: &crate::event::Bullet| r.end[1] - 4.0;
+            let q = rays.len() / 4;
+            let first = rays[..q].iter().map(off).sum::<f32>() / q as f32;
+            let last = rays[rays.len() - q..].iter().map(off).sum::<f32>() / q as f32;
+            assert!(first > 0.5 && last < -0.5, "swept across: {first} -> {last}");
             hit_enemies += foes.iter().filter(|f| rays.iter().any(|r| r.hit == Some(**f))).count();
             hit_beside += rays.iter().filter(|r| r.hit == Some(pals)).count();
         }

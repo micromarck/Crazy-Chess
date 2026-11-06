@@ -209,9 +209,10 @@ pub struct AttackProfile {
     /// The fragments are the punch (frag grenades): they hit units inside
     /// the blast as well as outside it.
     pub fragmentation: bool,
-    /// **Spray and pray** (machine guns): `> 0` = hose half a magazine into
-    /// a wedge this many degrees wide towards the target tile. Every round
-    /// flies wild (no aim) and hits the first thing in its way, friend or foe.
+    /// **Spray and pray** (machine guns): `> 0` = sweep half a magazine
+    /// across an arc this many degrees wide, centred on the target tile, side
+    /// to side in firing order. Every round flies wild (no aim) and hits the
+    /// first thing in its way, friend or foe.
     pub spray: f32,
 }
 

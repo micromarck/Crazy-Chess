@@ -919,6 +919,31 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             p.board.write(crate::board::BoardDirty(Some(*pos)));
             vec![]
         }
+        GameEvent::Spray { attacker, muzzle, bullets } => {
+            let hits = bullets.iter().filter(|f| f.hit.is_some()).count();
+            p.log.push(format!("  {} sprays {} rounds: {hits} hit{}", name(*attacker), bullets.len(), if hits == 1 { "" } else { "s" }));
+            let bullets = bullets
+                .iter()
+                .map(|b| VolleyBullet {
+                    end: Vec3::new(b.end[0], b.end[2], -b.end[1]),
+                    hit: b.hit,
+                    damage: b.damage,
+                    critical: false,
+                    blocked: false,
+                    landed: false,
+                })
+                .collect::<Vec<_>>();
+            // The sweep: rounds stream out one after another, across the arc.
+            vec![Anim::Volley {
+                muzzle: Vec3::new(muzzle[0], muzzle[2], -muzzle[1]),
+                bullets,
+                style: ProjectileStyle::Tracer,
+                aim: 0.0,
+                interval: 0.035,
+                per_round: 1,
+                t: 0.0,
+            }]
+        }
         GameEvent::Shrapnel { center, fragments, .. } => {
             let hits = fragments.iter().filter(|f| f.hit.is_some()).count();
             if hits > 0 {

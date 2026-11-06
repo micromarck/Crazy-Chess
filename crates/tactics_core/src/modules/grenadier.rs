@@ -47,10 +47,10 @@ impl GameModule for GrenadierModule {
                 })),
         );
 
-        // Machine guns: hose half a magazine into a wedge. No aim at all.
+        // Machine guns: sweep half a magazine across an arc. No aim at all.
         rules.add_ability(
             AbilityDef::new("spray_and_pray", "Spray and Pray")
-                .with_description("Hose half a magazine into a 40-degree wedge towards a tile: every round flies wild (no aim) and hits the first thing in its way out to the gun's range, friend or foe. Walls and cover stop rounds. Ends the turn.")
+                .with_description("Sweep half a magazine across a 40-degree arc centred on a tile, side to side: every round flies wild (no aim) and hits the first thing in its way out to the gun's range, friend or foe. Walls and cover stop rounds. Ends the turn.")
                 .with_cost(ApCost::EndsTurn)
                 .with_ammo_cost(2)
                 .with_targeting(Targeting::Tile, AbilityRange::Weapon)

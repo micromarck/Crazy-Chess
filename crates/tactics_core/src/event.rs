@@ -119,6 +119,8 @@ pub enum GameEvent {
     VinesGrew { tiles: Vec<GridPos> },
     /// Vines on `tiles` burned away.
     VinesBurned { tiles: Vec<GridPos> },
+    /// Spray and pray: `bullets` swept from `muzzle`, in firing order.
+    Spray { attacker: UnitId, muzzle: [f32; 3], bullets: Vec<Bullet> },
     /// Gas filled `tiles` for `turns` rounds (a gas grenade).
     GasReleased { tiles: Vec<GridPos>, turns: u32 },
     /// The gas on `tiles` cleared.
