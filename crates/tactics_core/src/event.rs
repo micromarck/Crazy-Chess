@@ -109,6 +109,16 @@ pub enum GameEvent {
     BattleEnded { winner: Team },
     /// A unit appeared mid-battle (script `spawn_unit`).
     UnitSpawned { unit: UnitId },
+    /// A unit's mind was taken (`turns > 0`: now fighting for `team`) or
+    /// given back (`turns == 0`: back with `team`).
+    UnitControlled { unit: UnitId, team: Team, turns: u32 },
+    /// A unit's insanity crossed into a new level (`Sane`, `Disturbed`,
+    /// `Unhinged`, `Lost`).
+    InsanityChanged { unit: UnitId, insanity: i32, level: String },
+    /// Symbiote vines grew onto `tiles`.
+    VinesGrew { tiles: Vec<GridPos> },
+    /// Vines on `tiles` burned away.
+    VinesBurned { tiles: Vec<GridPos> },
     /// Gas filled `tiles` for `turns` rounds (a gas grenade).
     GasReleased { tiles: Vec<GridPos>, turns: u32 },
     /// The gas on `tiles` cleared.

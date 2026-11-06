@@ -220,13 +220,17 @@ impl Battle {
                 return;
             }
             events.push(GameEvent::Callout { unit: id, text: "BURNING".into() });
-            self.apply_damage(id, damage, true, events);
+            let d = if self.units[id.0 as usize].flammable { damage * 2 } else { damage };
+            self.apply_damage(id, d, true, events);
         }
     }
 
     /// A unit walked into a burning tile. Returns whether it's still alive.
     pub(super) fn burn_step(&mut self, id: UnitId, events: &mut Vec<GameEvent>) -> bool {
-        let damage = self.rules.combat.fire_step_damage;
+        let mut damage = self.rules.combat.fire_step_damage;
+        if self.units[id.0 as usize].flammable {
+            damage *= 2;
+        }
         if damage > 0 {
             events.push(GameEvent::Callout { unit: id, text: "BURNING".into() });
             self.apply_damage(id, damage, true, events);

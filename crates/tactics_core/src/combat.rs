@@ -138,6 +138,7 @@ pub fn preview_attack(
     if map.elevation(origin) > map.elevation(target.pos) {
         push("Height advantage", rules.height_advantage_bonus);
     }
+    push(attacker.sanity().label(), -attacker.sanity().aim_penalty());
     push("Defense", -target.stats.defense);
     push("Defending", -target.status.defense_bonus);
     if attacker.status.suppressed_by.is_some() {
@@ -220,6 +221,17 @@ pub fn preview_attack(
     };
     let mut damage = (damage.0 + profile.damage_bonus, damage.1 + profile.damage_bonus);
     let mut crit_damage = crit_damage;
+    // Rage: enraged attackers hit harder.
+    if attacker.enraged() {
+        let bonus = attacker.rage_rules.map_or(0, |r| r.damage);
+        damage = (damage.0 + bonus, damage.1 + bonus);
+        breakdown.push(("Enraged (damage)".into(), bonus));
+    }
+    // Flammable targets (symbiotes) burn twice as badly.
+    if (profile.ignite > 0 || profile.cone > 0.0) && target.flammable {
+        damage = (damage.0 * 2, damage.1 * 2);
+        breakdown.push(("Flammable (x2 damage)".into(), 0));
+    }
     // Shock weapons: small and mid-sized machines short out, big ones take a jolt.
     if let Some(heavy) = profile.shock {
         match target.machine {
@@ -284,6 +296,11 @@ mod tests {
             heat: None,
             no_half_cover: false,
             machine: Default::default(),
+            rage_rules: None,
+            rage: 0,
+            insanity: 0,
+            flammable: false,
+            vine_kin: false,
             size: 1,
             fearless: false,
             body: Default::default(),

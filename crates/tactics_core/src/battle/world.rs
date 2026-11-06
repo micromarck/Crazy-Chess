@@ -337,11 +337,15 @@ impl Battle {
                     mobility: (u.stats.mobility / 2) as i32,
                     sight: u.stats.sight.round() as i32,
                     stunned: u.status.stunned,
+                    insanity: u.insanity,
+                    rage: u.rage,
+                    controlled: u.status.controlled,
                 })
                 .collect(),
             props: self.props.iter().map(|p| WorldProp { tag: p.tag.clone(), pos: p.pos, hp: p.hp, alive: p.alive, door: p.door.map(|d| (d.open, d.locked)) }).collect(),
             map: Some(self.map.clone()),
             fires: self.fires.keys().copied().collect(),
+            vines: self.vines.iter().copied().collect(),
             flags: self.flags.clone(),
             zones: {
                 // Marked zones, plus unmarked ones that carry scripts.
@@ -466,6 +470,18 @@ impl Battle {
             ScriptCommand::ShowZone { tag, show } => self.set_zone(&tag, Some(show), None, events),
             ScriptCommand::ZoneLabel { tag, text } => self.set_zone(&tag, None, Some(text), events),
             ScriptCommand::AddFear { unit, amount } => self.add_fear(UnitId(unit), amount, events),
+            ScriptCommand::AddInsanity { unit, amount } => self.add_insanity(UnitId(unit), amount, events),
+            ScriptCommand::AddRage { unit, amount } => self.add_rage(UnitId(unit), amount, events),
+            ScriptCommand::MindControl { unit, turns } => {
+                if let Some(u) = self.units.get(unit as usize).filter(|u| u.is_alive() && u.status.controlled == 0) {
+                    let other = u.team.opponent();
+                    self.mind_control(UnitId(unit), None, other, turns, events);
+                }
+            }
+            ScriptCommand::ReleaseMind { unit } => self.release_mind(UnitId(unit), events),
+            ScriptCommand::PlantVines { pos, radius } => self.plant_vines(pos, radius, events),
+            ScriptCommand::ClearVines { pos, radius } => self.clear_vines(pos, radius, events),
+            ScriptCommand::SetVineGrowth { percent } => self.vine_growth = percent,
             ScriptCommand::Objective(text) => self.set_objective(text, events),
             ScriptCommand::RaiseAlarm => self.raise_alarm(None, events),
             ScriptCommand::Wake { unit } => self.wake(UnitId(unit), events),
@@ -555,6 +571,10 @@ impl Battle {
         if died {
             t.hp = 0;
             t.action_points = 0;
+            // A puppet dies as itself.
+            if let Some(home) = t.status.home_team {
+                t.team = home;
+            }
             t.status = Default::default();
         }
         if announce {
@@ -565,8 +585,14 @@ impl Battle {
             self.wake(target, events);
             let per = self.rules.combat.morale.per_damage;
             self.add_fear(target, per * amount, events);
+            if amount > 0 {
+                self.rage_on_hit(target, events);
+            }
         } else {
             self.fear_on_death(target, attacker, events);
+            self.control_on_death(target, events);
+            self.insanity_on_death(target, events);
+            self.rage_on_death(target, events);
         }
         self.fire(Trigger { unit: Some(target), pos: Some(pos), amount: amount as i64, ..Trigger::new(HookEvent::Damaged) }, events);
         if died {

@@ -292,6 +292,11 @@ pub enum AbilityEffect {
     /// An adrenaline shot: the user loses half its remaining health (rounded
     /// down, so nothing at 1 HP) and gains this many action points.
     Adrenaline { action_points: u8 },
+    /// **Mind control** a living enemy (not a machine): it fights for the
+    /// user's side for `turns` of the user's turns (acting at once if it's
+    /// their turn), and its insanity rises by `insanity`. Freed early if the
+    /// user dies.
+    MindControl { turns: u32, insanity: i32 },
 }
 
 impl Default for AbilityEffect {
@@ -333,6 +338,7 @@ impl AbilityEffect {
             AbilityEffect::Leap { .. } => "Leap",
             AbilityEffect::Idle => "Idle",
             AbilityEffect::Adrenaline { .. } => "Adrenaline",
+            AbilityEffect::MindControl { .. } => "Mind control",
         }
     }
 }

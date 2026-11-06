@@ -484,6 +484,7 @@ fn default_slot(def: &AbilityDef) -> &'static str {
         AbilityEffect::Leap { .. } => "walk",
         AbilityEffect::Idle => "idle",
         AbilityEffect::Adrenaline { .. } => "heal",
+        AbilityEffect::MindControl { .. } => "cast",
     }
 }
 
@@ -861,6 +862,22 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             p.anim.write(AnimCommand::OneShot { unit: *unit, slot: "hit".into() });
             vec![Anim::Wait { remaining: 0.25 }]
         }
+        GameEvent::UnitControlled { unit, team, turns } => {
+            let side = if *team == Team::Player { "your squad" } else { "the enemy" };
+            if *turns == 0 {
+                p.log.push(format!("  {} comes back to their senses", name(*unit)));
+            } else if *turns == u32::MAX {
+                p.log.push(format!("  {} is lost - fighting for {side} now", name(*unit)));
+            } else {
+                p.log.push(format!("  {}'s mind is taken: fighting for {side}", name(*unit)));
+            }
+            vec![Anim::Wait { remaining: 0.3 }]
+        }
+        GameEvent::InsanityChanged { unit, insanity, level } => {
+            p.log.push(format!("  {} is {} (insanity {insanity})", name(*unit), level.to_lowercase()));
+            vec![]
+        }
+        GameEvent::VinesGrew { .. } | GameEvent::VinesBurned { .. } => vec![],
         GameEvent::GasReleased { tiles, turns } => {
             p.log.push(format!("  Gas fills {} tiles ({turns} rounds)", tiles.len()));
             vec![]

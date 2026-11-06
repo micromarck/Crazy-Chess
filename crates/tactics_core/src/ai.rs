@@ -237,6 +237,11 @@ fn choose_action_inner(battle: &Battle, id: UnitId, config: &AiConfig) -> Action
         return patrol_step(battle, unit).map_or(Action::Wait { unit: id }, |to| Action::Move { unit: id, to });
     }
 
+    // Mind controllers take the most dangerous mind they can see.
+    if let Some(a) = mind_control_action(battle, unit) {
+        return a;
+    }
+
     // Hordes (zombies) don't do tactics: close in and strike.
     if unit.ai.horde {
         return horde_action(battle, unit);
@@ -610,11 +615,38 @@ fn eval_tile(battle: &Battle, unit: &Unit, pos: GridPos, config: &AiConfig) -> T
         danger += rules.fire_damage as f32 * 2.0;
         score -= 60.0;
     }
+    // Symbiote vines: they lash and unnerve anyone not of their kind.
+    if battle.has_vines(pos) && !unit.vine_kin && unit.machine == crate::unit::Machine::None {
+        score -= 25.0;
+    }
     // Gas: no aim, and the next move goes anywhere (machines don't care).
     if battle.gassed(pos) && unit.machine == crate::unit::Machine::None {
         score -= 50.0;
     }
     TileEval { score, danger, exposed, nearest }
+}
+
+/// A mind-control ability on the most dangerous enemy it can take (most
+/// health and firepower), if any.
+fn mind_control_action(battle: &Battle, unit: &Unit) -> Option<Action> {
+    let defs: Vec<_> = abilities(battle, unit).filter(|d| matches!(d.effect, AbilityEffect::MindControl { .. })).collect();
+    if defs.is_empty() {
+        return None;
+    }
+    let mut best: Option<(Action, i32)> = None;
+    for def in defs {
+        for e in battle.living(unit.team.opponent()).filter(|e| battle.team_sees_unit(unit.team, e)) {
+            let action = Action::UseAbility { unit: unit.id, ability: def.id.clone(), target: Target::Unit(e.id) };
+            if battle.validate(&action).is_err() {
+                continue;
+            }
+            let threat = e.hp + e.weapon.damage_max * e.weapon.burst.max(1) as i32;
+            if best.as_ref().is_none_or(|(_, t)| threat > *t) {
+                best = Some((action, threat));
+            }
+        }
+    }
+    best.map(|(a, _)| a)
 }
 
 /// Picks a destination worth moving to, or `None` to stay put.
