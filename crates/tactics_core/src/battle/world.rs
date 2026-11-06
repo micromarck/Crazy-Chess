@@ -208,6 +208,22 @@ impl Battle {
     }
 
     /// Nearest walkable, unoccupied tile to `pos` (spiral search, radius 4).
+    /// The free spot nearest `pos` where a `side` x `side` unit fits (its
+    /// corner tile; one-tile units: [`Battle::free_tile_near`]).
+    pub fn free_spot_near(&self, pos: GridPos, side: i32) -> Option<GridPos> {
+        if side <= 1 {
+            return self.free_tile_near(pos);
+        }
+        (0..=6).find_map(|r| {
+            let mut ring: Vec<GridPos> = (-r..=r)
+                .flat_map(|dy| (-r..=r).map(move |dx| GridPos::new(pos.x + dx, pos.y + dy)))
+                .filter(|p| p.chebyshev(pos) == r && self.footprint_free(*p, side, None))
+                .collect();
+            ring.sort_by_key(|p| (p.distance(pos) * 100.0) as i32);
+            ring.first().copied()
+        })
+    }
+
     pub fn free_tile_near(&self, pos: GridPos) -> Option<GridPos> {
         (0..=4).find_map(|r| {
             let mut ring: Vec<GridPos> = (-r..=r)
@@ -373,7 +389,7 @@ impl Battle {
     pub fn apply_script_command(&mut self, command: ScriptCommand, events: &mut Vec<GameEvent>) {
         match command {
             ScriptCommand::Message(text) => events.push(GameEvent::Message { text }),
-            ScriptCommand::Spawn { team, class, name, pos } => match self.free_tile_near(pos) {
+            ScriptCommand::Spawn { team, class, name, pos } => match self.free_spot_near(pos, self.rules.class(&class).map_or(1, |c| c.size.max(1) as i32)) {
                 Some(p) => match self.spawn(&class, name, team, p) {
                     Ok(unit) => {
                         events.push(GameEvent::UnitSpawned { unit });
@@ -720,7 +736,7 @@ impl Battle {
         self.check_awareness(events);
         let newly: Vec<UnitId> = self
             .living(Team::Enemy)
-            .filter(|e| !self.spotted.contains(&e.id) && self.team_can_see(Team::Player, e.pos))
+            .filter(|e| !self.spotted.contains(&e.id) && self.team_sees_unit(Team::Player, e))
             .map(|e| e.id)
             .collect();
         for id in newly {

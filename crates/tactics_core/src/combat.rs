@@ -211,6 +211,35 @@ pub fn preview_attack(
         breakdown.push(("Flanked (crit)".into(), profile.flank_crit_bonus));
     }
 
+    // Choking on gas: no aim at all. Rolled attacks can't hit; bullets fly wild.
+    let (hit_chance, sigma) = if attacker.status.gassed && profile.can_miss {
+        breakdown.push(("Gassed: can't aim".into(), -hit_chance));
+        (0, sigma.max(1.2))
+    } else {
+        (hit_chance, sigma)
+    };
+    let mut damage = (damage.0 + profile.damage_bonus, damage.1 + profile.damage_bonus);
+    let mut crit_damage = crit_damage;
+    // Shock weapons: small and mid-sized machines short out, big ones take a jolt.
+    if let Some(heavy) = profile.shock {
+        match target.machine {
+            crate::unit::Machine::None => {}
+            crate::unit::Machine::Heavy => {
+                damage = (heavy, heavy);
+                crit_damage = 0;
+                crit_chance = 0;
+                breakdown.push(("Shock: heavy machine".into(), 0));
+            }
+            _ => {
+                let all = target.hp.max(1);
+                damage = (all, all);
+                crit_damage = 0;
+                crit_chance = 0;
+                breakdown.push(("Shock: shorts it out".into(), 0));
+            }
+        }
+    }
+
     ShotPreview {
         hit_chance,
         rounds,
@@ -220,7 +249,7 @@ pub fn preview_attack(
         crit_chance: crit_chance.clamp(0, 100),
         cover,
         distance,
-        damage: (damage.0 + profile.damage_bonus, damage.1 + profile.damage_bonus),
+        damage,
         crit_damage,
         breakdown,
     }
@@ -254,6 +283,8 @@ mod tests {
             fear: 0,
             heat: None,
             no_half_cover: false,
+            machine: Default::default(),
+            size: 1,
             fearless: false,
             body: Default::default(),
             gear: Default::default(),

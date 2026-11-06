@@ -32,6 +32,7 @@ pub const BUNDLED_DATA_MODULES: &[(&str, &str)] = &[
     ("facility_ai.ron", include_str!("../assets/modules/facility_ai.ron")),
     ("arsenal.ron", include_str!("../assets/modules/arsenal.ron")),
     ("robot_frames.ron", include_str!("../assets/modules/robot_frames.ron")),
+    ("dinosaurs.ron", include_str!("../assets/modules/dinosaurs.ron")),
 ];
 
 /// Folder (relative to the working directory) scanned for user modules on desktop.

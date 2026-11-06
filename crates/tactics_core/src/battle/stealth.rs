@@ -164,7 +164,7 @@ impl Battle {
     /// Should the player be shown this unit? (Always, without fog.)
     pub fn is_revealed(&self, id: UnitId) -> bool {
         let Some(u) = self.unit(id) else { return false };
-        !self.fog || u.team == Team::Player || !u.is_alive() || self.team_can_see(Team::Player, u.pos)
+        !self.fog || u.team == Team::Player || !u.is_alive() || self.team_sees_unit(Team::Player, u)
     }
 
     /// The door panel on `pos`, if any.

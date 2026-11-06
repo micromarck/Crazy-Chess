@@ -109,6 +109,12 @@ pub enum GameEvent {
     BattleEnded { winner: Team },
     /// A unit appeared mid-battle (script `spawn_unit`).
     UnitSpawned { unit: UnitId },
+    /// Gas filled `tiles` for `turns` rounds (a gas grenade).
+    GasReleased { tiles: Vec<GridPos>, turns: u32 },
+    /// The gas on `tiles` cleared.
+    GasCleared { tiles: Vec<GridPos> },
+    /// A unit was stunned (a taser): it loses its next `turns` turns.
+    UnitStunned { unit: UnitId, turns: u32 },
     /// A unit took damage outside an attack roll (explosions, scripts).
     UnitDamaged { unit: UnitId, amount: i32 },
     /// A destructible prop was hit; `hp` is what's left.

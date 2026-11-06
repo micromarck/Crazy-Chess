@@ -213,7 +213,10 @@ pub fn detail(rules: &Ruleset, selected: usize) -> Vec<(String, String)> {
     let class = rules.class(&m.class);
     // Stats with items applied.
     let mut stats = class.map(|c| c.stats).unwrap_or_default();
+    let mut sight_percent = 0;
     for item in gear.armor.iter().chain(gear.items.iter()).filter_map(|id| rules.item(id)) {
+        sight_percent += item.stats.sight_percent;
+        stats.sight += item.stats.sight;
         stats.max_hp += item.stats.max_hp;
         stats.mobility = (stats.mobility as i32 + item.stats.mobility).max(2) as u32;
         stats.aim += item.stats.aim;
@@ -222,7 +225,9 @@ pub fn detail(rules: &Ruleset, selected: usize) -> Vec<(String, String)> {
     }
     let machine = class.is_some_and(|c| c.heat.is_some());
     let vital = if machine { format!("Heat limit {}", stats.max_hp) } else { format!("HP {}", stats.max_hp) };
-    let stats_line = format!("{vital}   Move {}   Aim {}   Defence {}", stats.mobility / 2, stats.aim, stats.defense);
+    let sight = stats.sight * (1.0 + sight_percent as f32 / 100.0);
+    let stats_line =
+        format!("{vital}   Move {}   Aim {}   Defence {}   Sight {:.0}", stats.mobility / 2, stats.aim, stats.defense, sight);
     let class_info = match class {
         Some(c) if machine => format!("Robot frame - runs on heat (cools {} a turn)", c.heat.map_or(0, |h| h.cooling)),
         Some(_) => "Soldier".to_string(),

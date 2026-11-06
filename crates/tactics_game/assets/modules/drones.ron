@@ -64,6 +64,7 @@
     classes: [
         (
             id: "drone",
+            machine: Light,
             name: "Drone",
             stats: (max_hp: 5, mobility: 14, aim: 60, defense: 10, sight: 15.0, climb: 9),  // climb 9: flies over walls
             weapon: "drone_laser",
@@ -82,6 +83,7 @@
     camera_scripts: [
         (
             id: "laser_cam",
+            machine: Light,
             steps: [
                 Together([
                     Focus(on: Actor, duration: 0.3),

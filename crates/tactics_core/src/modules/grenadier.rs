@@ -85,7 +85,7 @@ impl GameModule for GrenadierModule {
             name: "Grenadier".into(),
             stats: UnitStats { max_hp: 9, mobility: 11, aim: 65, ..Default::default() },
             weapon: "lmg".into(),
-            abilities: ["shoot", "suppress", "frag_grenade", "overwatch", "hunker", "reload"]
+            abilities: ["shoot", "blind_fire", "suppress", "frag_grenade", "overwatch", "hunker", "reload"]
                 .map(AbilityId::new)
                 .to_vec(),
             model: "soldier".into(),

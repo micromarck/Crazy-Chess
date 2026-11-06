@@ -76,7 +76,8 @@ impl Battle {
         let aimed = self.units[target.0 as usize].clone();
         // Corner peeking: the shooter may lean out (and the target may be
         // leaning out) past a wall corner.
-        let (from, at) = self.shot_line(shooter.pos, aimed.pos);
+        // Big targets are shot at their nearest tile, aimed at the middle.
+        let (from, at) = self.shot_line(shooter.nearest_tile(aimed.pos), aimed.nearest_tile(shooter.pos));
         let preview = preview_attack(&self.rules.combat, &self.map, from, &shooter, &aimed, profile);
         let per_round = match profile.damage {
             crate::content::DamageSource::Weapon => shooter.weapon.pellets.max(1),
@@ -86,7 +87,8 @@ impl Battle {
         let rounds = rounds_cap.map_or(rounds, |cap| rounds.min(cap)).max(1);
 
         let origin = [from.x as f32, from.y as f32, self.map.elevation(from) as f32 * LEVEL_M + shooter.body.muzzle()];
-        let aim = [at.x as f32, at.y as f32, self.map.elevation(at) as f32 * LEVEL_M + aimed.body.aim_point()];
+        let (ax, ay) = if aimed.side() > 1 { aimed.center() } else { (at.x as f32, at.y as f32) };
+        let aim = [ax, ay, self.map.elevation(at) as f32 * LEVEL_M + aimed.body.aim_point()];
         let max_range = shooter.weapon.max_range.max(preview.distance) * 1.4 + 2.0;
         let block = preview.cover_block as f32 / 100.0;
 
@@ -188,24 +190,26 @@ impl Battle {
         let dir = [yaw.cos() * pitch.cos(), yaw.sin() * pitch.cos(), pitch.sin()];
 
         // Candidate units near the line (cheap pre-filter).
-        // (id, x, y, hitbox bottom, hitbox top)
-        let candidates: Vec<(UnitId, f32, f32, f32, f32)> = self
+        // (id, x, y, hitbox bottom, hitbox top, hitbox radius)
+        let candidates: Vec<(UnitId, f32, f32, f32, f32, f32)> = self
             .units
             .iter()
             .filter(|u| u.id != shooter && hp[u.id.0 as usize] > 0)
             .map(|u| {
-                // A target leaning out of cover is hit where it leans.
-                let pos = if u.id == target { target_pos } else { u.pos };
+                // A target leaning out of cover is hit where it leans; big
+                // units are hit anywhere on their footprint.
+                let pos = if u.id == target && u.side() == 1 { target_pos } else { u.pos };
+                let (x, y) = if u.side() > 1 { u.center() } else { (pos.x as f32, pos.y as f32) };
                 let ground = self.map.elevation(pos) as f32 * LEVEL_M;
                 let (lo, hi) = u.body.span();
-                (u.id, pos.x as f32, pos.y as f32, ground + lo, ground + hi)
+                (u.id, x, y, ground + lo, ground + hi, TARGET_RADIUS + (u.side() - 1) as f32 * 0.5)
             })
-            .filter(|(_, x, y, _, _)| {
+            .filter(|(_, x, y, _, _, r)| {
                 // Distance from the infinite line in the horizontal plane.
                 let (rx, ry) = (x - origin[0], y - origin[1]);
                 let along = rx * dir[0] + ry * dir[1];
                 let hlen = (dir[0] * dir[0] + dir[1] * dir[1]).sqrt().max(1e-4);
-                along > 0.0 && ((rx * dir[1] - ry * dir[0]) / hlen).abs() < 1.2
+                along > -r && ((rx * dir[1] - ry * dir[0]) / hlen).abs() < 1.2 + r
             })
             .collect();
         let mut passed = Vec::new();
@@ -217,12 +221,12 @@ impl Battle {
                 return (Stop::Away, p, passed);
             }
             // Units.
-            for &(id, ux, uy, bottom, top) in &candidates {
+            for &(id, ux, uy, bottom, top, radius) in &candidates {
                 let d = ((p[0] - ux).powi(2) + (p[1] - uy).powi(2)).sqrt();
                 if d < 1.0 && !passed.contains(&id) && id != target {
                     passed.push(id);
                 }
-                if d <= TARGET_RADIUS && p[2] >= bottom && p[2] <= top {
+                if d <= radius && p[2] >= bottom && p[2] <= top {
                     if id == target && block > 0.0 && self.rng.roll_percent((block * 100.0).round() as i32) {
                         // Stopped by the target's cover, just in front of it.
                         let back = [p[0] - dir[0] * 0.35, p[1] - dir[1] * 0.35, p[2] - dir[2] * 0.35];
@@ -260,14 +264,15 @@ impl Battle {
         let ground = self.map.elevation(center) as f32 * LEVEL_M;
         let origin = [center.x as f32, center.y as f32, ground + 0.4];
         let range = radius + 5.0;
-        let candidates: Vec<(UnitId, f32, f32, f32, f32)> = self
+        let candidates: Vec<(UnitId, f32, f32, f32, f32, f32)> = self
             .units
             .iter()
             .filter(|u| u.is_alive() && u.pos.distance(center) > radius && u.pos.distance(center) <= range + 1.0)
             .map(|u| {
                 let g = self.map.elevation(u.pos) as f32 * LEVEL_M;
                 let (lo, hi) = u.body.span();
-                (u.id, u.pos.x as f32, u.pos.y as f32, g + lo, g + hi)
+                let (x, y) = u.center();
+                (u.id, x, y, g + lo, g + hi, TARGET_RADIUS + (u.side() - 1) as f32 * 0.5)
             })
             .collect();
         let mut hp: Vec<i32> = self.units.iter().map(|u| u.hp).collect();
@@ -287,9 +292,9 @@ impl Battle {
                 if !self.map.in_bounds(tile) {
                     break;
                 }
-                for &(id, ux, uy, bottom, top) in &candidates {
+                for &(id, ux, uy, bottom, top, r) in &candidates {
                     if hp[id.0 as usize] > 0
-                        && ((p[0] - ux).powi(2) + (p[1] - uy).powi(2)).sqrt() <= TARGET_RADIUS
+                        && ((p[0] - ux).powi(2) + (p[1] - uy).powi(2)).sqrt() <= r
                         && p[2] >= bottom
                         && p[2] <= top
                     {

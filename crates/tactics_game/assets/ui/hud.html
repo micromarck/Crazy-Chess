@@ -211,13 +211,13 @@
 
 <!-- Tool buttons -->
 <div id="tools">
-  <button class="small-button" data-command="editor">Edit<span class="key">F1</span></button>
+  <button class="small-button" data-command="editor" data-if="!ui.touch">Edit<span class="key">F1</span></button>
   <button class="small-button" data-command="toggle:missions">Missions<span class="key">list</span></button>
   <button class="small-button" data-command="toggle:barracks">Barracks<span class="key">soldiers</span></button>
   <button class="small-button" data-command="toggle:loadout">Loadout<span class="key">squad</span></button>
   <button class="small-button" data-command="toggle:help">Help<span class="key">H</span></button>
   <button class="small-button" data-command="toggle:settings">Settings<span class="key">game</span></button>
-  <button class="small-button" data-command="cinematics">Cinema<span class="key" data-if="cinematics">on</span><span class="key" data-if="!cinematics">off</span></button>
+  <button class="small-button" data-command="cinematics" data-if="!ui.touch">Cinema<span class="key" data-if="cinematics">on</span><span class="key" data-if="!cinematics">off</span></button>
   <button class="small-button" data-command="fullscreen" data-if="ui.can_fullscreen">Full<span class="key">screen</span></button>
 </div>
 
@@ -451,9 +451,9 @@
     <span class="dim">{{ unit.class }}</span>
     <span>{{ unit.vital }}    AP {{ unit.ap }}/{{ unit.max_ap }}</span>
     <span>{{ unit.weapon }}  ammo {{ unit.ammo }}/{{ unit.clip }}  mags {{ unit.mags }}</span>
-    <span class="dim">Aim {{ unit.aim }}  Mobility {{ unit.mobility }}  Def {{ unit.defense }}</span>
-    <span class="dim">{{ unit.gear }}</span>
-    <span class="morale {{ unit.morale_state }}">Morale: {{ unit.morale }}</span>
+    <span class="dim" data-if="!ui.touch">Aim {{ unit.aim }}  Mobility {{ unit.mobility }}  Def {{ unit.defense }}</span>
+    <span class="dim" data-if="!ui.touch">{{ unit.gear }}</span>
+    <span class="morale {{ unit.morale_state }}" data-if="!ui.touch">Morale: {{ unit.morale }}</span>
     <span style="color: #f2d24a">{{ unit.status }}</span>
   </div>
   <span data-if="!unit.selected">No unit selected - tap a soldier</span>

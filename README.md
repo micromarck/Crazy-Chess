@@ -62,7 +62,12 @@ New to the controls? Play *Basic Training* from the Missions list. Bundled large
 faction modules: *Merc Ambush* (storm a merc compound, break their nerve by
 killing the officer), *Scrapyard* (corrupted robots that fall apart: kill
 them or outlast them) and *Salvage Run* (steal a robot core from a merc
-crew and their cargo). See
+crew and their cargo); with the Dinosaurs module, *Lost Valley* (recover a
+lost expedition's drive from a jungle of raptors, a 2x2 Hornback and a 3x3
+Tyrant), *Raptor Run* (run a canyon to the evac before the chopper leaves
+while packs pour out of the side ravines), *Tyrant Hunt* (kill a Tyrant, and
+its mate, round a research station whose doorways are too narrow for them)
+and *Nest Raid* (steal three raptor eggs at night). See
 **[MISSIONS.md](MISSIONS.md)**.
 
 The HUD is an **HTML/CSS layout** (`assets/ui/hud.html`) rendered natively on
@@ -164,7 +169,14 @@ TBSium/
   at the first thing in the way), a flamethrower (as a main weapon or a
   backpack: a cone of fire) and
   incendiary grenades, a particle grenade (short throw, goes off two turns
-  later: 5 damage in a 5x5 square plus shrapnel), and the Heavy Gunner class.
+  later: 5 damage in a 5x5 square plus shrapnel), melee weapons (combat
+  knife, machete, sledgehammer), a **taser** (shorts out light and medium
+  robots on the spot, 9 damage to heavy ones, stuns people), an **adrenaline
+  shot** (+2 AP now for half your remaining health; free at 1 HP), **scanner
+  armor** (sees 50% further), a **gas grenade** (a cloud where nobody living
+  can aim and every move staggers somewhere random; robots are immune), and the Heavy
+  Gunner class. Big robots (Bastion frames, wardens, loaders) can **slam** the
+  ground, hitting everyone next to them.
 * Fire: flamethrowers, incendiaries and exploding fuel barrels leave tiles
   burning for a few rounds; standing or walking in fire burns (machines heat
   up), props in it cook off, and the AI keeps out of it.
@@ -179,6 +191,12 @@ TBSium/
   carry **boost thrusters** (a long straight-line rush that walls stop),
   soldiers a **jump pack** (a shorter leap that clears walls). **Idle** ends a
   frame's turn without making any heat.
+* Dinosaurs (data module) and **multi-tile units**: a class `size` makes a
+  unit take up size x size tiles (it only fits where its whole footprint is
+  walkable and level, can't squeeze through narrow gaps, and is shot, blasted,
+  seen and bitten from any of its tiles). Raptors (1 tile, fast packs that
+  screech to wake each other), the Hornback (2x2, armoured, charges when hurt)
+  and the Tyrant (3x3, 48 HP, its roar frightens soldiers).
 * 2 action points per unit; move (1 AP) or dash (2 AP), blue/yellow range overlay.
 * Directional half/full cover, flanking (+crit), cover shields on hover.
 * Hit chance = aim − defence − cover − hunker ± range falloff, shown with a full breakdown.
@@ -191,6 +209,9 @@ TBSium/
   (half cover); grenades throw traced shrapnel past the blast.
 * Magazines: bursts use 4–6 rounds of a larger clip, reloads use up spare
   magazines (an ammo pouch adds one).
+* **Blind fire**: shoot at a tile you can't see (into the dark past your
+  sight, out to the gun's full range) at -30 aim; whoever is there takes the
+  burst, and the preview gives nothing away.
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).
@@ -285,9 +306,9 @@ wasm and asset loading from `file://`. In the browser, the roster and
 settings are saved in localStorage. User module and HUD files (`modules/`,
 `ui/`) are desktop-only.
 
-On phones and tablets the web version starts in touch mode. It renders at
-up to 1.5x pixel density, keeps every gesture for the game (no browser
-pinch-zoom or pull-to-refresh), and asks for landscape. The **Full screen**
+On phones and tablets the web version starts in touch mode, scales the HUD
+to the screen, keeps every gesture for the game (no browser pinch-zoom or
+pull-to-refresh), and asks for landscape. The **Full screen**
 button in the toolbar hides the browser bars and locks landscape where the
 browser allows it. It is also installable: "Add to Home Screen" (manifest
 and icons in `crates/tactics_game/web/`) opens it fullscreen in landscape,

@@ -89,6 +89,10 @@ impl Battle {
     /// Where an area attack from `from` aimed at `point` goes off: `point`,
     /// or for a rocket (`direct`) the first wall or unit on the way.
     pub fn blast_point(&self, from: GridPos, profile: &AttackProfile, point: GridPos) -> GridPos {
+        // A slam goes off round the user, whoever it's aimed at.
+        if profile.slam {
+            return from;
+        }
         if !profile.direct || from == point {
             return point;
         }
@@ -210,7 +214,7 @@ impl Battle {
             }
         }
         let damage = self.rules.combat.fire_damage;
-        let burning: Vec<UnitId> = self.living(team).filter(|u| self.fires.contains_key(&u.pos)).map(|u| u.id).collect();
+        let burning: Vec<UnitId> = self.living(team).filter(|u| u.tiles().any(|p| self.fires.contains_key(&p))).map(|u| u.id).collect();
         for id in burning {
             if self.is_over() {
                 return;

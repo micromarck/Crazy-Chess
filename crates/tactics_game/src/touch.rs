@@ -144,10 +144,14 @@ fn fold_log_on_touchscreens(mode: Res<TouchMode>, mut flags: ResMut<crate::html_
     }
 }
 
-/// The scale `auto` picks: phones (touch, under ~560 logical pixels tall)
-/// shrink the HUD so its panels fit; everything else stays at 1.
+/// HUD height the layout needs (logical pixels at scale 1).
+const HUD_HEIGHT: f32 = 600.0;
+
+/// The scale `auto` picks: on touchscreens shorter than the HUD needs, the
+/// HUD shrinks to fit the screen (whatever density the browser reports);
+/// everything else stays at 1.
 pub fn auto_ui_scale(touch: bool, window_height: f32) -> f32 {
-    if touch && window_height < 560.0 { (window_height / 560.0).clamp(0.72, 1.0) } else { 1.0 }
+    if touch && window_height < HUD_HEIGHT { (window_height / HUD_HEIGHT).clamp(0.2, 1.0) } else { 1.0 }
 }
 
 fn apply_ui_scale(settings: Res<crate::settings::GameSettings>, mode: Res<TouchMode>, window: Single<&Window>, mut scale: ResMut<UiScale>) {
@@ -270,6 +274,8 @@ mod tests {
         assert_eq!(auto_ui_scale(false, 400.0), 1.0, "desktop windows keep 1.0");
         assert_eq!(auto_ui_scale(true, 900.0), 1.0, "tablets keep 1.0");
         let phone = auto_ui_scale(true, 392.0);
-        assert!((0.72..1.0).contains(&phone), "{phone}");
+        assert!((0.6..1.0).contains(&phone), "{phone}");
+        // A tiny logical screen (a browser reporting odd pixel density): still fits.
+        assert!((auto_ui_scale(true, 140.0) * HUD_HEIGHT - 140.0).abs() < 1.0);
     }
 }

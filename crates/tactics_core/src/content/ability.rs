@@ -183,6 +183,27 @@ pub struct AttackProfile {
     /// Blasts: goes off this many of the thrower's turns later (at the start
     /// of its turn), not at once. 0 = immediately.
     pub fuse: u32,
+    /// A **shock** (taser): `Light` and `Medium` machines hit by it are
+    /// shorted out (destroyed) outright; `Heavy` machines take this much
+    /// damage instead of the normal damage. Anyone else takes the normal
+    /// damage. `None` = not a shock attack.
+    pub shock: Option<i32>,
+    /// Stuns flesh-and-blood targets it hits for this many of their turns
+    /// (they lose them). Machines shrug it off. 0 = no stun.
+    pub stun: u32,
+    /// A **slam**: aimed at an adjacent enemy, but hits everyone within
+    /// `area_radius` of the user (friend or foe, the user excepted) and
+    /// damages props and walls around it.
+    pub slam: bool,
+    /// Area attacks: fills the area with **gas** for this many rounds. Living
+    /// units in gas can't aim (their attacks that can miss have no chance to
+    /// hit; bullets fly wild) and stagger to a random tile when they move.
+    /// Machines don't breathe. 0 = no gas.
+    pub gas: u32,
+    /// **Blind fire**: aimed at a tile, not a unit you can see. The shots go
+    /// at whoever is there (if anyone); previews show nothing for units the
+    /// user's team can't see, so it gives nothing away (or the AI any cheats).
+    pub blind: bool,
 }
 
 impl AttackProfile {
@@ -221,6 +242,11 @@ impl Default for AttackProfile {
             direct: false,
             square: false,
             fuse: 0,
+            shock: None,
+            stun: 0,
+            slam: false,
+            gas: 0,
+            blind: false,
         }
     }
 }
@@ -263,6 +289,9 @@ pub enum AbilityEffect {
     Leap { reach: f32, over_walls: bool },
     /// Do nothing and end the turn (robots idling to cool off: no heat).
     Idle,
+    /// An adrenaline shot: the user loses half its remaining health (rounded
+    /// down, so nothing at 1 HP) and gains this many action points.
+    Adrenaline { action_points: u8 },
 }
 
 impl Default for AbilityEffect {
@@ -303,6 +332,7 @@ impl AbilityEffect {
             AbilityEffect::Overclock => "Overclock",
             AbilityEffect::Leap { .. } => "Leap",
             AbilityEffect::Idle => "Idle",
+            AbilityEffect::Adrenaline { .. } => "Adrenaline",
         }
     }
 }

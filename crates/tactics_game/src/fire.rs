@@ -19,7 +19,7 @@ impl Plugin for FirePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FireVisuals>()
             .add_systems(Startup, setup)
-            .add_systems(Update, (sync_fires, flicker, flame_bursts, burst_flames).chain().in_set(FrameSet::Present));
+            .add_systems(Update, (sync_fires, flicker, flame_bursts, burst_flames, sync_gas, drift_gas).chain().in_set(FrameSet::Present));
     }
 }
 
@@ -41,12 +41,22 @@ struct FireAssets {
     outer: Handle<StandardMaterial>,
     inner: Handle<StandardMaterial>,
     scorch_mat: Handle<StandardMaterial>,
+    puff: Handle<Mesh>,
+    gas_mat: Handle<StandardMaterial>,
 }
 
 #[derive(Resource, Default)]
 struct FireVisuals {
     fires: HashMap<GridPos, Entity>,
     scorches: HashMap<GridPos, Entity>,
+    gas: HashMap<GridPos, Entity>,
+}
+
+/// One drifting puff of a gas cloud.
+#[derive(Component)]
+struct GasPuff {
+    phase: f32,
+    base: Vec3,
 }
 
 /// One flame tongue (flickers around `base` scale).
@@ -89,6 +99,14 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             perceptual_roughness: 1.0,
             ..default()
         }),
+        puff: meshes.add(Sphere::new(0.42)),
+        gas_mat: materials.add(StandardMaterial {
+            base_color: Color::srgba(0.62, 0.78, 0.22, 0.28),
+            emissive: LinearRgba::rgb(0.06, 0.09, 0.0),
+            unlit: true,
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        }),
     });
 }
 
@@ -107,7 +125,7 @@ fn sync_fires(
 ) {
     if resets.read().count() > 0 {
         let visuals = &mut *visuals;
-        for (_, e) in visuals.fires.drain().chain(visuals.scorches.drain()) {
+        for (_, e) in visuals.fires.drain().chain(visuals.scorches.drain()).chain(visuals.gas.drain()) {
             commands.entity(e).despawn();
         }
     }
@@ -209,5 +227,42 @@ fn burst_flames(mut commands: Commands, time: Res<Time>, mut q: Query<(Entity, &
         // Flare up, then die down.
         let s = if k < 0.0 { 0.0 } else { (k * std::f32::consts::PI).sin() };
         tr.scale = f.base * s;
+    }
+}
+
+/// Gas clouds (`Battle::gas`): a few slow, see-through yellow-green puffs on
+/// every gassed tile.
+fn sync_gas(mut commands: Commands, state: Res<BattleState>, assets: Res<FireAssets>, mut visuals: ResMut<FireVisuals>) {
+    let b = &state.battle;
+    let gas = b.gas();
+    let gone: Vec<GridPos> = visuals.gas.keys().copied().filter(|p| !gas.contains_key(p)).collect();
+    for p in gone {
+        if let Some(e) = visuals.gas.remove(&p) {
+            commands.entity(e).despawn();
+        }
+    }
+    let new: Vec<GridPos> = gas.keys().copied().filter(|p| !visuals.gas.contains_key(p)).collect();
+    for p in new {
+        let root = commands.spawn((Transform::from_translation(tile_top(b.map(), p)), Visibility::default())).id();
+        for k in 0..3u32 {
+            let base = Vec3::new(jitter(p, k + 40) - 0.5, 0.35 + jitter(p, k + 50) * 0.5, jitter(p, k + 60) - 0.5) * Vec3::new(0.6, 1.0, 0.6);
+            commands.spawn((
+                Mesh3d(assets.puff.clone()),
+                MeshMaterial3d(assets.gas_mat.clone()),
+                Transform::from_translation(base).with_scale(Vec3::splat(0.8 + jitter(p, k + 70) * 0.5)),
+                GasPuff { phase: jitter(p, k + 80) * std::f32::consts::TAU, base },
+                NotShadowCaster,
+                ChildOf(root),
+            ));
+        }
+        visuals.gas.insert(p, root);
+    }
+}
+
+fn drift_gas(time: Res<Time>, mut puffs: Query<(&GasPuff, &mut Transform)>) {
+    let t = time.elapsed_secs();
+    for (g, mut tr) in &mut puffs {
+        let w = t * 0.6 + g.phase;
+        tr.translation = g.base + Vec3::new(0.12 * w.sin(), 0.06 * (w * 1.7).sin(), 0.12 * (w * 0.8).cos());
     }
 }

@@ -483,6 +483,7 @@ fn default_slot(def: &AbilityDef) -> &'static str {
         AbilityEffect::Overclock => "reload",
         AbilityEffect::Leap { .. } => "walk",
         AbilityEffect::Idle => "idle",
+        AbilityEffect::Adrenaline { .. } => "heal",
     }
 }
 
@@ -499,7 +500,8 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
         GameEvent::UnitLeaped { unit, from, to, over_walls } => {
             let Some(entity) = entity_of(*unit) else { return vec![] };
             p.log.push(format!("  {} {}", name(*unit), if *over_walls { "jumps" } else { "boosts" }));
-            let (from, to) = (tile_top(battle.map(), *from), tile_top(battle.map(), *to));
+            let off = crate::coords::footprint_offset(battle.unit(*unit).map_or(1, |u| u.side()));
+            let (from, to) = (tile_top(battle.map(), *from) + off, tile_top(battle.map(), *to) + off);
             p.commands.entity(entity).insert(crate::units::FaceTarget(Some(to)));
             look_at(&p.director, &mut p.rig, to);
             vec![Anim::Leap { entity, from, to, arc: *over_walls, t: 0.0 }]
@@ -507,11 +509,13 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
         GameEvent::UnitMoved { unit, from, path } => {
             let Some(entity) = entity_of(*unit) else { return vec![] };
             p.anim.write(AnimCommand::Walking { unit: *unit, on: true });
+            // Big units walk with the middle of their footprint.
+            let off = crate::coords::footprint_offset(battle.unit(*unit).map_or(1, |u| u.side()));
             vec![Anim::Walk {
                 unit: *unit,
                 entity,
-                from: tile_top(battle.map(), *from),
-                points: path.iter().map(|g| tile_top(battle.map(), *g)).collect(),
+                from: tile_top(battle.map(), *from) + off,
+                points: path.iter().map(|g| tile_top(battle.map(), *g) + off).collect(),
                 index: 0,
                 t: 0.0,
             }]
@@ -856,6 +860,18 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             p.log.push(format!("  {} takes {amount} damage", name(*unit)));
             p.anim.write(AnimCommand::OneShot { unit: *unit, slot: "hit".into() });
             vec![Anim::Wait { remaining: 0.25 }]
+        }
+        GameEvent::GasReleased { tiles, turns } => {
+            p.log.push(format!("  Gas fills {} tiles ({turns} rounds)", tiles.len()));
+            vec![]
+        }
+        GameEvent::GasCleared { .. } => vec![],
+        GameEvent::UnitStunned { unit, turns } => {
+            if let Some(pos) = pos_of(*unit) {
+                FloatingText::spawn(&mut p.commands, pos + Vec3::Y * (CHEST + 0.9), "STUNNED".to_string(), theme::UI_DIM);
+            }
+            p.log.push(format!("  {} is stunned ({turns} turn{})", name(*unit), if *turns == 1 { "" } else { "s" }));
+            vec![]
         }
         GameEvent::PropDamaged { prop, hp } => {
             if let Some(pr) = battle.prop(*prop) {

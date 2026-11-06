@@ -97,5 +97,5 @@ pub mod prelude {
     pub use crate::pathfinding::ReachableSet;
     pub use crate::scenario;
     pub use crate::modules;
-    pub use crate::unit::{Team, Unit, UnitClass, UnitId, UnitStats, Weapon};
+    pub use crate::unit::{Machine, Team, Unit, UnitClass, UnitId, UnitStats, Weapon};
 }

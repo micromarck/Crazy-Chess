@@ -1,0 +1,343 @@
+// Dinosaurs: big beasts that take several tiles (the class `size`), written
+// as a data module. Each footprint is size x size tiles; the beast blocks
+// all of them, needs room for all of them to move, can be shot and blasted
+// on any of them and bites anything next to any of them.
+//
+//   * Raptor   (1 tile)  - fast pack hunters, slashing claws. Packs screech
+//                          when they spot you.
+//   * Hornback (2x2)     - an armoured three-horned grazer: tough frill
+//                          (defence), a goring charge; hurt, it gets angry
+//                          and faster.
+//   * Tyrant   (3x3)     - the king: huge bite, 48 HP. Its roar when it
+//                          first sees the squad shakes everyone near.
+//
+// All of them hunt like a horde (close in and strike) and feel no fear.
+// Squad "dinos" is a ready-made pack; see the Lost Valley mission.
+//
+// Units: metres, Y up, models face -Z. Rotations in degrees (X, Y, Z);
+// +X pitches a bone forward/down.
+(
+    info: (
+        id: "dinosaurs",
+        name: "Dinosaurs",
+        version: "1.0",
+        author: "Tactics",
+        description: "Raptors, the armoured Hornback (2x2) and the Tyrant (3x3): big beasts that take several tiles.",
+    ),
+
+    weapons: [
+        // Natural weapons (nothing held). The attacks set their own damage.
+        (id: "dino_jaws", name: "Jaws", damage_min: 2, damage_max: 3, optimal_range: 1.0, max_range: 1.5, clip_size: 0, magazines: 0, look: None),
+    ],
+
+    abilities: [
+        (
+            id: "slash",
+            name: "Slash",
+            description: "Sickle claws: 2-3 damage to an adjacent enemy.",
+            cost: EndsTurn,
+            targeting: Enemy,
+            range: Fixed(1.5),
+            effect: Attack(
+                base_accuracy: 80,
+                half_cover_penalty: 10,
+                full_cover_penalty: 20,
+                range_falloff: false,
+                flank_crit_bonus: 20,
+                damage: Fixed(min: 2, max: 3),
+                melee: true,
+            ),
+        ),
+        (
+            id: "gore",
+            name: "Gore",
+            description: "Horns first: 3-5 damage to an adjacent enemy, cover doesn't help.",
+            cost: EndsTurn,
+            targeting: Enemy,
+            range: Fixed(1.5),
+            effect: Attack(
+                base_accuracy: 75,
+                half_cover_penalty: 0,
+                full_cover_penalty: 0,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                damage: Fixed(min: 3, max: 5),
+                melee: true,
+            ),
+        ),
+        (
+            id: "chomp",
+            name: "Chomp",
+            description: "A bite that can take a soldier in one: 5-8 damage to an adjacent enemy.",
+            cost: EndsTurn,
+            targeting: Enemy,
+            range: Fixed(1.5),
+            effect: Attack(
+                base_accuracy: 70,
+                half_cover_penalty: 0,
+                full_cover_penalty: 10,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                crit_bonus: 15,
+                damage: Fixed(min: 5, max: 8),
+                melee: true,
+            ),
+        ),
+    ],
+
+    presentations: [
+        (ability: "slash", animation: "bite", projectile: None, windup: 0.25),
+        (ability: "gore", animation: "bite", projectile: None, windup: 0.3),
+        (ability: "chomp", animation: "bite", projectile: None, windup: 0.4),
+    ],
+
+    classes: [
+        (
+            id: "dino_raptor",
+            name: "Raptor",
+            stats: (max_hp: 5, mobility: 18, aim: 70, defense: 10, sight: 14.0, bravery: 100),
+            weapon: "dino_jaws",
+            abilities: ["slash"],
+            model: "dino_raptor",
+            fearless: true,
+            horde: true,
+            hearing: 12.0,
+            body: (height: 1.1),
+            hooks: [
+                (on: "spotted", once: true, code: r#"
+                    say(unit, "SKREEEE!");
+                    // The pack answers: every raptor nearby wakes.
+                    for id in units("enemy") {
+                        if unit_class(id) == "dino_raptor" && distance(unit, id) <= 10.0 { wake(id); }
+                    }
+                "#),
+            ],
+        ),
+        (
+            id: "dino_hornback",
+            name: "Hornback",
+            size: 2,
+            stats: (max_hp: 24, mobility: 10, aim: 65, defense: 20, sight: 10.0, bravery: 100),
+            weapon: "dino_jaws",
+            abilities: ["gore"],
+            model: "dino_hornback",
+            fearless: true,
+            horde: true,
+            hearing: 8.0,
+            no_half_cover: true,
+            body: (height: 1.7),
+            hooks: [
+                (on: "damaged", once: true, code: r#"
+                    if unit_alive(unit) {
+                        say(unit, "SNORT!");
+                        add_stat(unit, "mobility", 2);
+                        wake(unit);
+                    }
+                "#),
+            ],
+        ),
+        (
+            id: "dino_tyrant",
+            name: "Tyrant",
+            size: 3,
+            stats: (max_hp: 48, mobility: 12, aim: 70, defense: 10, sight: 16.0, bravery: 100),
+            weapon: "dino_jaws",
+            abilities: ["chomp"],
+            model: "dino_tyrant",
+            fearless: true,
+            horde: true,
+            hearing: 18.0,
+            no_half_cover: true,
+            body: (height: 3.2),
+            hooks: [
+                (on: "spotted", once: true, code: r#"
+                    say(unit, "ROOOAAARRR!");
+                    message("The ground shakes. Something enormous is coming.");
+                    for id in units("player") {
+                        if distance(unit, id) <= 14.0 { add_fear(id, 25); }
+                    }
+                "#),
+            ],
+        ),
+    ],
+
+    squads: [
+        (
+            id: "dinos",
+            members: [
+                (class: "dino_raptor", name: "Raptor 1"),
+                (class: "dino_raptor", name: "Raptor 2"),
+                (class: "dino_raptor", name: "Raptor 3"),
+                (class: "dino_hornback", name: "Hornback"),
+                (class: "dino_tyrant", name: "Tyrant"),
+            ],
+        ),
+    ],
+
+    skeletons: [
+        // Two-legged hunter (raptor; the tyrant is the same body, scaled up).
+        (
+            id: "theropod",
+            bones: [
+                (name: "hips", offset: (0.0, 0.78, 0.0),
+                 shape: Box(size: (0.32, 0.3, 0.45)), shape_offset: (0.0, 0.0, 0.05), color: Team),
+                (name: "body", parent: "hips", offset: (0.0, 0.06, -0.2), rotation: (-12.0, 0.0, 0.0),
+                 shape: Box(size: (0.36, 0.36, 0.62)), shape_offset: (0.0, 0.05, -0.2), color: Team),
+                (name: "neck", parent: "body", offset: (0.0, 0.14, -0.48), rotation: (-40.0, 0.0, 0.0),
+                 shape: Capsule(radius: 0.09, length: 0.26), shape_offset: (0.0, 0.14, 0.0), color: Team),
+                (name: "head", parent: "neck", offset: (0.0, 0.3, 0.0), rotation: (52.0, 0.0, 0.0),
+                 shape: Box(size: (0.2, 0.2, 0.44)), shape_offset: (0.0, 0.0, -0.14), color: Dark),
+                (name: "jaw", parent: "head", offset: (0.0, -0.1, -0.04),
+                 shape: Box(size: (0.16, 0.06, 0.38)), shape_offset: (0.0, 0.0, -0.13), color: Dark),
+                (name: "teeth", parent: "head", offset: (0.0, -0.1, -0.2),
+                 shape: Box(size: (0.15, 0.03, 0.2)), color: Light),
+                (name: "eye_l", parent: "head", offset: (-0.1, 0.05, -0.08),
+                 shape: Sphere(radius: 0.03), color: Accent),
+                (name: "eye_r", parent: "head", offset: (0.1, 0.05, -0.08),
+                 shape: Sphere(radius: 0.03), color: Accent),
+                (name: "arm_l", parent: "body", offset: (-0.17, -0.08, -0.42), rotation: (45.0, 0.0, 0.0),
+                 shape: Capsule(radius: 0.035, length: 0.14), shape_offset: (0.0, -0.1, 0.0), color: Team),
+                (name: "arm_r", parent: "body", offset: (0.17, -0.08, -0.42), rotation: (45.0, 0.0, 0.0),
+                 shape: Capsule(radius: 0.035, length: 0.14), shape_offset: (0.0, -0.1, 0.0), color: Team),
+                (name: "tail1", parent: "hips", offset: (0.0, 0.02, 0.22), rotation: (8.0, 0.0, 0.0),
+                 shape: Box(size: (0.24, 0.24, 0.6)), shape_offset: (0.0, 0.0, 0.3), color: Team),
+                (name: "tail2", parent: "tail1", offset: (0.0, 0.0, 0.6),
+                 shape: Box(size: (0.14, 0.14, 0.62)), shape_offset: (0.0, 0.0, 0.31), color: Team),
+                (name: "stripe", parent: "body", offset: (0.0, 0.24, -0.2),
+                 shape: Box(size: (0.08, 0.04, 0.5)), color: Accent),
+                (name: "thigh_l", parent: "hips", offset: (-0.17, -0.04, 0.0),
+                 shape: Capsule(radius: 0.09, length: 0.28), shape_offset: (0.0, -0.18, 0.0), color: Dark),
+                (name: "shin_l", parent: "thigh_l", offset: (0.0, -0.38, 0.06), rotation: (-25.0, 0.0, 0.0),
+                 shape: Capsule(radius: 0.06, length: 0.24), shape_offset: (0.0, -0.15, 0.0), color: Dark),
+                (name: "foot_l", parent: "shin_l", offset: (0.0, -0.33, 0.0), rotation: (25.0, 0.0, 0.0),
+                 shape: Box(size: (0.13, 0.05, 0.24)), shape_offset: (0.0, 0.0, -0.08), color: Dark),
+                (name: "thigh_r", parent: "hips", offset: (0.17, -0.04, 0.0),
+                 shape: Capsule(radius: 0.09, length: 0.28), shape_offset: (0.0, -0.18, 0.0), color: Dark),
+                (name: "shin_r", parent: "thigh_r", offset: (0.0, -0.38, 0.06), rotation: (-25.0, 0.0, 0.0),
+                 shape: Capsule(radius: 0.06, length: 0.24), shape_offset: (0.0, -0.15, 0.0), color: Dark),
+                (name: "foot_r", parent: "shin_r", offset: (0.0, -0.33, 0.0), rotation: (25.0, 0.0, 0.0),
+                 shape: Box(size: (0.13, 0.05, 0.24)), shape_offset: (0.0, 0.0, -0.08), color: Dark),
+            ],
+        ),
+        // Four-legged grazer with a bony frill and three horns.
+        (
+            id: "ceratopsian",
+            bones: [
+                (name: "body", offset: (0.0, 0.85, 0.0),
+                 shape: Box(size: (0.85, 0.7, 1.5)), shape_offset: (0.0, 0.0, 0.0), color: Team),
+                (name: "back", parent: "body", offset: (0.0, 0.36, 0.1),
+                 shape: Box(size: (0.6, 0.12, 1.1)), color: Dark),
+                (name: "head", parent: "body", offset: (0.0, 0.0, -0.8),
+                 shape: Box(size: (0.5, 0.46, 0.55)), shape_offset: (0.0, 0.0, -0.18), color: Team),
+                (name: "beak", parent: "head", offset: (0.0, -0.08, -0.45),
+                 shape: Box(size: (0.24, 0.24, 0.2)), color: Dark),
+                (name: "frill", parent: "head", offset: (0.0, 0.26, 0.12), rotation: (-25.0, 0.0, 0.0),
+                 shape: Box(size: (0.95, 0.65, 0.08)), shape_offset: (0.0, 0.2, 0.0), color: Accent),
+                (name: "horn_l", parent: "head", offset: (-0.16, 0.2, -0.22), rotation: (-65.0, 0.0, 0.0),
+                 shape: Capsule(radius: 0.045, length: 0.42), shape_offset: (0.0, 0.24, 0.0), color: Light),
+                (name: "horn_r", parent: "head", offset: (0.16, 0.2, -0.22), rotation: (-65.0, 0.0, 0.0),
+                 shape: Capsule(radius: 0.045, length: 0.42), shape_offset: (0.0, 0.24, 0.0), color: Light),
+                (name: "horn_n", parent: "beak", offset: (0.0, 0.12, 0.0), rotation: (-30.0, 0.0, 0.0),
+                 shape: Capsule(radius: 0.035, length: 0.16), shape_offset: (0.0, 0.1, 0.0), color: Light),
+                (name: "eye_l", parent: "head", offset: (-0.24, 0.08, -0.2),
+                 shape: Sphere(radius: 0.035), color: Dark),
+                (name: "eye_r", parent: "head", offset: (0.24, 0.08, -0.2),
+                 shape: Sphere(radius: 0.035), color: Dark),
+                (name: "tail", parent: "body", offset: (0.0, 0.05, 0.75), rotation: (18.0, 0.0, 0.0),
+                 shape: Box(size: (0.3, 0.28, 0.75)), shape_offset: (0.0, 0.0, 0.36), color: Team),
+                (name: "leg_fl", parent: "body", offset: (-0.3, -0.25, -0.5),
+                 shape: Capsule(radius: 0.12, length: 0.36), shape_offset: (0.0, -0.3, 0.0), color: Dark),
+                (name: "leg_fr", parent: "body", offset: (0.3, -0.25, -0.5),
+                 shape: Capsule(radius: 0.12, length: 0.36), shape_offset: (0.0, -0.3, 0.0), color: Dark),
+                (name: "leg_bl", parent: "body", offset: (-0.32, -0.25, 0.5),
+                 shape: Capsule(radius: 0.13, length: 0.36), shape_offset: (0.0, -0.3, 0.0), color: Dark),
+                (name: "leg_br", parent: "body", offset: (0.32, -0.25, 0.5),
+                 shape: Capsule(radius: 0.13, length: 0.36), shape_offset: (0.0, -0.3, 0.0), color: Dark),
+            ],
+        ),
+    ],
+
+    animations: [
+        // --- Theropods ---
+        (
+            skeleton: "theropod",
+            slot: "idle",
+            duration: 2.6,
+            looping: true,
+            rotations: {
+                "body":  [(0.0, (-12.0, 0.0, 0.0)), (1.3, (-9.0, 0.0, 0.0)), (2.6, (-12.0, 0.0, 0.0))],
+                "neck":  [(0.0, (-40.0, 0.0, 0.0)), (0.8, (-36.0, 12.0, 0.0)), (1.8, (-42.0, -10.0, 0.0)), (2.6, (-40.0, 0.0, 0.0))],
+                "jaw":   [(0.0, (0.0, 0.0, 0.0)), (1.0, (12.0, 0.0, 0.0)), (1.3, (0.0, 0.0, 0.0)), (2.6, (0.0, 0.0, 0.0))],
+                "tail1": [(0.0, (8.0, -8.0, 0.0)), (1.3, (6.0, 8.0, 0.0)), (2.6, (8.0, -8.0, 0.0))],
+                "tail2": [(0.0, (4.0, -10.0, 0.0)), (1.3, (2.0, 10.0, 0.0)), (2.6, (4.0, -10.0, 0.0))],
+            },
+        ),
+        (
+            skeleton: "theropod",
+            slot: "walk",
+            duration: 0.7,
+            looping: true,
+            rotations: {
+                "thigh_l": [(0.0, (-35.0, 0.0, 0.0)), (0.35, (30.0, 0.0, 0.0)), (0.7, (-35.0, 0.0, 0.0))],
+                "thigh_r": [(0.0, (30.0, 0.0, 0.0)), (0.35, (-35.0, 0.0, 0.0)), (0.7, (30.0, 0.0, 0.0))],
+                "shin_l":  [(0.0, (-25.0, 0.0, 0.0)), (0.17, (-55.0, 0.0, 0.0)), (0.35, (-20.0, 0.0, 0.0)), (0.7, (-25.0, 0.0, 0.0))],
+                "shin_r":  [(0.0, (-20.0, 0.0, 0.0)), (0.35, (-25.0, 0.0, 0.0)), (0.52, (-55.0, 0.0, 0.0)), (0.7, (-20.0, 0.0, 0.0))],
+                "body":    [(0.0, (-16.0, 0.0, -3.0)), (0.35, (-16.0, 0.0, 3.0)), (0.7, (-16.0, 0.0, -3.0))],
+                "neck":    [(0.0, (-34.0, 0.0, 0.0)), (0.17, (-30.0, 0.0, 0.0)), (0.35, (-34.0, 0.0, 0.0)), (0.52, (-30.0, 0.0, 0.0)), (0.7, (-34.0, 0.0, 0.0))],
+                "tail1":   [(0.0, (6.0, 10.0, 0.0)), (0.35, (6.0, -10.0, 0.0)), (0.7, (6.0, 10.0, 0.0))],
+                "tail2":   [(0.0, (2.0, 12.0, 0.0)), (0.35, (2.0, -12.0, 0.0)), (0.7, (2.0, 12.0, 0.0))],
+            },
+        ),
+        (
+            skeleton: "theropod",
+            slot: "bite",
+            duration: 0.7,
+            rotations: {
+                "body": [(0.0, (-12.0, 0.0, 0.0)), (0.25, (-4.0, 0.0, 0.0)), (0.4, (-30.0, 0.0, 0.0)), (0.7, (-12.0, 0.0, 0.0))],
+                "neck": [(0.0, (-40.0, 0.0, 0.0)), (0.25, (-55.0, 0.0, 0.0)), (0.4, (-5.0, 0.0, 0.0)), (0.7, (-40.0, 0.0, 0.0))],
+                "jaw":  [(0.0, (0.0, 0.0, 0.0)), (0.25, (45.0, 0.0, 0.0)), (0.42, (0.0, 0.0, 0.0)), (0.7, (0.0, 0.0, 0.0))],
+            },
+        ),
+        // --- Ceratopsian ---
+        (
+            skeleton: "ceratopsian",
+            slot: "idle",
+            duration: 3.2,
+            looping: true,
+            rotations: {
+                "head": [(0.0, (8.0, 0.0, 0.0)), (1.6, (14.0, 6.0, 0.0)), (3.2, (8.0, 0.0, 0.0))],
+                "tail": [(0.0, (18.0, -6.0, 0.0)), (1.6, (18.0, 6.0, 0.0)), (3.2, (18.0, -6.0, 0.0))],
+            },
+        ),
+        (
+            skeleton: "ceratopsian",
+            slot: "walk",
+            duration: 0.9,
+            looping: true,
+            rotations: {
+                "leg_fl": [(0.0, (-25.0, 0.0, 0.0)), (0.45, (25.0, 0.0, 0.0)), (0.9, (-25.0, 0.0, 0.0))],
+                "leg_br": [(0.0, (-25.0, 0.0, 0.0)), (0.45, (25.0, 0.0, 0.0)), (0.9, (-25.0, 0.0, 0.0))],
+                "leg_fr": [(0.0, (25.0, 0.0, 0.0)), (0.45, (-25.0, 0.0, 0.0)), (0.9, (25.0, 0.0, 0.0))],
+                "leg_bl": [(0.0, (25.0, 0.0, 0.0)), (0.45, (-25.0, 0.0, 0.0)), (0.9, (25.0, 0.0, 0.0))],
+                "body":   [(0.0, (0.0, 0.0, -2.0)), (0.45, (0.0, 0.0, 2.0)), (0.9, (0.0, 0.0, -2.0))],
+                "head":   [(0.0, (10.0, 0.0, 0.0)), (0.45, (16.0, 0.0, 0.0)), (0.9, (10.0, 0.0, 0.0))],
+                "tail":   [(0.0, (18.0, 8.0, 0.0)), (0.45, (18.0, -8.0, 0.0)), (0.9, (18.0, 8.0, 0.0))],
+            },
+        ),
+        (
+            skeleton: "ceratopsian",
+            slot: "bite",
+            duration: 0.7,
+            rotations: {
+                "head": [(0.0, (8.0, 0.0, 0.0)), (0.25, (30.0, 0.0, 0.0)), (0.45, (-25.0, 0.0, 0.0)), (0.7, (8.0, 0.0, 0.0))],
+                "body": [(0.0, (0.0, 0.0, 0.0)), (0.25, (4.0, 0.0, 0.0)), (0.45, (-6.0, 0.0, 0.0)), (0.7, (0.0, 0.0, 0.0))],
+            },
+        ),
+    ],
+
+    models: [
+        (id: "dino_raptor", skeleton: "theropod", fallback: Soldier, scale: 0.85),
+        (id: "dino_hornback", skeleton: "ceratopsian", fallback: Soldier, scale: 1.1),
+        (id: "dino_tyrant", skeleton: "theropod", fallback: Soldier, scale: 2.5),
+    ],
+)

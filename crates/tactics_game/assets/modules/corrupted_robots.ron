@@ -124,6 +124,28 @@
 
     abilities: [
         (
+            // A ground slam (big robots): aimed at an adjacent enemy, it hits
+            // everyone around the robot (friend or foe), cover or not.
+            id: "slam",
+            name: "Slam",
+            description: "Slam the ground: 4-6 damage to everyone next to you (friend or foe), cover doesn't help, wrecks props and walls around you. Never misses. Ends the turn.",
+            cost: EndsTurn,
+            targeting: Enemy,
+            range: Fixed(1.5),
+            heat: 3,
+            effect: Attack(
+                can_miss: false,
+                half_cover_penalty: 0,
+                full_cover_penalty: 0,
+                range_falloff: false,
+                flank_crit_bonus: 0,
+                damage: Fixed(min: 4, max: 6),
+                area_radius: 1.5,
+                melee: true,
+                slam: true,
+            ),
+        ),
+        (
             id: "crush",
             name: "Crush",
             description: "Grab and crush an enemy in reach with the hydraulic claw: 3-5 damage, ignores cover.",
@@ -144,6 +166,7 @@
     classes: [
         (
             id: "corrupted_sentry",
+            machine: Light,
             name: "Corrupted Sentry",
             stats: (max_hp: 8, mobility: 10, aim: 66, defense: 30, sight: 14.0, bravery: 100),
             weapon: "arc_rifle",
@@ -161,10 +184,11 @@
         ),
         (
             id: "corrupted_loader",
+            machine: Heavy,
             name: "Corrupted Loader",
             stats: (max_hp: 14, mobility: 10, aim: 70, defense: 25, sight: 11.0, bravery: 100),
             weapon: "hydraulic_claw",
-            abilities: ["crush"],
+            abilities: ["crush", "slam"],
             model: "corrupted_loader",
             fearless: true,
             horde: true, // no tactics: lumbers in and crushes
@@ -196,6 +220,7 @@
         ),
         (
             id: "corrupted_drone",
+            machine: Light,
             name: "Corrupted Drone",
             stats: (max_hp: 4, mobility: 14, aim: 60, defense: 20, sight: 15.0, climb: 9, bravery: 100),
             weapon: "sputtering_laser",
@@ -302,6 +327,7 @@
     ],
 
     presentations: [
+        (ability: "slam", animation: "throw", projectile: None, windup: 0.45),
         (ability: "crush", animation: "crush", projectile: None, windup: 0.3),
     ],
 )

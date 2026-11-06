@@ -32,6 +32,18 @@ pub fn tile_top(map: &tactics_core::grid::Map, pos: GridPos) -> Vec3 {
     grid_to_world(pos) + Vec3::Y * (map.elevation(pos) as f32 * LEVEL_HEIGHT)
 }
 
+/// From a unit's corner tile to the middle of its footprint (big units:
+/// `side` x `side` tiles; 0 for one-tile units).
+pub fn footprint_offset(side: i32) -> Vec3 {
+    let k = (side.max(1) - 1) as f32 / 2.0 * TILE_SIZE;
+    Vec3::new(k, 0.0, -k)
+}
+
+/// Where a unit stands in the world: the middle of its footprint.
+pub fn unit_spot(map: &tactics_core::grid::Map, unit: &tactics_core::unit::Unit) -> Vec3 {
+    tile_top(map, unit.pos) + footprint_offset(unit.side())
+}
+
 /// The tile a ray (from the camera through the pointer) hits, taking terrain
 /// height into account: tests the ray against each elevation level from the
 /// top down and accepts the first tile whose own height matches.

@@ -37,7 +37,12 @@ use crate::unit::{Team, Unit, UnitId};
 use crate::visibility;
 
 mod ballistics;
+#[cfg(test)]
+mod big_tests;
+#[cfg(test)]
+mod melee_tests;
 mod fire;
+mod gas;
 mod heat;
 mod morale;
 mod stealth;
@@ -91,6 +96,8 @@ pub struct Battle {
     fires: std::collections::BTreeMap<GridPos, u32>,
     /// Charges waiting to go off (delayed grenades, see fire.rs).
     charges_armed: Vec<fire::ArmedCharge>,
+    /// Gassed tiles: rounds of gas left (see gas.rs).
+    gas: std::collections::BTreeMap<GridPos, u32>,
 }
 
 impl Battle {
@@ -124,6 +131,7 @@ impl Battle {
             sky: Default::default(),
             fires: Default::default(),
             charges_armed: Vec::new(),
+            gas: Default::default(),
         }
     }
 
@@ -174,11 +182,9 @@ impl Battle {
             .weapon(&weapon_id)
             .ok_or_else(|| format!("class '{}' uses unknown weapon '{weapon_id}'", class.id))?
             .clone();
-        if !self.map.is_walkable(pos) {
-            return Err(format!("cannot spawn on non-walkable tile {pos}"));
-        }
-        if self.unit_at(pos).is_some() {
-            return Err(format!("tile {pos} already occupied"));
+        // Every tile of the footprint must be free.
+        if !self.footprint_free(pos, class.size.max(1) as i32, None) {
+            return Err(format!("no room for a {} ({}x{}) at {pos}", class.name, class.size.max(1), class.size.max(1)));
         }
         weapon.ammo = weapon.clip_size;
         weapon.spare = weapon.magazines;
@@ -189,8 +195,10 @@ impl Battle {
         let mut charges: std::collections::BTreeMap<AbilityId, u32> = Default::default();
         let items: Vec<ItemDef> =
             gear.armor.iter().chain(gear.items.iter()).filter_map(|id| self.rules.item(id).cloned()).collect();
+        let mut sight_percent = 0;
         for item in &items {
             let m = item.stats;
+            sight_percent += m.sight_percent;
             stats.max_hp = (stats.max_hp + m.max_hp).max(1);
             stats.mobility = (stats.mobility as i32 + m.mobility).max(2) as u32;
             stats.aim += m.aim;
@@ -211,6 +219,9 @@ impl Battle {
                     abilities.push(a.clone());
                 }
             }
+        }
+        if sight_percent != 0 {
+            stats.sight = (stats.sight * (1.0 + sight_percent as f32 / 100.0)).max(1.0);
         }
 
         let id = UnitId(self.units.len() as u32);
@@ -235,6 +246,8 @@ impl Battle {
             body: class.body,
             heat: class.heat,
             no_half_cover: class.no_half_cover,
+            size: class.size.max(1),
+            machine: class.machine,
             gear: Loadout { weapon: Some(weapon_id), ..gear },
             appearance: None,
         };
@@ -317,9 +330,54 @@ impl Battle {
         self.units.iter().filter(move |u| u.team == team && u.is_alive())
     }
 
-    /// The living unit standing on `pos`, if any.
+    /// The living unit standing on `pos` (any tile of its footprint), if any.
     pub fn unit_at(&self, pos: GridPos) -> Option<&Unit> {
-        self.units.iter().find(|u| u.is_alive() && u.pos == pos)
+        self.units.iter().find(|u| u.is_alive() && u.occupies(pos))
+    }
+
+    /// Can a `side` x `side` unit stand with its corner on `pos`: every tile
+    /// walkable, free (but for `ignore`) and roughly level?
+    pub fn footprint_free(&self, pos: GridPos, side: i32, ignore: Option<UnitId>) -> bool {
+        let base = self.map.elevation(pos);
+        (0..side).all(|dy| {
+            (0..side).all(|dx| {
+                let p = GridPos::new(pos.x + dx, pos.y + dy);
+                self.map.is_walkable(p)
+                    && (self.map.elevation(p) - base).abs() <= 1
+                    && self.unit_at(p).is_none_or(|u| Some(u.id) == ignore)
+            })
+        })
+    }
+
+    /// The closest pair of tiles (one of each footprint) between `a` and
+    /// `b` that can see each other, or with `need_sight` false just the
+    /// closest pair. Big units are seen, shot and reached at their nearest
+    /// visible tile.
+    pub fn sight_between(&self, a: &Unit, b: &Unit, need_sight: bool) -> Option<(GridPos, GridPos)> {
+        if a.side() == 1 && b.side() == 1 {
+            return (!need_sight || visibility::has_sight(&self.map, a.pos, b.pos)).then_some((a.pos, b.pos));
+        }
+        let mut best: Option<(f32, GridPos, GridPos)> = None;
+        for from in a.tiles() {
+            for to in b.tiles() {
+                let d = from.distance(to);
+                if best.is_some_and(|(bd, ..)| bd <= d) {
+                    continue;
+                }
+                if !need_sight || visibility::has_sight(&self.map, from, to) {
+                    best = Some((d, from, to));
+                }
+            }
+        }
+        best.map(|(_, f, t)| (f, t))
+    }
+
+    /// Is any tile of `u` in sight of `team`?
+    pub fn team_sees_unit(&self, team: Team, u: &Unit) -> bool {
+        if u.side() == 1 {
+            return self.team_can_see(team, u.pos);
+        }
+        u.tiles().any(|p| self.team_can_see(team, p))
     }
 
     /// Every tile `unit` could move to with its remaining action points.
@@ -332,8 +390,22 @@ impl Battle {
         let climb = crate::grid::Climb { max_up: unit.stats.climb };
         // Occupied tiles once (not a scan of every unit per neighbour: big
         // maps have hundreds of units).
-        let occupied: std::collections::HashSet<GridPos> = self.units.iter().filter(|u| u.is_alive()).map(|u| u.pos).collect();
-        pathfinding::reachable(&self.map, unit.pos, budget, climb, |p| !occupied.contains(&p))
+        let occupied: std::collections::HashSet<GridPos> =
+            self.units.iter().filter(|u| u.is_alive() && u.id != id).flat_map(|u| u.tiles().collect::<Vec<_>>()).collect();
+        let side = unit.side();
+        if side == 1 {
+            return pathfinding::reachable(&self.map, unit.pos, budget, climb, |p| !occupied.contains(&p));
+        }
+        // A big unit: its whole footprint has to fit at every step.
+        pathfinding::reachable(&self.map, unit.pos, budget, climb, |p| {
+            let base = self.map.elevation(p);
+            (0..side).all(|dy| {
+                (0..side).all(|dx| {
+                    let q = GridPos::new(p.x + dx, p.y + dy);
+                    self.map.is_walkable(q) && !occupied.contains(&q) && (self.map.elevation(q) - base).abs() <= 1
+                })
+            })
+        })
     }
 
     /// How many action points moving `movement_cost` points costs this unit.
@@ -359,7 +431,7 @@ impl Battle {
         };
         let range = u.weapon.max_range.min(u.stats.sight);
         self.living(u.team.opponent())
-            .filter(|t| u.pos.distance(t.pos) <= range && visibility::has_sight(&self.map, u.pos, t.pos))
+            .filter(|t| self.sight_between(u, t, true).is_some_and(|(a, b)| a.distance(b) <= range))
             .map(|t| t.id)
             .collect()
     }
@@ -374,6 +446,10 @@ impl Battle {
         // Leaps reach a multiple of the unit's normal move.
         if let AbilityEffect::Leap { reach, .. } = def.effect {
             return reach * (unit.stats.mobility / 2) as f32;
+        }
+        // Blind fire reaches as far as the gun, not as far as the eye.
+        if def.effect.attack_profile().is_some_and(|p| p.blind) && def.range == AbilityRange::Weapon {
+            return unit.weapon.max_range;
         }
         match def.range {
             AbilityRange::Weapon => unit.weapon.max_range.min(unit.stats.sight),
@@ -408,6 +484,8 @@ impl Battle {
         Ok(self
             .attack_victims(user, profile, point, target)
             .into_iter()
+            // Blind fire: no hints about who's out there.
+            .filter(|(victim, _)| !profile.blind || self.team_sees_unit(user.team, &self.units[victim.0 as usize]))
             .map(|(victim, origin)| {
                 let v = &self.units[victim.0 as usize];
                 (victim, preview_attack(&self.rules.combat, &self.map, origin, user, v, profile))
@@ -454,6 +532,16 @@ impl Battle {
                 let wants_enemy = def.targeting == Targeting::Enemy;
                 if (t.team != user.team) != wants_enemy {
                     return Err(ActionError::InvalidTarget(id));
+                }
+                // Big units (either side): range and sight between the
+                // nearest tiles that can see each other.
+                if user.side() > 1 || t.side() > 1 {
+                    let pair = self.sight_between(user, t, def.requires_los);
+                    let Some((from, to)) = pair else { return Err(ActionError::NoLineOfSight) };
+                    if from.distance(to) > self.ability_range(user, def) {
+                        return Err(ActionError::OutOfRange);
+                    }
+                    return Ok(t.pos);
                 }
                 t.pos
             }
@@ -511,6 +599,8 @@ impl Battle {
                     AbilityEffect::Suppress(_) if u.weapon.ammo <= 0 => return Err(ActionError::OutOfAmmo),
                     AbilityEffect::Suppress(_) if u.weapon.cone > 0.0 => return Err(ActionError::NotWithThisWeapon),
                     AbilityEffect::Overclock if u.status.overclocked => return Err(ActionError::AlreadyActive),
+                    // Flesh and blood only.
+                    AbilityEffect::Adrenaline { .. } if u.heat.is_some() => return Err(ActionError::CantHealMachine),
                     _ => {}
                 }
                 let point = self.check_target(u, def, *target)?;
@@ -564,6 +654,7 @@ impl Battle {
             Action::Wait { unit } => self.spend_all_ap(unit, &mut events),
             Action::EndTurn => {
                 self.end_turn(&mut events);
+                self.refresh_gassed();
                 return Ok(events);
             }
         }
@@ -572,6 +663,7 @@ impl Battle {
         if !self.is_over() && !self.active_team_can_act() {
             self.end_turn(&mut events);
         }
+        self.refresh_gassed();
         Ok(events)
     }
 
@@ -681,6 +773,13 @@ impl Battle {
                     Target::Unit(id) => Some(id),
                     _ => self.unit_at(point).map(|u| u.id),
                 };
+                if victim.is_none() && profile.blind {
+                    // Blind fire into nothing: the burst is spent all the same.
+                    let u = self.unit_mut(unit);
+                    let burst = if profile.rounds.is_some() { profile.rounds.unwrap_or(1) as i32 } else { u.weapon.burst.max(1) as i32 };
+                    u.weapon.ammo = (u.weapon.ammo - burst).max(0);
+                    events.push(GameEvent::Callout { unit, text: "BLIND FIRE".into() });
+                }
                 if let Some(victim) = victim {
                     let uses_ammo = def.ammo_cost > 0;
                     let cap = uses_ammo.then(|| self.units[unit.0 as usize].weapon.ammo.max(0) as u32);
@@ -715,13 +814,20 @@ impl Battle {
                 // Rockets go off at the first thing in their way.
                 let point = self.blast_point(user.pos, profile, point);
                 let tiles = if profile.is_area() { self.area_tiles(user.pos, profile, point) } else { Vec::new() };
+                // A pure gas grenade hurts nobody: no attack rolls, no blast.
+                let harmless = profile.damage == crate::content::DamageSource::Fixed { min: 0, max: 0 } && profile.damage_bonus <= 0;
                 if profile.cone > 0.0 {
                     events.push(GameEvent::Flames { unit, from: user.pos, tiles: tiles.clone() });
-                } else if profile.area_radius > 0.0 {
+                } else if profile.area_radius > 0.0 && !harmless {
                     events.push(GameEvent::Explosion { center: point, radius: profile.area_radius });
                 }
-                for (victim, origin) in self.attack_victims(&user, profile, point, target) {
-                    self.resolve_attack(unit, victim, &def.id, origin, profile, false, events);
+                if !harmless {
+                    for (victim, origin) in self.attack_victims(&user, profile, point, target) {
+                        self.resolve_attack(unit, victim, &def.id, origin, profile, false, events);
+                    }
+                }
+                if profile.gas > 0 && !self.is_over() {
+                    self.release_gas(&tiles, profile.gas, events);
                 }
                 // Cones scorch the props they sweep.
                 if profile.cone > 0.0 {
@@ -734,7 +840,7 @@ impl Battle {
                     self.ignite(&tiles, profile.ignite, events);
                 }
                 // Blasts also hit destructible props.
-                if profile.area_radius > 0.0 {
+                if profile.area_radius > 0.0 && !harmless {
                     let (lo, hi) = match profile.damage {
                         crate::content::DamageSource::Weapon => (user.weapon.damage_min, user.weapon.damage_max),
                         crate::content::DamageSource::Fixed { min, max } => (min, max),
@@ -768,6 +874,19 @@ impl Battle {
             }
             AbilityEffect::Cool { amount } => self.add_heat(unit, -amount, events),
             AbilityEffect::Idle => {}
+            AbilityEffect::Adrenaline { action_points } => {
+                let cost = self.units[unit.0 as usize].hp / 2;
+                if cost > 0 {
+                    self.apply_damage(unit, cost, true, events);
+                }
+                let u = self.unit_mut(unit);
+                if u.is_alive() {
+                    u.action_points = u.action_points.saturating_add(*action_points);
+                    let remaining = u.action_points;
+                    events.push(GameEvent::Callout { unit, text: format!("ADRENALINE +{action_points} AP") });
+                    events.push(GameEvent::ActionPointsChanged { unit, remaining });
+                }
+            }
             AbilityEffect::Overclock => {
                 let u = self.unit_mut(unit);
                 u.status.overclocked = true;
@@ -811,7 +930,8 @@ impl Battle {
             let tiles = self.area_tiles(user.pos, profile, point);
             self.units
                 .iter()
-                .filter(|u| u.is_alive() && tiles.contains(&u.pos))
+                .filter(|u| u.is_alive() && u.tiles().any(|p| tiles.contains(&p)))
+                .filter(|u| !profile.slam || u.id != user.id)
                 .map(|u| (u.id, origin))
                 .collect()
         } else if let Target::Unit(id) = target {
@@ -854,6 +974,8 @@ impl Battle {
     /// Moves step by step so overwatchers can interrupt mid-path.
     fn do_move(&mut self, id: UnitId, to: GridPos, events: &mut Vec<GameEvent>) {
         let range = self.movement_range(id);
+        // Choking on gas: the unit staggers somewhere at random (as far as it meant to go).
+        let to = self.stagger(id, to, &range, events);
         let path = range.path_to(to).unwrap_or_default();
         let cost = range.cost(to).unwrap_or(0);
         let ap_cost = self.move_cost_ap(id, cost);
@@ -872,14 +994,15 @@ impl Battle {
         let mut segment: Vec<GridPos> = Vec::new();
         for step in path {
             // A script may have spawned something in the way: stop there.
-            if self.unit_at(step).is_some_and(|u| u.id != id) {
+            let side = self.units[id.0 as usize].side();
+            if !self.footprint_free(step, side, Some(id)) && side > 1 || self.unit_at(step).is_some_and(|u| u.id != id) {
                 break;
             }
             self.unit_mut(id).pos = step;
             segment.push(step);
 
             // Walking into fire burns.
-            if self.on_fire(step) {
+            if self.units[id.0 as usize].tiles().any(|p| self.on_fire(p)) {
                 events.push(GameEvent::UnitMoved { unit: id, from: segment_start, path: std::mem::take(&mut segment) });
                 segment_start = step;
                 if !self.burn_step(id, events) || self.is_over() {
@@ -952,9 +1075,9 @@ impl Battle {
         self.living(m.team.opponent()).find_map(|w| {
             let ability = w.status.overwatch.clone()?;
             let def = self.rules.ability(&ability)?;
-            let in_range = w.pos.distance(m.pos) <= self.ability_range(w, def).min(w.stats.sight);
-            (w.weapon.ammo > 0 && in_range && visibility::has_sight(&self.map, w.pos, m.pos))
-                .then_some((w.id, ability))
+            let reach = self.ability_range(w, def).min(w.stats.sight);
+            let in_sight = self.sight_between(w, m, true).is_some_and(|(a, b)| a.distance(b) <= reach);
+            (w.weapon.ammo > 0 && in_sight).then_some((w.id, ability))
         })
     }
 
@@ -1035,6 +1158,16 @@ impl Battle {
             // The attack event already shows the damage; this applies it and
             // runs damaged/death scripts.
             self.apply_damage_from(target, damage, false, Some(attacker), events);
+            // Tasers knock flesh and blood out for a while.
+            let t = &mut self.units[target.0 as usize];
+            if profile.stun > 0 && t.is_alive() && t.machine == crate::unit::Machine::None {
+                t.status.stunned = t.status.stunned.max(profile.stun);
+                if t.team == self.active_team {
+                    t.action_points = 0;
+                }
+                t.status.overwatch = None;
+                events.push(GameEvent::UnitStunned { unit: target, turns: profile.stun });
+            }
         } else {
             let shot_at = self.rules.combat.morale.shot_at;
             self.add_fear(target, shot_at, events);
@@ -1095,6 +1228,8 @@ impl Battle {
         events.push(GameEvent::TurnStarted { team, round: self.round });
         self.heat_turn_start(team, events);
         self.fire_turn_start(team, events);
+        self.gas_turn_start(team, events);
+        self.refresh_gassed();
         self.charges_turn_start(team, events);
         self.morale_turn_start(team, events);
         self.on_turn_start(events);
