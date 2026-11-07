@@ -100,13 +100,14 @@
         (
             id: "boost",
             name: "Boost",
-            description: "Thrusters: rush in a straight line up to 3 times your normal move. Walls, holes, units and steep steps stop you. 1 AP, +4 heat, 1 turn cooldown.",
+            description: "Thrusters: rush in a straight line up to 3 times your normal move. Walls, holes, units and steep steps stop you. 1 AP, +6 heat; then a turn to recharge (not again next turn).",
             cost: Points(1),
-            cooldown: 1,
+            // Cooldowns tick at the start of the user's turns: 2 = skip the next one.
+            cooldown: 2,
             targeting: Tile,
             range: Fixed(0.0),
             requires_los: false,
-            heat: 4,
+            heat: 6,
             effect: Leap(reach: 3.0, over_walls: false),
         ),
         (
@@ -285,7 +286,7 @@
         (
             id: "boost_thrusters",
             name: "Boost Thrusters",
-            description: "Grants Boost: a straight-line rush of up to 3 moves (walls stop it). +4 heat.",
+            description: "Grants Boost: a straight-line rush of up to 3 moves (walls stop it). +6 heat, every other turn.",
             slot: Utility,
             abilities: ["boost"],
             classes: ["frame_light", "frame_heavy"],
@@ -339,7 +340,7 @@
             name: "Bastion Frame",
             stats: (max_hp: 20, mobility: 8, aim: 62, defense: 20, sight: 13.0, bravery: 100),
             weapon: "gatling_laser",
-            abilities: ["shoot", "suppress", "overwatch", "idle", "shutdown", "reload", "slam"],
+            abilities: ["shoot", "suppress", "spray_and_pray", "overwatch", "idle", "shutdown", "reload", "slam"],
             model: "frame_heavy",
             fearless: true,
             body: (height: 1.8),

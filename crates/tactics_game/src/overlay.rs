@@ -408,6 +408,15 @@ fn draw_health_bars(
                 gizmos.sphere(Isometry3d::from_translation(at), 0.03, c);
             }
         }
+        // Mind-controlled: a pulsing purple ring.
+        if unit.status.controlled > 0 {
+            gizmos.circle(
+                Isometry3d::new(base + Vec3::Y * 0.05, Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+                0.45 * unit.side() as f32,
+                Color::srgb(0.75, 0.3, 1.0),
+            );
+            gizmos.circle(Isometry3d::new(base + Vec3::Y * 0.3, Quat::IDENTITY), 0.12, Color::srgb(0.75, 0.3, 1.0));
+        }
         if unit.status.overwatch.is_some() {
             gizmos.circle(
                 Isometry3d::new(base + Vec3::Y * 0.2, Quat::IDENTITY),

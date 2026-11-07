@@ -43,6 +43,7 @@ mod big_tests;
 mod melee_tests;
 mod fire;
 mod gas;
+mod symbiote;
 mod heat;
 mod morale;
 mod stealth;
@@ -98,6 +99,10 @@ pub struct Battle {
     charges_armed: Vec<fire::ArmedCharge>,
     /// Gassed tiles: rounds of gas left (see gas.rs).
     gas: std::collections::BTreeMap<GridPos, u32>,
+    /// Symbiote vines on the floor (see symbiote.rs).
+    vines: std::collections::BTreeSet<GridPos>,
+    /// Chance (percent) per round for vines to spread to each free side.
+    vine_growth: u32,
 }
 
 impl Battle {
@@ -132,6 +137,8 @@ impl Battle {
             fires: Default::default(),
             charges_armed: Vec::new(),
             gas: Default::default(),
+            vines: Default::default(),
+            vine_growth: 0,
         }
     }
 
@@ -248,6 +255,11 @@ impl Battle {
             no_half_cover: class.no_half_cover,
             size: class.size.max(1),
             machine: class.machine,
+            rage_rules: class.rage,
+            rage: 0,
+            insanity: 0,
+            flammable: class.flammable,
+            vine_kin: class.vine_kin,
             gear: Loadout { weapon: Some(weapon_id), ..gear },
             appearance: None,
         };
@@ -386,7 +398,7 @@ impl Battle {
         let Some(unit) = self.unit(id) else {
             return ReachableSet::default();
         };
-        let budget = unit.stats.mobility * unit.action_points as u32;
+        let budget = unit.mobility() * unit.action_points as u32;
         let climb = crate::grid::Climb { max_up: unit.stats.climb };
         // Occupied tiles once (not a scan of every unit per neighbour: big
         // maps have hundreds of units).
@@ -410,7 +422,7 @@ impl Battle {
 
     /// How many action points moving `movement_cost` points costs this unit.
     pub fn move_cost_ap(&self, id: UnitId, movement_cost: u32) -> u8 {
-        let mobility = self.unit(id).map_or(1, |u| u.stats.mobility.max(1));
+        let mobility = self.unit(id).map_or(1, |u| u.mobility().max(1));
         movement_cost.div_ceil(mobility) as u8
     }
 
@@ -480,6 +492,9 @@ impl Battle {
         let AbilityEffect::Attack(profile) = &def.effect else {
             return Ok(Vec::new());
         };
+        if profile.spray > 0.0 {
+            return Ok(Vec::new()); // wild fire: no odds to show
+        }
         let point = self.blast_point(user.pos, profile, point);
         Ok(self
             .attack_victims(user, profile, point, target)
@@ -601,6 +616,14 @@ impl Battle {
                     AbilityEffect::Overclock if u.status.overclocked => return Err(ActionError::AlreadyActive),
                     // Flesh and blood only.
                     AbilityEffect::Adrenaline { .. } if u.heat.is_some() => return Err(ActionError::CantHealMachine),
+                    // Only minds can be taken: no machines, no monsters, no one already held.
+                    AbilityEffect::MindControl { .. } => {
+                        let Target::Unit(t) = target else { return Err(ActionError::WrongTarget) };
+                        let v = self.living_unit(*t).map_err(|_| ActionError::InvalidTarget(*t))?;
+                        if !v.can_go_insane() || v.status.controlled > 0 || v.side() > 1 {
+                            return Err(ActionError::InvalidTarget(*t));
+                        }
+                    }
                     _ => {}
                 }
                 let point = self.check_target(u, def, *target)?;
@@ -768,6 +791,15 @@ impl Battle {
     /// Executes an ability's effect. **Add new effect kinds here.**
     fn run_effect(&mut self, unit: UnitId, def: &AbilityDef, point: GridPos, target: Target, events: &mut Vec<GameEvent>) {
         match &def.effect {
+            AbilityEffect::Attack(profile) if profile.spray > 0.0 => {
+                // Half a magazine (whatever's left of it, at least one round).
+                let u = &self.units[unit.0 as usize];
+                let rounds = (u.weapon.clip_size / 2).max(1).min(u.weapon.ammo.max(0)) as u32;
+                if rounds > 0 {
+                    self.unit_mut(unit).weapon.ammo -= rounds as i32;
+                    self.spray_fire(unit, point, profile.spray, rounds, events);
+                }
+            }
             AbilityEffect::Attack(profile) if profile.is_ballistic() => {
                 let victim = match target {
                     Target::Unit(id) => Some(id),
@@ -849,7 +881,15 @@ impl Battle {
                     self.damage_props_in_area(point, profile.area_radius, damage, events);
                     self.damage_walls_in_area(point, profile.area_radius, damage, events);
                     if profile.shrapnel > 0 && !self.is_over() {
-                        self.shrapnel(Some(unit), point, profile.area_radius, profile.shrapnel, events);
+                        self.shrapnel_with(
+                            Some(unit),
+                            point,
+                            profile.area_radius,
+                            profile.shrapnel,
+                            profile.shrapnel_damage,
+                            profile.fragmentation,
+                            events,
+                        );
                     }
                 }
             }
@@ -858,6 +898,17 @@ impl Battle {
                 self.unit_mut(unit).status.defense_bonus = *defense_bonus;
                 let relief = self.rules.combat.morale.hunker_relief;
                 self.add_fear(unit, -relief, events);
+                // Steady breathing: a little sanity back.
+                self.add_insanity(unit, -symbiote::HUNKER_CALM, events);
+            }
+            AbilityEffect::MindControl { turns, insanity } => {
+                if let Some(victim) = self.unit_at(point).map(|u| u.id) {
+                    let team = self.units[unit.0 as usize].team;
+                    self.add_insanity(victim, *insanity, events);
+                    if self.units[victim.0 as usize].team != team {
+                        self.mind_control(victim, Some(unit), team, *turns, events);
+                    }
+                }
             }
             AbilityEffect::Reload => {
                 let u = self.unit_mut(unit);
@@ -1178,9 +1229,11 @@ impl Battle {
         if self.winner.is_some() {
             return;
         }
-        if self.living(Team::Player).next().is_none() {
+        // Sides by allegiance: a mind-controlled soldier is still the player's.
+        let any = |team: Team| self.units.iter().any(|u| u.is_alive() && u.home_team() == team);
+        if !any(Team::Player) {
             self.decide(Team::Enemy, events);
-        } else if self.eliminate_to_win && self.living(Team::Enemy).next().is_none() {
+        } else if self.eliminate_to_win && !any(Team::Enemy) {
             self.decide(Team::Player, events);
         }
     }
@@ -1206,6 +1259,8 @@ impl Battle {
                 u.status.suppressed_by = None;
             }
         }
+        // Minds held by this team tick down; spent ones go home (without AP).
+        self.control_turn_start(team, events);
         let ap = self.rules.combat.action_points;
         for u in self.units.iter_mut().filter(|u| u.team == team && u.is_alive()) {
             // Dormant units with no patrol have nothing to do: they sit the
@@ -1227,8 +1282,18 @@ impl Battle {
         }
         events.push(GameEvent::TurnStarted { team, round: self.round });
         self.heat_turn_start(team, events);
+        if team == Team::Player {
+            // Round start: burning vines burn away and spread the fire.
+            self.vines_burn(events);
+        }
         self.fire_turn_start(team, events);
         self.gas_turn_start(team, events);
+        self.rage_turn_start(team, events);
+        if team == Team::Enemy {
+            self.vines_grow(events);
+        }
+        self.vines_turn_start(team, events);
+        self.insanity_turn_start(team, events);
         self.refresh_gassed();
         self.charges_turn_start(team, events);
         self.morale_turn_start(team, events);

@@ -21,5 +21,6 @@
   <mission file="raptor_run.mission.xml"/>
   <mission file="tyrant_hunt.mission.xml"/>
   <mission file="nest_raid.mission.xml"/>
+  <mission file="station.mission.xml"/>
   <mission file="lab.mission.xml"/>
 </missions>

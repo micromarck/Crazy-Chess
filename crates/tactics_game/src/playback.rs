@@ -484,6 +484,7 @@ fn default_slot(def: &AbilityDef) -> &'static str {
         AbilityEffect::Leap { .. } => "walk",
         AbilityEffect::Idle => "idle",
         AbilityEffect::Adrenaline { .. } => "heal",
+        AbilityEffect::MindControl { .. } => "cast",
     }
 }
 
@@ -861,6 +862,22 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             p.anim.write(AnimCommand::OneShot { unit: *unit, slot: "hit".into() });
             vec![Anim::Wait { remaining: 0.25 }]
         }
+        GameEvent::UnitControlled { unit, team, turns } => {
+            let side = if *team == Team::Player { "your squad" } else { "the enemy" };
+            if *turns == 0 {
+                p.log.push(format!("  {} comes back to their senses", name(*unit)));
+            } else if *turns == u32::MAX {
+                p.log.push(format!("  {} is lost - fighting for {side} now", name(*unit)));
+            } else {
+                p.log.push(format!("  {}'s mind is taken: fighting for {side}", name(*unit)));
+            }
+            vec![Anim::Wait { remaining: 0.3 }]
+        }
+        GameEvent::InsanityChanged { unit, insanity, level } => {
+            p.log.push(format!("  {} is {} (insanity {insanity})", name(*unit), level.to_lowercase()));
+            vec![]
+        }
+        GameEvent::VinesGrew { .. } | GameEvent::VinesBurned { .. } => vec![],
         GameEvent::GasReleased { tiles, turns } => {
             p.log.push(format!("  Gas fills {} tiles ({turns} rounds)", tiles.len()));
             vec![]
@@ -901,6 +918,31 @@ fn start_event(event: &GameEvent, playback: &mut Playback, p: &mut Presenter, tr
             FloatingText::spawn(&mut p.commands, at, "BREACHED".into(), theme::EXPLOSION);
             p.board.write(crate::board::BoardDirty(Some(*pos)));
             vec![]
+        }
+        GameEvent::Spray { attacker, muzzle, bullets } => {
+            let hits = bullets.iter().filter(|f| f.hit.is_some()).count();
+            p.log.push(format!("  {} sprays {} rounds: {hits} hit{}", name(*attacker), bullets.len(), if hits == 1 { "" } else { "s" }));
+            let bullets = bullets
+                .iter()
+                .map(|b| VolleyBullet {
+                    end: Vec3::new(b.end[0], b.end[2], -b.end[1]),
+                    hit: b.hit,
+                    damage: b.damage,
+                    critical: false,
+                    blocked: false,
+                    landed: false,
+                })
+                .collect::<Vec<_>>();
+            // The sweep: rounds stream out one after another, across the arc.
+            vec![Anim::Volley {
+                muzzle: Vec3::new(muzzle[0], muzzle[2], -muzzle[1]),
+                bullets,
+                style: ProjectileStyle::Tracer,
+                aim: 0.0,
+                interval: 0.035,
+                per_round: 1,
+                t: 0.0,
+            }]
         }
         GameEvent::Shrapnel { center, fragments, .. } => {
             let hits = fragments.iter().filter(|f| f.hit.is_some()).count();

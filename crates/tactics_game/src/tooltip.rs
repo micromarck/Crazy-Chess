@@ -178,7 +178,8 @@ pub fn tooltip_text(state: &BattleState, selection: &Selection) -> String {
         let morale = if friend.fearless {
             String::new()
         } else {
-            format!("  {}", b.rules().combat.morale.level(friend.fear).name())
+            let mind = if friend.insanity > 0 { format!("  {} ({})", friend.sanity().label(), friend.insanity) } else { String::new() };
+            format!("  {}{mind}", b.rules().combat.morale.level(friend.fear).name())
         };
         let hint = if friend.id == sel { "" } else if friend.can_act() { "\nClick to select" } else { "\nNo AP left" };
         let vital = if friend.heat.is_some() {

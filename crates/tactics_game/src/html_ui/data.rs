@@ -94,7 +94,9 @@ pub fn collect_ui_data(
         v.set("unit.defense", u.stats.defense);
         let morale = &b.rules().combat.morale;
         let level = morale.level(u.fear);
-        v.set("unit.morale", if u.fearless { "Fearless".to_string() } else { format!("{} ({})", level.name(), u.fear) });
+        let sanity = if u.insanity > 0 { format!("   Sanity: {} ({})", u.sanity().label(), u.insanity) } else { String::new() };
+        let rage = if u.enraged() { "   ENRAGED" } else { "" };
+        v.set("unit.morale", if u.fearless { format!("Fearless{rage}") } else { format!("{} ({}){sanity}", level.name(), u.fear) });
         v.set("unit.morale_state", if u.fearless { "fearless" } else { match level {
             FearLevel::Steady => "steady",
             FearLevel::Shaken => "shaken",
@@ -273,7 +275,10 @@ pub fn collect_ui_data(
     v.lists.insert("abilities".into(), unit.map(|u| abilities(b, u, &selection)).unwrap_or_default());
     v.lists.insert(
         "squad".into(),
-        b.living(Team::Player)
+        // By allegiance: mind-controlled soldiers stay on the list.
+        b.units()
+            .iter()
+            .filter(|u| u.is_alive() && u.home_team() == Team::Player)
             .map(|u| {
                 item(&[
                     ("id", u.id.0.to_string()),
@@ -286,13 +291,19 @@ pub fn collect_ui_data(
                     ("fill", if u.heat.is_some() { "heat-fill" } else { "hp-fill" }.to_string()),
                     ("ap", u.action_points.to_string()),
                     ("fear", if u.fearless { String::new() } else {
-                        match b.rules().combat.morale.level(u.fear) {
-                            FearLevel::Steady => String::new(),
-                            FearLevel::Shaken => "SHAKEN".into(),
-                            FearLevel::Panicked => "PANIC".into(),
-                        }
+                        let fear = match b.rules().combat.morale.level(u.fear) {
+                            FearLevel::Steady => "",
+                            FearLevel::Shaken => "SHAKEN",
+                            FearLevel::Panicked => "PANIC",
+                        };
+                        let mind = match u.sanity() {
+                            tactics_core::unit::Sanity::Sane => "",
+                            s => s.label(),
+                        };
+                        let held = if u.team != Team::Player { "CONTROLLED" } else { "" };
+                        [held, fear, &mind.to_uppercase()].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" ")
                     }),
-                    ("state", if Some(u.id) == selection.unit { "selected" } else if u.can_act() { "ready" } else { "done" }.into()),
+                    ("state", if u.team != Team::Player { "done" } else if Some(u.id) == selection.unit { "selected" } else if u.can_act() { "ready" } else { "done" }.into()),
                 ])
             })
             .collect(),

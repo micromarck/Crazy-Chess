@@ -204,6 +204,16 @@ pub struct AttackProfile {
     /// at whoever is there (if anyone); previews show nothing for units the
     /// user's team can't see, so it gives nothing away (or the AI any cheats).
     pub blind: bool,
+    /// Damage per shrapnel fragment (default 1).
+    pub shrapnel_damage: i32,
+    /// The fragments are the punch (frag grenades): they hit units inside
+    /// the blast as well as outside it.
+    pub fragmentation: bool,
+    /// **Spray and pray** (machine guns): `> 0` = sweep half a magazine
+    /// across an arc this many degrees wide, centred on the target tile, side
+    /// to side in firing order. Every round flies wild (no aim) and hits the
+    /// first thing in its way, friend or foe.
+    pub spray: f32,
 }
 
 impl AttackProfile {
@@ -247,6 +257,9 @@ impl Default for AttackProfile {
             slam: false,
             gas: 0,
             blind: false,
+            shrapnel_damage: 1,
+            fragmentation: false,
+            spray: 0.0,
         }
     }
 }
@@ -292,6 +305,11 @@ pub enum AbilityEffect {
     /// An adrenaline shot: the user loses half its remaining health (rounded
     /// down, so nothing at 1 HP) and gains this many action points.
     Adrenaline { action_points: u8 },
+    /// **Mind control** a living enemy (not a machine): it fights for the
+    /// user's side for `turns` of the user's turns (acting at once if it's
+    /// their turn), and its insanity rises by `insanity`. Freed early if the
+    /// user dies.
+    MindControl { turns: u32, insanity: i32 },
 }
 
 impl Default for AbilityEffect {
@@ -333,6 +351,7 @@ impl AbilityEffect {
             AbilityEffect::Leap { .. } => "Leap",
             AbilityEffect::Idle => "Idle",
             AbilityEffect::Adrenaline { .. } => "Adrenaline",
+            AbilityEffect::MindControl { .. } => "Mind control",
         }
     }
 }

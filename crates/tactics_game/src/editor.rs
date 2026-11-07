@@ -89,7 +89,8 @@ pub fn fields_for(def: &AbilityDef) -> Vec<EditField> {
         | AbilityEffect::Overclock
         | AbilityEffect::Leap { .. }
         | AbilityEffect::Idle
-        | AbilityEffect::Adrenaline { .. } => {}
+        | AbilityEffect::Adrenaline { .. }
+        | AbilityEffect::MindControl { .. } => {}
     }
     f
 }

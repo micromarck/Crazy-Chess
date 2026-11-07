@@ -33,6 +33,7 @@ pub const BUNDLED_DATA_MODULES: &[(&str, &str)] = &[
     ("arsenal.ron", include_str!("../assets/modules/arsenal.ron")),
     ("robot_frames.ron", include_str!("../assets/modules/robot_frames.ron")),
     ("dinosaurs.ron", include_str!("../assets/modules/dinosaurs.ron")),
+    ("symbiotes.ron", include_str!("../assets/modules/symbiotes.ron")),
 ];
 
 /// Folder (relative to the working directory) scanned for user modules on desktop.
@@ -191,6 +192,28 @@ mod tests {
     /// default loadouts spawn, heat rules come from the class, and the
     /// missile pod heats the frame. The Arsenal's lasers and heavy weapons
     /// go to the right soldiers.
+    #[test]
+    fn boost_costs_six_heat_and_needs_a_turn_to_recharge() {
+        let (rules, _) = build_ruleset();
+        let mut b = Battle::new(Map::from_ascii(&"....................\n".repeat(5)), rules, 3);
+        let gear = tactics_core::content::Loadout { items: vec!["boost_thrusters".into()], ..Default::default() };
+        let f = b.spawn_equipped("frame_heavy", "Bastion", Team::Player, GridPos::new(0, 2), None, &gear).unwrap();
+        b.spawn("sectoid", "E", Team::Enemy, GridPos::new(19, 4)).unwrap();
+        let boost = |to: i32| Action::ability(f, "boost", Target::Tile(GridPos::new(to, 2)));
+        let heat = b.unit(f).unwrap().heat();
+        b.apply(boost(6)).unwrap();
+        assert_eq!(b.unit(f).unwrap().heat() - heat, 6, "6 heat, nothing else");
+        assert_eq!(b.unit(f).unwrap().pos, GridPos::new(6, 2), "the same reach as before (3 moves)");
+        while b.active_team() == Team::Player {
+            b.apply(Action::EndTurn).unwrap();
+        }
+        b.apply(Action::EndTurn).unwrap();
+        assert!(b.validate(&boost(10)).is_err(), "still recharging the next turn");
+        b.apply(Action::EndTurn).unwrap();
+        b.apply(Action::EndTurn).unwrap();
+        assert!(b.validate(&boost(10)).is_ok(), "ready again the turn after");
+    }
+
     #[test]
     fn robot_frames_and_arsenal() {
         use tactics_core::content::Loadout;

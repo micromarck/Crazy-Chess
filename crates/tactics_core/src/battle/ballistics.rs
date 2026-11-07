@@ -260,14 +260,77 @@ impl Battle {
     /// `radius + 5` tiles. Each hits the first unit in its path for 1 damage
     /// (friend or foe; units inside the blast already took the blast) and
     /// stops on walls, cover it flies into and the ground.
-    pub(super) fn shrapnel(&mut self, attacker: Option<UnitId>, center: GridPos, radius: f32, count: u32, events: &mut Vec<GameEvent>) {
+    /// Shrapnel with `damage` per fragment; `fragmentation`: the fragments
+    /// are the grenade's real punch, so they hit units inside the blast too.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn shrapnel_with(
+        &mut self,
+        attacker: Option<UnitId>,
+        center: GridPos,
+        radius: f32,
+        count: u32,
+        damage: i32,
+        fragmentation: bool,
+        events: &mut Vec<GameEvent>,
+    ) {
         let ground = self.map.elevation(center) as f32 * LEVEL_M;
         let origin = [center.x as f32, center.y as f32, ground + 0.4];
-        let range = radius + 5.0;
+        let mut dirs = Vec::with_capacity(count as usize);
+        for i in 0..count {
+            let jitter = (self.rng.next_u64() >> 11) as f32 / (1u64 << 53) as f32;
+            let yaw = (i as f32 + jitter) / count as f32 * std::f32::consts::TAU;
+            let pitch = 0.05 + gaussian(&mut self.rng) * 0.12;
+            dirs.push([yaw.cos() * pitch.cos(), yaw.sin() * pitch.cos(), pitch.sin()]);
+        }
+        let min = if fragmentation { -1.0 } else { radius };
+        let fragments = self.fly_rays(origin, center, &dirs, radius + 5.0, &vec![damage.max(1); dirs.len()], |u| u.pos.distance(center) > min);
+        events.push(GameEvent::Shrapnel { attacker, center: origin, fragments: fragments.clone() });
+        self.land_rays(&fragments, attacker, events);
+    }
+
+    /// **Spray and pray**: `rounds` bullets **swept** across a `cone`-degree
+    /// arc centred on `point`, left to right in firing order, each one
+    /// scattering wildly (no aim) out to the gun's range and hitting the
+    /// first thing in its way, friend or foe.
+    pub(super) fn spray_fire(&mut self, shooter: UnitId, point: GridPos, cone: f32, rounds: u32, events: &mut Vec<GameEvent>) {
+        let u = &self.units[shooter.0 as usize];
+        let from = u.pos;
+        let ground = self.map.elevation(from) as f32 * LEVEL_M;
+        let origin = [from.x as f32, from.y as f32, ground + u.body.muzzle()];
+        let (lo, hi, range) = (u.weapon.damage_min, u.weapon.damage_max, u.weapon.max_range.max(2.0));
+        let aim = ((point.y - from.y) as f32).atan2((point.x - from.x) as f32);
+        let half = cone.to_radians() / 2.0;
+        let mut dirs = Vec::with_capacity(rounds as usize);
+        let mut damage = Vec::with_capacity(rounds as usize);
+        for i in 0..rounds {
+            // The barrel traverses steadily across the arc; every round kicks off-line.
+            let sweep = (i as f32 + 0.5) / rounds as f32 * 2.0 - 1.0;
+            let yaw = aim - sweep * half + gaussian(&mut self.rng) * 0.07;
+            // Aimed at chest height out there; the kick throws some high or into the deck.
+            let pitch = -0.02 + gaussian(&mut self.rng) * 0.05;
+            dirs.push([yaw.cos() * pitch.cos(), yaw.sin() * pitch.cos(), pitch.sin()]);
+            damage.push(self.rng.range_inclusive(lo, hi).max(1));
+        }
+        let bullets = self.fly_rays(origin, from, &dirs, range, &damage, |u| u.id != shooter);
+        events.push(GameEvent::Spray { attacker: shooter, muzzle: origin, bullets: bullets.clone() });
+        self.land_rays(&bullets, Some(shooter), events);
+    }
+
+    /// Flies rays from `origin` (starting on `start`'s tile) until they hit
+    /// a unit `may_hit` allows, a wall or the edge of `range`.
+    fn fly_rays(
+        &self,
+        origin: [f32; 3],
+        start: GridPos,
+        dirs: &[[f32; 3]],
+        range: f32,
+        damage: &[i32],
+        may_hit: impl Fn(&crate::unit::Unit) -> bool,
+    ) -> Vec<Bullet> {
         let candidates: Vec<(UnitId, f32, f32, f32, f32, f32)> = self
             .units
             .iter()
-            .filter(|u| u.is_alive() && u.pos.distance(center) > radius && u.pos.distance(center) <= range + 1.0)
+            .filter(|u| u.is_alive() && may_hit(u) && u.pos.distance(start) <= range + 2.0)
             .map(|u| {
                 let g = self.map.elevation(u.pos) as f32 * LEVEL_M;
                 let (lo, hi) = u.body.span();
@@ -276,12 +339,8 @@ impl Battle {
             })
             .collect();
         let mut hp: Vec<i32> = self.units.iter().map(|u| u.hp).collect();
-        let mut fragments = Vec::new();
-        for i in 0..count {
-            let jitter = (self.rng.next_u64() >> 11) as f32 / (1u64 << 53) as f32;
-            let yaw = (i as f32 + jitter) / count as f32 * std::f32::consts::TAU;
-            let pitch = 0.05 + gaussian(&mut self.rng) * 0.12;
-            let dir = [yaw.cos() * pitch.cos(), yaw.sin() * pitch.cos(), pitch.sin()];
+        let mut out = Vec::with_capacity(dirs.len());
+        for (k, dir) in dirs.iter().enumerate() {
             let mut t = 0.3;
             let mut end = origin;
             let mut hit = None;
@@ -299,7 +358,7 @@ impl Battle {
                         && p[2] <= top
                     {
                         hit = Some(id);
-                        hp[id.0 as usize] -= 1;
+                        hp[id.0 as usize] -= damage[k];
                         break 'fly;
                     }
                 }
@@ -307,8 +366,8 @@ impl Battle {
                 let blocked = match self.map.terrain(tile) {
                     Terrain::Void => false,
                     _ if p[2] < g => true,
-                    Terrain::HighCover => tile != center && p[2] < g + HIGH_COVER_M,
-                    Terrain::LowCover => tile != center && p[2] < g + LOW_COVER_M,
+                    Terrain::HighCover => tile != start && p[2] < g + HIGH_COVER_M,
+                    Terrain::LowCover => tile != start && p[2] < g + LOW_COVER_M,
                     _ => false,
                 };
                 if blocked || p[2] < -1.0 {
@@ -316,10 +375,13 @@ impl Battle {
                 }
                 t += 0.1;
             }
-            fragments.push(Bullet { end, hit, prop: None, damage: hit.map_or(0, |_| 1), critical: false, blocked: false });
+            out.push(Bullet { end, hit, prop: None, damage: hit.map_or(0, |_| damage[k]), critical: false, blocked: false });
         }
-        events.push(GameEvent::Shrapnel { attacker, center: origin, fragments: fragments.clone() });
-        for f in &fragments {
+        out
+    }
+
+    fn land_rays(&mut self, rays: &[Bullet], attacker: Option<UnitId>, events: &mut Vec<GameEvent>) {
+        for f in rays {
             if self.is_over() {
                 break;
             }
@@ -363,7 +425,7 @@ impl Battle {
 mod tests {
     use crate::action::{Action, ActionError, Target};
     use crate::battle::Battle;
-    use crate::content::{Loadout, Ruleset};
+    use crate::content::{AbilityId, Loadout, Ruleset};
     use crate::event::GameEvent;
     use crate::grid::{GridPos, Map};
     use crate::modules::GrenadierModule;
@@ -515,7 +577,7 @@ mod tests {
                 })
                 .flatten()
                 .collect();
-            assert_eq!(frags.len(), 16);
+            assert_eq!(frags.len(), 24);
             open += frags.iter().filter(|f| f.hit == Some(in_open)).count();
             sheltered += frags.iter().filter(|f| f.hit == Some(behind)).count();
         }
@@ -524,16 +586,80 @@ mod tests {
     }
 
     #[test]
+    fn frag_fragments_do_the_damage_inside_the_blast_too() {
+        let (mut frag_hits, mut total) = (0, 0);
+        for seed in 0..20 {
+            let mut b = Battle::new(Map::from_ascii(&"...........\n".repeat(5)), rules(), seed);
+            let g = b.spawn("grenadier", "G", Team::Player, GridPos::new(0, 2)).unwrap();
+            let e = b.spawn("rifleman", "Close", Team::Enemy, GridPos::new(6, 2)).unwrap();
+            b.spawn("rifleman", "Spare", Team::Enemy, GridPos::new(10, 4)).unwrap();
+            let hp = b.unit(e).unwrap().hp;
+            let ev = b.apply(Action::ability(g, "frag_grenade", Target::Tile(GridPos::new(5, 2)))).unwrap();
+            frag_hits += ev
+                .iter()
+                .filter_map(|x| match x {
+                    GameEvent::Shrapnel { fragments, .. } => Some(fragments.iter().filter(|f| f.hit == Some(e)).count()),
+                    _ => None,
+                })
+                .sum::<usize>();
+            total += hp - b.unit(e).unwrap().hp;
+        }
+        assert!(frag_hits >= 20, "fragments hit units inside the blast ({frag_hits} in 20 throws)");
+        // The blast alone is 1-2: the fragments add a lot more.
+        assert!(total as f32 / 20.0 > 3.0, "average damage {}", total as f32 / 20.0);
+    }
+
+    #[test]
+    fn spray_and_pray_sweeps_half_a_magazine_across_an_arc() {
+        let mut hit_enemies = 0;
+        let mut hit_beside = 0;
+        for seed in 0..10 {
+            let mut b = Battle::new(Map::from_ascii(&"..............\n".repeat(9)), rules(), seed);
+            let g = b.spawn("grenadier", "G", Team::Player, GridPos::new(0, 4)).unwrap();
+            let pals = b.spawn("rifleman", "Pal", Team::Player, GridPos::new(0, 8)).unwrap();
+            let foes: Vec<_> = [(7, 3), (7, 4), (7, 5), (9, 4)]
+                .iter()
+                .map(|&(x, y)| b.spawn("rifleman", "E", Team::Enemy, GridPos::new(x, y)).unwrap())
+                .collect();
+            let clip = b.unit(g).unwrap().weapon.clip_size;
+            assert!(b.preview(g, &AbilityId::new("spray_and_pray"), Target::Tile(GridPos::new(7, 4))).unwrap().is_empty(), "no odds: it can't be aimed");
+            let ev = b.apply(Action::ability(g, "spray_and_pray", Target::Tile(GridPos::new(7, 4)))).unwrap();
+            assert_eq!(b.unit(g).unwrap().weapon.ammo, clip - clip / 2, "half a magazine");
+            let rays: Vec<crate::event::Bullet> = ev
+                .iter()
+                .filter_map(|x| match x {
+                    GameEvent::Spray { bullets, .. } => Some(bullets.clone()),
+                    _ => None,
+                })
+                .flatten()
+                .collect();
+            assert_eq!(rays.len() as i32, clip / 2);
+            // A sweep: the first rounds go to one side of the aim line, the last to the other.
+            let off = |r: &crate::event::Bullet| r.end[1] - 4.0;
+            let q = rays.len() / 4;
+            let first = rays[..q].iter().map(off).sum::<f32>() / q as f32;
+            let last = rays[rays.len() - q..].iter().map(off).sum::<f32>() / q as f32;
+            assert!(first > 0.5 && last < -0.5, "swept across: {first} -> {last}");
+            hit_enemies += foes.iter().filter(|f| rays.iter().any(|r| r.hit == Some(**f))).count();
+            hit_beside += rays.iter().filter(|r| r.hit == Some(pals)).count();
+        }
+        assert!(hit_enemies >= 15, "the wedge catches several of them ({hit_enemies} of 40)");
+        assert_eq!(hit_beside, 0, "nothing goes far outside the wedge");
+    }
+
+    #[test]
     fn blasts_break_walls_into_rubble_then_flatten_them() {
         let mut b = Battle::new(Map::from_ascii("....\n.Hh.\n...."), rules(), 1);
-        let g = b.spawn("grenadier", "G", Team::Player, GridPos::new(0, 0)).unwrap();
+        b.spawn("grenadier", "G", Team::Player, GridPos::new(0, 0)).unwrap();
         let high = GridPos::new(1, 1);
         let low = GridPos::new(2, 1);
         assert_eq!(b.wall_hp(high), Some(6));
         assert_eq!(b.wall_hp(low), Some(3));
         let version = b.map_version();
-        let ev = b.apply(Action::ability(g, "frag_grenade", Target::Tile(GridPos::new(2, 0)))).unwrap();
-        assert_eq!(b.map().terrain(low), crate::grid::Terrain::Floor, "3-4 damage flattens low cover");
+        // A big blast (a rocket, a barrel): walls take its damage.
+        let mut ev = Vec::new();
+        b.explode(GridPos::new(2, 0), 1.5, 4, &mut ev);
+        assert_eq!(b.map().terrain(low), crate::grid::Terrain::Floor, "4 damage flattens low cover");
         assert!(ev.iter().any(|e| matches!(e, GameEvent::WallDestroyed { pos } if *pos == low)));
         assert!(b.wall_hp(high).unwrap() <= 3, "the high wall is cracked");
         assert!(b.map_version() > version);

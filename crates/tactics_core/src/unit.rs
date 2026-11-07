@@ -309,6 +309,81 @@ pub struct UnitClass {
     /// (tasers) short out `Light` and `Medium` machines outright and hurt
     /// `Heavy` ones badly.
     pub machine: Machine,
+    /// Builds up **rage** (see [`RageRules`]): symbiotes.
+    pub rage: Option<RageRules>,
+    /// Burns badly: fire and flame attacks do double damage. Symbiotes.
+    pub flammable: bool,
+    /// At home in symbiote vines (see `Battle::vines`): heals on them
+    /// instead of being lashed and unnerved by them.
+    pub vine_kin: bool,
+}
+
+/// How a unit builds rage: every hit it takes and every kindred death
+/// nearby adds to it, it cools off each of its own turns, and at
+/// `threshold` it's **enraged**: more damage, further moves.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
+pub struct RageRules {
+    /// Rage per hit taken.
+    pub per_hit: i32,
+    /// Rage when one of its own kind dies within 8 tiles.
+    pub per_ally_death: i32,
+    /// Rage lost at the start of each of its turns.
+    pub decay: i32,
+    /// Enraged at or above this.
+    pub threshold: i32,
+    /// Enraged: extra damage on every hit.
+    pub damage: i32,
+    /// Enraged: extra movement points (2 per tile).
+    pub mobility: i32,
+}
+
+impl Default for RageRules {
+    fn default() -> Self {
+        Self { per_hit: 30, per_ally_death: 25, decay: 15, threshold: 50, damage: 2, mobility: 4 }
+    }
+}
+
+/// How far gone a unit's mind is (see `Unit::insanity`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Sanity {
+    /// 0-29.
+    Sane,
+    /// 30-59: -10 aim.
+    Disturbed,
+    /// 60-99: -20 aim, and each turn a chance to snap (the enemy takes it for a turn).
+    Unhinged,
+    /// 100: lost for good (fights for the other side).
+    Lost,
+}
+
+impl Sanity {
+    pub fn of(insanity: i32) -> Self {
+        match insanity {
+            i if i >= 100 => Sanity::Lost,
+            i if i >= 60 => Sanity::Unhinged,
+            i if i >= 30 => Sanity::Disturbed,
+            _ => Sanity::Sane,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Sanity::Sane => "Sane",
+            Sanity::Disturbed => "Disturbed",
+            Sanity::Unhinged => "Unhinged",
+            Sanity::Lost => "Lost",
+        }
+    }
+
+    /// Aim lost to it.
+    pub fn aim_penalty(self) -> i32 {
+        match self {
+            Sanity::Sane => 0,
+            Sanity::Disturbed => 10,
+            Sanity::Unhinged | Sanity::Lost => 20,
+        }
+    }
 }
 
 /// What kind of machine a unit is, if any (see [`UnitClass::machine`]).
@@ -351,6 +426,13 @@ pub struct UnitStatus {
     /// Standing in gas (see `Battle::gas`): can't aim (hit chance 0, shots
     /// fly wild) and moves stagger to random tiles. Never set on machines.
     pub gassed: bool,
+    /// Mind-controlled: fights for the other side for this many more of the
+    /// controller's turns (`u32::MAX` = for good). 0 = its own mind.
+    pub controlled: u32,
+    /// Its real side while controlled.
+    pub home_team: Option<Team>,
+    /// Who holds its mind (freed when they die).
+    pub controlled_by: Option<UnitId>,
 }
 
 /// Behaviour state of an AI-controlled unit (mission mechanics).
@@ -410,6 +492,16 @@ pub struct Unit {
     pub size: u8,
     /// Copied from the class: a robot, and how big.
     pub machine: Machine,
+    /// Copied from the class: builds up rage.
+    pub rage_rules: Option<RageRules>,
+    /// Current rage (0-100, see [`RageRules`]).
+    pub rage: i32,
+    /// Insanity, 0-100 (see [`Sanity`]): soldiers' minds giving way.
+    pub insanity: i32,
+    /// Copied from the class: double damage from fire.
+    pub flammable: bool,
+    /// Copied from the class: at home in vines.
+    pub vine_kin: bool,
     /// What the unit carries (resolved at spawn).
     pub gear: crate::content::Loadout,
     /// Looks (`None` = derived from the name by the frontend).
@@ -417,6 +509,32 @@ pub struct Unit {
 }
 
 impl Unit {
+    /// Its real side (the side it fights for unless mind-controlled).
+    pub fn home_team(&self) -> Team {
+        self.status.home_team.unwrap_or(self.team)
+    }
+
+    /// Enraged (rage at or above its threshold).
+    pub fn enraged(&self) -> bool {
+        self.rage_rules.is_some_and(|r| self.rage >= r.threshold)
+    }
+
+    /// Movement points per action point right now (rage adds some).
+    pub fn mobility(&self) -> u32 {
+        let bonus = if self.enraged() { self.rage_rules.map_or(0, |r| r.mobility) } else { 0 };
+        (self.stats.mobility as i32 + bonus).max(0) as u32
+    }
+
+    /// Can its mind give way? Living, thinking people: not machines, not
+    /// fearless monsters.
+    pub fn can_go_insane(&self) -> bool {
+        self.machine == Machine::None && !self.fearless
+    }
+
+    pub fn sanity(&self) -> Sanity {
+        Sanity::of(self.insanity)
+    }
+
     pub fn is_alive(&self) -> bool {
         self.hp > 0
     }

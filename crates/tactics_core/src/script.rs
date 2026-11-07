@@ -73,6 +73,20 @@ pub enum ScriptCommand {
     /// AI units of `team` head here while no enemy is in sight.
     AiGoal { team: Team, pos: GridPos },
     ClearAiGoal { team: Team },
+    /// Changes a unit's insanity (0-100; at 100 it's lost to the other side).
+    AddInsanity { unit: u32, amount: i32 },
+    /// Changes a unit's rage (units with rage rules).
+    AddRage { unit: u32, amount: i32 },
+    /// Hands a unit's mind to the other side for `turns` of its turns.
+    MindControl { unit: u32, turns: u32 },
+    /// Gives a mind-controlled unit its mind back.
+    ReleaseMind { unit: u32 },
+    /// Grows vines on the floor within `radius` of `pos`.
+    PlantVines { pos: GridPos, radius: f32 },
+    /// Removes vines within `radius` of `pos`.
+    ClearVines { pos: GridPos, radius: f32 },
+    /// Chance (percent) per round for vines to spread to each free side.
+    SetVineGrowth { percent: u32 },
     Win,
     Lose,
 }
@@ -121,6 +135,8 @@ pub struct ScriptWorld {
     pub concealed: bool,
     /// Burning tiles.
     pub fires: Vec<GridPos>,
+    /// Tiles with symbiote vines.
+    pub vines: Vec<GridPos>,
 }
 
 #[derive(Debug, Clone)]
@@ -143,6 +159,10 @@ pub struct WorldUnit {
     pub sight: i32,
     /// Turns left stunned (see [`ScriptCommand::Stun`]).
     pub stunned: u32,
+    pub insanity: i32,
+    pub rage: i32,
+    /// Mind-controlled (turns left; 0 = itself).
+    pub controlled: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -313,6 +333,15 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
         let team = parse_team(team).ok_or_else(|| fail(format!("unknown team '{team}'")))?;
         Ok(ScriptCommand::ClearAiGoal { team })
     });
+    cmd!("add_insanity", |unit: INT, amount: INT| Ok(ScriptCommand::AddInsanity { unit: unit as u32, amount: amount as i32 }));
+    cmd!("add_rage", |unit: INT, amount: INT| Ok(ScriptCommand::AddRage { unit: unit as u32, amount: amount as i32 }));
+    cmd!("mind_control", |unit: INT, turns: INT| Ok(ScriptCommand::MindControl { unit: unit as u32, turns: turns.clamp(1, 99) as u32 }));
+    cmd!("release_mind", |unit: INT| Ok(ScriptCommand::ReleaseMind { unit: unit as u32 }));
+    cmd!("plant_vines", |x: INT, y: INT, radius: FLOAT| Ok(ScriptCommand::PlantVines { pos: grid(x, y), radius: radius as f32 }));
+    cmd!("plant_vines", |x: INT, y: INT, radius: INT| Ok(ScriptCommand::PlantVines { pos: grid(x, y), radius: radius as f32 }));
+    cmd!("clear_vines", |x: INT, y: INT, radius: FLOAT| Ok(ScriptCommand::ClearVines { pos: grid(x, y), radius: radius as f32 }));
+    cmd!("clear_vines", |x: INT, y: INT, radius: INT| Ok(ScriptCommand::ClearVines { pos: grid(x, y), radius: radius as f32 }));
+    cmd!("set_vine_growth", |percent: INT| Ok(ScriptCommand::SetVineGrowth { percent: percent.clamp(0, 100) as u32 }));
     cmd!("win", | | Ok(ScriptCommand::Win));
     cmd!("lose", | | Ok(ScriptCommand::Lose));
     {
@@ -459,6 +488,16 @@ fn register_api(engine: &mut rhai::Engine, out: &std::sync::Arc<std::sync::Mutex
     engine.register_fn("on_fire", move |x: INT, y: INT| w.fires.contains(&grid(x, y)));
     let w = world.clone();
     engine.register_fn("unit_stunned", move |id: INT| -> INT { w.units.iter().find(|u| u.id as INT == id).map_or(0, |u| u.stunned as INT) });
+    let w = world.clone();
+    engine.register_fn("insanity", move |id: INT| -> INT { w.units.iter().find(|u| u.id as INT == id).map_or(0, |u| u.insanity as INT) });
+    let w = world.clone();
+    engine.register_fn("rage", move |id: INT| -> INT { w.units.iter().find(|u| u.id as INT == id).map_or(0, |u| u.rage as INT) });
+    let w = world.clone();
+    engine.register_fn("controlled", move |id: INT| w.units.iter().any(|u| u.id as INT == id && u.controlled > 0));
+    let w = world.clone();
+    engine.register_fn("vines_at", move |x: INT, y: INT| w.vines.contains(&grid(x, y)));
+    let w = world.clone();
+    engine.register_fn("vine_count", move || -> INT { w.vines.len() as INT });
     // Doors: tags (one entry per door), state and the first panel's tile.
     let w = world.clone();
     engine.register_fn("doors", move || -> rhai::Array {
@@ -528,6 +567,9 @@ mod tests {
                 mobility: 5,
                 sight: 12,
                 stunned: 0,
+                insanity: 0,
+                rage: 0,
+                controlled: 0,
             }],
             props: vec![],
             map: Some(Map::new(5, 5)),
@@ -536,6 +578,7 @@ mod tests {
             alarm: false,
             concealed: true,
             fires: Vec::new(),
+            vines: Vec::new(),
             seed: 42,
         }
     }

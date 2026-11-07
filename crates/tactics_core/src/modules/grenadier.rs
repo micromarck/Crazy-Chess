@@ -27,7 +27,7 @@ impl GameModule for GrenadierModule {
         // 1. New abilities ---------------------------------------------------
         rules.add_ability(
             AbilityDef::new("frag_grenade", "Frag Grenade")
-                .with_description("Throw at a tile: 3-4 damage to everyone within 1.5 tiles and to walls and props there. Never misses, ignores cover. 16 fragments fly further out (1 damage each, friend or foe; walls stop them). 1 per battle.")
+                .with_description("Throw at a tile: the casing bursts into 24 fragments (2 damage each) that tear through everyone around it, inside the blast and out (friend or foe; walls and cover stop them). The blast itself only does 1-2 within 1.5 tiles. 1 per battle.")
                 .with_cost(ApCost::Points(1))
                 .with_charges(1)
                 .with_targeting(Targeting::Tile, AbilityRange::Fixed(10.0))
@@ -37,12 +37,33 @@ impl GameModule for GrenadierModule {
                     full_cover_penalty: 0,
                     range_falloff: false,
                     flank_crit_bonus: 0,
-                    damage: DamageSource::Fixed { min: 3, max: 4 },
+                    // Frag: the fragments do the killing; the blast is a pop.
+                    damage: DamageSource::Fixed { min: 1, max: 2 },
                     area_radius: 1.5,
-                    shrapnel: 16,
+                    shrapnel: 24,
+                    shrapnel_damage: 2,
+                    fragmentation: true,
                     ..Default::default()
                 })),
         );
+
+        // Machine guns: sweep half a magazine across an arc. No aim at all.
+        rules.add_ability(
+            AbilityDef::new("spray_and_pray", "Spray and Pray")
+                .with_description("Sweep half a magazine across a 40-degree arc centred on a tile, side to side: every round flies wild (no aim) and hits the first thing in its way out to the gun's range, friend or foe. Walls and cover stop rounds. Ends the turn.")
+                .with_cost(ApCost::EndsTurn)
+                .with_ammo_cost(2)
+                .with_targeting(Targeting::Tile, AbilityRange::Weapon)
+                .with_los(false)
+                .with_effect(AbilityEffect::Attack(AttackProfile { spray: 40.0, ..Default::default() })),
+        );
+        rules.add_presentation(crate::content::AbilityPresentation {
+            ability: AbilityId::new("spray_and_pray"),
+            animation: Some("shoot".into()),
+            projectile: crate::content::ProjectileStyle::None,
+            windup: 0.25,
+            ..Default::default()
+        });
 
         rules.add_ability(
             AbilityDef::new("medkit", "Medkit")
@@ -85,7 +106,7 @@ impl GameModule for GrenadierModule {
             name: "Grenadier".into(),
             stats: UnitStats { max_hp: 9, mobility: 11, aim: 65, ..Default::default() },
             weapon: "lmg".into(),
-            abilities: ["shoot", "blind_fire", "suppress", "frag_grenade", "overwatch", "hunker", "reload"]
+            abilities: ["shoot", "blind_fire", "suppress", "spray_and_pray", "frag_grenade", "overwatch", "hunker", "reload"]
                 .map(AbilityId::new)
                 .to_vec(),
             model: "soldier".into(),

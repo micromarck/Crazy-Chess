@@ -67,7 +67,10 @@ lost expedition's drive from a jungle of raptors, a 2x2 Hornback and a 3x3
 Tyrant), *Raptor Run* (run a canyon to the evac before the chopper leaves
 while packs pour out of the side ravines), *Tyrant Hunt* (kill a Tyrant, and
 its mate, round a research station whose doorways are too narrow for them)
-and *Nest Raid* (steal three raptor eggs at night). See
+and *Nest Raid* (steal three raptor eggs at night); with the Symbiotes module,
+*Dead Signal* (a long exploration of an abandoned space station: find the crew's
+logs to open each bulkhead, which seals behind you and kills anyone left on the
+other side). See
 **[MISSIONS.md](MISSIONS.md)**.
 
 The HUD is an **HTML/CSS layout** (`assets/ui/hud.html`) rendered natively on
@@ -188,7 +191,8 @@ TBSium/
   own radical arsenal (pulse lasers, needle rail, arc thrower; gatling
   laser, plasma cannon, missile pod). Build them in the Barracks. Striders
   can **overclock** (3 a mission: an extra shot, double heat); frames can
-  carry **boost thrusters** (a long straight-line rush that walls stop),
+  carry **boost thrusters** (a long straight-line rush that walls stop; 6 heat,
+  every other turn),
   soldiers a **jump pack** (a shorter leap that clears walls). **Idle** ends a
   frame's turn without making any heat.
 * Dinosaurs (data module) and **multi-tile units**: a class `size` makes a
@@ -212,6 +216,19 @@ TBSium/
 * **Blind fire**: shoot at a tile you can't see (into the dark past your
   sight, out to the gun's full range) at -30 aim; whoever is there takes the
   burst, and the preview gives nothing away.
+* **Symbiotes** (data module): Crawlers, infected Hosts, mind-controlling
+  Puppeteers, the 2x2 Amalgam and the Choir. **Mind control** (soldiers fight
+  for the other side for a few turns), **rage** (hits and kindred deaths make
+  them hit harder and move further), **insanity** (horrors wear soldiers down:
+  disturbed and unhinged soldiers lose aim and may snap; at 100 they're lost),
+  and **vines** that spread across the floor every round and **burn**, like
+  the symbiotes themselves (double damage from fire).
+* **Spray and pray**: machine guns (LMG, minigun, gatling laser) can sweep half
+  a magazine across a 40-degree arc - no aim at all, every round hits the first
+  thing in its way, friend or foe.
+* **Frag grenades** do their damage with fragments: 24 of them at 2 damage,
+  hitting everyone around the throw (inside the blast too) unless walls or
+  cover stop them; the blast itself is small. Rockets still hit with the blast.
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).
