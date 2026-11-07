@@ -191,7 +191,8 @@ TBSium/
   own radical arsenal (pulse lasers, needle rail, arc thrower; gatling
   laser, plasma cannon, missile pod). Build them in the Barracks. Striders
   can **overclock** (3 a mission: an extra shot, double heat); frames can
-  carry **boost thrusters** (a long straight-line rush that walls stop),
+  carry **boost thrusters** (a long straight-line rush that walls stop; 6 heat,
+  every other turn),
   soldiers a **jump pack** (a shorter leap that clears walls). **Idle** ends a
   frame's turn without making any heat.
 * Dinosaurs (data module) and **multi-tile units**: a class `size` makes a
