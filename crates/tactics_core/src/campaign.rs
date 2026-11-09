@@ -86,6 +86,8 @@ pub struct CampaignSoldier {
     /// Dead (permadeath): stays on the memorial.
     pub dead: bool,
     pub in_squad: bool,
+    /// Skills learned (see [`skills`]): one point per rank.
+    pub skills: Vec<String>,
 }
 
 /// Ranks: (name, XP needed). Each rank above the first: +3 aim, +1 HP.
@@ -112,6 +114,85 @@ impl CampaignSoldier {
         let r = self.rank() as i32;
         StatModifiers { aim: 3 * r, max_hp: r, ..Default::default() }
     }
+
+    /// Unspent skill points (one per rank above Rookie).
+    pub fn skill_points(&self) -> u32 {
+        (self.rank() as u32).saturating_sub(self.skills.len() as u32)
+    }
+}
+
+/// A skill in a soldier's skill tree: a branch of three tiers, each needing
+/// the one before it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Skill {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub branch: &'static str,
+    /// 1-3.
+    pub tier: u8,
+    pub description: &'static str,
+    /// Stats added when the soldier deploys.
+    pub bonus: StatModifiers,
+    /// An ability (and how many uses) the soldier gets.
+    pub ability: Option<(&'static str, u32)>,
+}
+
+/// The skill tree every soldier has (their own choices): four branches.
+pub fn skills() -> Vec<Skill> {
+    let s = |id, name, branch, tier, description, bonus: StatModifiers, ability| Skill { id, name, branch, tier, description, bonus, ability };
+    let m = StatModifiers::default;
+    vec![
+        s("steady_hands", "Steady Hands", "Marksman", 1, "+5 aim.", StatModifiers { aim: 5, ..m() }, None),
+        s("eagle_eye", "Eagle Eye", "Marksman", 2, "+5 aim, +3 sight.", StatModifiers { aim: 5, sight: 3.0, ..m() }, None),
+        s("deadeye", "Deadeye", "Marksman", 3, "+10 aim.", StatModifiers { aim: 10, ..m() }, None),
+        s("tough", "Tough", "Survivor", 1, "+2 HP.", StatModifiers { max_hp: 2, ..m() }, None),
+        s("iron_skin", "Iron Skin", "Survivor", 2, "+10 defence.", StatModifiers { defense: 10, ..m() }, None),
+        s("unbreakable", "Unbreakable", "Survivor", 3, "+3 HP, +20 bravery.", StatModifiers { max_hp: 3, bravery: 20, ..m() }, None),
+        s("quick", "Quick", "Scout", 1, "+1 tile of movement.", StatModifiers { mobility: 2, ..m() }, None),
+        s("sprinter", "Sprinter", "Scout", 2, "+1 more tile of movement.", StatModifiers { mobility: 2, ..m() }, None),
+        s("jump_training", "Jump Training", "Scout", 3, "Jump without a pack: a straight-line leap of 2 moves over walls.", m(), Some(("jump", 1))),
+        s("field_medic", "Field Medic", "Specialist", 1, "Carries a medkit (one use) on every mission.", m(), Some(("medkit", 1))),
+        s("demolitions", "Demolitions", "Specialist", 2, "Carries a frag grenade on every mission.", m(), Some(("frag_grenade", 1))),
+        s("adrenal_training", "Adrenal Training", "Specialist", 3, "Carries an adrenaline shot on every mission.", m(), Some(("adrenaline", 1))),
+    ]
+}
+
+/// A research project in the campaign's tech tree.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tech {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub cost: u32,
+    pub requires: &'static [&'static str],
+    /// Not before this story chapter (0-based index of the next chapter).
+    pub min_chapter: usize,
+    pub description: &'static str,
+    /// Gear it puts in the shop (gear in no tech is always for sale).
+    pub unlocks: &'static [&'static str],
+    /// Stats every soldier gets on deployment.
+    pub squad_bonus: StatModifiers,
+}
+
+/// The tech tree of Ghost Protocol.
+pub fn techs() -> Vec<Tech> {
+    let m = StatModifiers::default;
+    vec![
+        Tech { id: "field_medicine", name: "Field Medicine", cost: 100, requires: &[], min_chapter: 0, description: "Medkits and adrenaline shots in the shop.", unlocks: &["medkit_item", "adrenaline_shot"], squad_bonus: m() },
+        Tech { id: "combat_training", name: "Combat Training", cost: 200, requires: &[], min_chapter: 0, description: "Every soldier: +5 aim.", unlocks: &[], squad_bonus: StatModifiers { aim: 5, ..m() } },
+        Tech { id: "advanced_armour", name: "Advanced Armour", cost: 150, requires: &[], min_chapter: 0, description: "Plated armour and ghost suits in the shop.", unlocks: &["plated_armor", "ghost_suit"], squad_bonus: m() },
+        Tech { id: "reinforced_plating", name: "Reinforced Plating", cost: 250, requires: &["advanced_armour"], min_chapter: 1, description: "Every soldier: +1 HP, +5 defence.", unlocks: &[], squad_bonus: StatModifiers { max_hp: 1, defense: 5, ..m() } },
+        Tech { id: "explosives", name: "Explosives", cost: 120, requires: &[], min_chapter: 0, description: "Incendiary and gas grenades in the shop.", unlocks: &["incendiary", "gas"], squad_bonus: m() },
+        Tech { id: "heavy_ordnance", name: "Heavy Ordnance", cost: 250, requires: &["explosives"], min_chapter: 1, description: "Rocket launchers, particle grenades, the flamethrower, the minigun and the autocannon.", unlocks: &["rocket_launcher", "particle", "flamethrower_pack", "flamer", "minigun", "autocannon"], squad_bonus: m() },
+        Tech { id: "shock_tech", name: "Shock Tech", cost: 150, requires: &[], min_chapter: 2, description: "Tasers and scanner armour - for fighting machines.", unlocks: &["taser", "scanner_armor"], squad_bonus: m() },
+        Tech { id: "laser_weapons", name: "Laser Weapons", cost: 300, requires: &["shock_tech"], min_chapter: 3, description: "Laser rifles, the laser lance and the scatter laser.", unlocks: &["laser_rifle", "laser_lance", "scatter_laser"], squad_bonus: m() },
+        Tech { id: "cybernetics", name: "Cybernetics", cost: 300, requires: &["field_medicine"], min_chapter: 3, description: "Augments for Augmented soldiers.", unlocks: &["aug_targeting_eye", "aug_bulk_grafts", "aug_reflex_wiring", "aug_dermal_plating", "aug_recoil_dampers", "aug_neural_dampener", "aug_spring_legs", "aug_adrenal_pump", "aug_berserker_gland", "aug_regenerator", "aug_pyre_core"], squad_bonus: m() },
+        Tech { id: "vesper_salvage", name: "VESPER Salvage", cost: 400, requires: &["cybernetics", "shock_tech"], min_chapter: 4, description: "The Heat Frame Conversion and the Strider frame weapons it can carry.", unlocks: &["aug_heat_frame", "pulse_lasers", "needle_rail", "arc_thrower", "coolant_tank", "boost_thrusters"], squad_bonus: m() },
+    ]
+}
+
+/// The tech that puts `id` in the shop (`None`: always for sale).
+pub fn unlocked_by(id: &str) -> Option<Tech> {
+    techs().into_iter().find(|t| t.unlocks.contains(&id))
 }
 
 /// A generated side mission on offer.
@@ -194,6 +275,8 @@ pub struct CampaignState {
     pub checkpoint: Option<Box<CampaignState>>,
     pub next_id: u32,
     pub seed: u64,
+    /// Researched techs (see [`techs`]).
+    pub techs: Vec<String>,
 }
 
 /// How a mission went (built by the frontend from the finished battle).
@@ -316,11 +399,90 @@ impl CampaignState {
             .collect()
     }
 
+    /// Is `id` for sale (researched, or in no tech)?
+    pub fn unlocked(&self, id: &str) -> bool {
+        unlocked_by(id).is_none_or(|t| self.techs.iter().any(|x| x == t.id))
+    }
+
+    /// Researches a tech.
+    pub fn research(&mut self, id: &str) -> Result<String, String> {
+        let t = techs().into_iter().find(|t| t.id == id).ok_or_else(|| format!("no tech '{id}'"))?;
+        if self.techs.iter().any(|x| x == t.id) {
+            return Err(format!("{} is already researched", t.name));
+        }
+        if let Some(missing) = t.requires.iter().find(|r| !self.techs.iter().any(|x| x == *r)) {
+            let name = techs().into_iter().find(|x| x.id == *missing).map_or(missing.to_string(), |x| x.name.to_string());
+            return Err(format!("{} needs {name} first", t.name));
+        }
+        if self.chapter < t.min_chapter {
+            return Err(format!("{} isn't available until chapter {}", t.name, t.min_chapter + 1));
+        }
+        if self.funds < t.cost {
+            return Err(format!("{} costs {} ({} in hand)", t.name, t.cost, self.funds));
+        }
+        self.funds -= t.cost;
+        self.techs.push(t.id.to_string());
+        Ok(format!("Researched {}: {}", t.name, t.description))
+    }
+
+    /// Teaches a soldier a skill (a point, and the tier before it in the branch).
+    pub fn learn(&mut self, soldier: u32, skill: &str) -> Result<String, String> {
+        let all = skills();
+        let k = all.iter().find(|k| k.id == skill).ok_or_else(|| format!("no skill '{skill}'"))?;
+        let s = self.soldier_mut(soldier).ok_or("no such soldier")?;
+        if s.dead {
+            return Err(format!("{} is dead", s.name));
+        }
+        if s.skills.iter().any(|x| x == k.id) {
+            return Err(format!("{} already knows {}", s.name, k.name));
+        }
+        if s.skill_points() == 0 {
+            return Err(format!("{} has no skill points (one per rank)", s.name));
+        }
+        if let Some(prev) = all.iter().find(|p| p.branch == k.branch && p.tier + 1 == k.tier)
+            && !s.skills.iter().any(|x| x == prev.id)
+        {
+            return Err(format!("{} needs {} first", k.name, prev.name));
+        }
+        s.skills.push(k.id.to_string());
+        Ok(format!("{} learns {}.", s.name, k.name))
+    }
+
+    /// Everything a soldier brings to a mission on top of their gear: rank,
+    /// skills and the squad's techs (stats), and skill abilities.
+    pub fn deploy_bonus(&self, s: &CampaignSoldier) -> (StatModifiers, Vec<(String, u32)>) {
+        let mut b = s.veterancy();
+        let mut add = |m: &StatModifiers| {
+            b.aim += m.aim;
+            b.max_hp += m.max_hp;
+            b.defense += m.defense;
+            b.mobility += m.mobility;
+            b.sight += m.sight;
+            b.bravery += m.bravery;
+        };
+        let all = skills();
+        let mut abilities = Vec::new();
+        for k in all.iter().filter(|k| s.skills.iter().any(|x| x == k.id)) {
+            add(&k.bonus);
+            if let Some((a, n)) = k.ability {
+                abilities.push((a.to_string(), n));
+            }
+        }
+        for t in techs().iter().filter(|t| self.techs.iter().any(|x| x == t.id)) {
+            add(&t.squad_bonus);
+        }
+        (b, abilities)
+    }
+
     /// Buys one of `id`.
     pub fn buy(&mut self, rules: &Ruleset, id: &str) -> Result<(), String> {
         let p = price(rules, id);
         if p == 0 {
             return Err(format!("'{id}' isn't for sale"));
+        }
+        if !self.unlocked(id) {
+            let t = unlocked_by(id).map_or(String::new(), |t| t.name.to_string());
+            return Err(format!("{} needs research first ({t})", item_name(rules, id)));
         }
         if self.funds < p {
             return Err(format!("not enough money ({} needed, {} in hand)", p, self.funds));
@@ -769,6 +931,7 @@ mod tests {
         s.soldier_mut(id).unwrap().gear.armor = Some("plated_armor".into());
         assert_eq!(s.shortfall(&r).get("plated_armor"), Some(&1));
         assert!(s.launch(&def, &r, None).unwrap_err().contains("Plated Armor"));
+        s.techs.push("advanced_armour".into());
         s.funds = 100;
         assert!(s.buy(&r, "plated_armor").is_err(), "120 costs more than 100");
         s.funds = 500;
@@ -792,6 +955,53 @@ mod tests {
         assert!(s.last_report.contains("GHOST PROTOCOL COMPLETE"));
         let after_twist = ghost_protocol().chapters[2].side_enemies.clone();
         assert!(after_twist.iter().any(|e| e.starts_with("fac_")), "robots after the twist");
+    }
+
+    #[test]
+    fn the_tech_tree_gates_the_shop_and_boosts_the_squad() {
+        let def = ghost_protocol();
+        let r = rules();
+        let mut s = CampaignState::new(&def, &r, "Test", 9);
+        s.funds = 2000;
+        assert!(s.buy(&r, "plated_armor").unwrap_err().contains("research"), "locked");
+        assert!(s.buy(&r, "kevlar").is_ok(), "basic gear is always for sale");
+        assert!(s.research("reinforced_plating").unwrap_err().contains("Advanced Armour"), "prerequisites");
+        assert!(s.research("laser_weapons").is_err(), "and story progress");
+        let funds = s.funds;
+        s.research("advanced_armour").unwrap();
+        assert_eq!(s.funds, funds - 150);
+        assert!(s.buy(&r, "plated_armor").is_ok());
+        assert!(s.research("advanced_armour").is_err(), "once");
+        s.research("combat_training").unwrap();
+        let (b, _) = s.deploy_bonus(&s.soldiers[0]);
+        assert_eq!(b.aim, 5, "the whole squad trains");
+        // Every tech's unlocks are real gear or weapons.
+        for t in techs() {
+            for id in t.unlocks {
+                assert!(price(&r, id) > 0 || r.item(id).is_none(), "{id}");
+            }
+        }
+    }
+
+    #[test]
+    fn skill_points_come_with_rank_and_branches_go_in_order() {
+        let def = ghost_protocol();
+        let r = rules();
+        let mut s = CampaignState::new(&def, &r, "Test", 10);
+        let id = s.soldiers[0].id;
+        assert!(s.learn(id, "steady_hands").unwrap_err().contains("no skill points"), "rookies have none");
+        s.soldier_mut(id).unwrap().xp = 7; // Corporal: 2 points
+        assert_eq!(s.soldiers[0].skill_points(), 2);
+        assert!(s.learn(id, "eagle_eye").unwrap_err().contains("Steady Hands"), "tier by tier");
+        s.learn(id, "steady_hands").unwrap();
+        s.learn(id, "field_medic").unwrap();
+        assert_eq!(s.soldiers[0].skill_points(), 0);
+        assert!(s.learn(id, "tough").is_err());
+        let (b, abilities) = s.deploy_bonus(&s.soldiers[0]);
+        assert_eq!(b.aim, 5 + 3 * 2, "skill + rank");
+        assert_eq!(abilities, vec![("medkit".to_string(), 1)]);
+        // Other soldiers have their own trees.
+        assert!(s.soldiers[1].skills.is_empty());
     }
 
     #[cfg(feature = "data")]

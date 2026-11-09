@@ -243,6 +243,9 @@ TBSium/
   missions and kills: +aim, +HP); every mission pays; gear has to be bought
   into a stash. Lose everyone on a side job and its pay and every item taken
   are gone; fail a story mission and reload the checkpoint or give up.
+  A **tech tree** (research with funds: unlocks gear in the shop, squad-wide
+  bonuses) and a **skill tree per soldier** (a point per rank: Marksman,
+  Survivor, Scout and Specialist branches; stats and extra abilities).
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).

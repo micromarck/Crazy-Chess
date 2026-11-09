@@ -13,6 +13,10 @@
 //! | `campaign:buy:<id>` / `campaign:sell:<id>` | shop |
 //! | `campaign:shop:<tab>` | shop tab: `weapons`, `armor`, `items`, `augments` |
 //! | `campaign:reload` / `campaign:giveup` | after a failed story mission |
+//! | `campaign:view:<tab>` | right-hand tab: `soldiers`, `skills`, `tech`, `shop` |
+//! | `campaign:pick:<soldier id>` | show this soldier's skill tree |
+//! | `campaign:learn:<soldier id>:<skill>` | spend a skill point |
+//! | `campaign:research:<tech>` | research a tech (funds) |
 //!
 //! While a campaign is open its soldiers are the squad (the skirmish
 //! Barracks roster is left alone); gear is edited in the Loadout panel as
@@ -68,6 +72,10 @@ pub struct Campaign {
     /// Feedback for the last command.
     pub message: String,
     pub shop_tab: String,
+    /// Right-hand tab of the panel.
+    pub view: String,
+    /// Soldier whose skill tree is shown.
+    pub picked: Option<u32>,
 }
 
 impl Campaign {
@@ -81,6 +89,8 @@ impl Campaign {
             playing: None,
             message: String::new(),
             shop_tab: "items".into(),
+            view: "soldiers".into(),
+            picked: None,
         };
         c.refresh_slots();
         c
@@ -157,6 +167,7 @@ fn run_commands(
         let mut parts = cmd.split(':').map(str::trim);
         let what = parts.next().unwrap_or("");
         let arg = parts.next().unwrap_or("");
+        let arg2 = parts.next().unwrap_or("");
         let slot = arg.parse::<u32>().ok().filter(|n| (1..=SLOTS).contains(n));
         let def = camp.def.clone();
         let msg: Result<String, String> = match what {
@@ -257,6 +268,20 @@ fn run_commands(
                         camp.shop_tab = arg.to_string();
                         Ok(String::new())
                     }
+                    "view" => {
+                        camp.view = arg.to_string();
+                        Ok(String::new())
+                    }
+                    "pick" => {
+                        camp.picked = arg.parse().ok();
+                        camp.view = "skills".into();
+                        Ok(String::new())
+                    }
+                    "learn" => match arg.parse::<u32>() {
+                        Ok(id) => s.learn(id, arg2),
+                        Err(_) => Err("which soldier?".into()),
+                    },
+                    "research" => s.research(arg),
                     "reload" => s.reload().map(|_| {
                         write_squad(&s, state.battle.rules_mut());
                         "Checkpoint reloaded.".to_string()
@@ -303,15 +328,19 @@ fn track_battle(
         camp.launched_at = None;
         camp.playing = Some(state.revision);
         if let Some(s) = &camp.state {
+            // Rank, skills and techs: stats, and the skills' extra abilities.
             let bonuses: Vec<_> = state
                 .battle
                 .units()
                 .iter()
                 .filter(|u| u.team == Team::Player)
-                .filter_map(|u| s.soldiers.iter().find(|c| c.name == u.name).map(|c| (u.id, c.veterancy())))
+                .filter_map(|u| s.soldiers.iter().find(|c| c.name == u.name).map(|c| (u.id, s.deploy_bonus(c))))
                 .collect();
-            for (id, b) in bonuses {
+            for (id, (b, abilities)) in bonuses {
                 state.battle.apply_bonus(id, b);
+                for (a, n) in abilities {
+                    state.battle.grant_ability(id, &tactics_core::content::AbilityId::new(&a), n);
+                }
             }
         }
     }
@@ -482,12 +511,85 @@ pub fn fill_ui(camp: &Campaign, rules: &Ruleset, v: &mut crate::html_ui::bind::U
         }
     }
     v.set("camp.tab", tab);
+    v.set("camp.view", &camp.view);
+    // The tech tree.
+    v.lists.insert(
+        "camp_techs".into(),
+        campaign::techs()
+            .into_iter()
+            .map(|t| {
+                let done = s.techs.iter().any(|x| x == t.id);
+                let missing: Vec<String> = t
+                    .requires
+                    .iter()
+                    .filter(|r| !s.techs.iter().any(|x| x == *r))
+                    .map(|r| campaign::techs().into_iter().find(|x| x.id == *r).map_or(r.to_string(), |x| x.name.to_string()))
+                    .collect();
+                let (state, why) = if done {
+                    ("done", "researched".to_string())
+                } else if !missing.is_empty() {
+                    ("locked", format!("needs {}", missing.join(", ")))
+                } else if s.chapter < t.min_chapter {
+                    ("locked", format!("from chapter {}", t.min_chapter + 1))
+                } else {
+                    ("open", format!("{} funds", t.cost))
+                };
+                BTreeMap::from([
+                    ("id".to_string(), t.id.to_string()),
+                    ("name".to_string(), t.name.to_string()),
+                    ("info".to_string(), format!("{} - {why}", t.description)),
+                    ("state".to_string(), state.to_string()),
+                    ("can".to_string(), yes(state == "open").to_string()),
+                ])
+            })
+            .collect(),
+    );
+    // The picked soldier's skill tree.
+    let picked = camp.picked.and_then(|id| s.soldiers.iter().find(|c| c.id == id && !c.dead)).or_else(|| s.alive().next());
+    v.set("camp.picked", picked.map_or(String::new(), |c| c.name.clone()));
+    v.set("camp.picked_id", picked.map_or(String::new(), |c| c.id.to_string()));
+    v.set(
+        "camp.picked_info",
+        picked.map_or(String::new(), |c| format!("{} - {} skill point{} (one per rank)", c.rank_name(), c.skill_points(), if c.skill_points() == 1 { "" } else { "s" })),
+    );
+    let all = campaign::skills();
+    v.lists.insert(
+        "camp_skills".into(),
+        all.iter()
+            .map(|k| {
+                let (state, can) = match picked {
+                    None => ("locked", false),
+                    Some(c) => {
+                        let known = c.skills.iter().any(|x| x == k.id);
+                        let prev_ok = all.iter().find(|p| p.branch == k.branch && p.tier + 1 == k.tier).is_none_or(|p| c.skills.iter().any(|x| x == p.id));
+                        if known {
+                            ("done", false)
+                        } else if prev_ok && c.skill_points() > 0 {
+                            ("open", true)
+                        } else {
+                            ("locked", false)
+                        }
+                    }
+                };
+                BTreeMap::from([
+                    ("id".to_string(), k.id.to_string()),
+                    ("name".to_string(), format!("{} {}", k.branch, "I".repeat(k.tier as usize)) + ": " + k.name),
+                    ("info".to_string(), k.description.to_string()),
+                    ("state".to_string(), state.to_string()),
+                    ("can".to_string(), yes(can).to_string()),
+                ])
+            })
+            .collect(),
+    );
     v.lists.insert(
         "camp_shop".into(),
         shop.into_iter()
             .map(|(id, name, p)| {
                 let owned = s.stash.get(&id).copied().unwrap_or(0);
+                let lock = if s.unlocked(&id) { String::new() } else { campaign::unlocked_by(&id).map_or(String::new(), |t| format!(" - needs {}", t.name)) };
                 BTreeMap::from([
+                    ("locked".to_string(), lock.clone()),
+                    ("can_buy".to_string(), yes(lock.is_empty()).to_string()),
                     ("id".to_string(), id),
                     ("name".to_string(), name),
                     ("price".to_string(), p.to_string()),

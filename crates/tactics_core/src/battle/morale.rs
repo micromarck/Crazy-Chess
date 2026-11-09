@@ -41,6 +41,21 @@ impl Battle {
         }
     }
 
+    /// Gives a unit an ability it may not have (skills learned between
+    /// missions). With charges, adds `charges` uses (on top of any it has).
+    pub fn grant_ability(&mut self, id: UnitId, ability: &crate::content::AbilityId, charges: u32) {
+        let Some(def) = self.rules.ability(ability).cloned() else { return };
+        let Some(u) = self.units.get_mut(id.0 as usize).filter(|u| u.is_alive()) else { return };
+        let had = u.abilities.contains(ability);
+        if !had {
+            u.abilities.push(ability.clone());
+        }
+        if let Some(max) = def.charges {
+            let left = if had { u.charges.get(ability).copied().unwrap_or(max) } else { 0 };
+            u.charges.insert(ability.clone(), left + charges.max(1));
+        }
+    }
+
     /// Sets a unit's HP directly (tests, tools).
     pub fn debug_set_hp(&mut self, id: UnitId, hp: i32) {
         if let Some(u) = self.units.get_mut(id.0 as usize) {
