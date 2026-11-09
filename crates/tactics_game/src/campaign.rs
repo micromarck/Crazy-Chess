@@ -66,9 +66,9 @@ pub struct Campaign {
     pub slot: u32,
     /// What each save slot holds (for the slot list).
     pub slots: Vec<Option<CampaignState>>,
-    /// Battle revision when the mission was launched (waiting for it to start).
+    /// `BattleState::battle_id` when the mission was launched (waiting for it to start).
     launched_at: Option<u64>,
-    /// Battle revision of the campaign mission being played.
+    /// `BattleState::battle_id` of the campaign mission being played.
     playing: Option<u64>,
     /// Feedback for the last command.
     pub message: String,
@@ -108,6 +108,10 @@ impl Campaign {
     }
 
     fn save(&mut self) {
+        // Slot 0 is no slot (tests, or nothing chosen yet).
+        if self.slot == 0 {
+            return;
+        }
         if let Some(s) = &self.state
             && let Err(e) = crate::write_save(&slot_file(self.slot), &s.to_text())
         {
@@ -233,7 +237,7 @@ fn run_commands(
                                     Some(i) => StartBattle::Def(Box::new(tactics_core::levelgen::generate(s.side_ops[i].params()))),
                                 };
                                 start.write(request);
-                                camp.launched_at = Some(state.revision);
+                                camp.launched_at = Some(state.battle_id);
                                 if let Some(f) = flags.0.get_mut("campaign") {
                                     *f = false;
                                 }
@@ -328,10 +332,10 @@ fn track_battle(
 ) {
     // The launched mission has started: veterans get their bonuses.
     if let Some(at) = camp.launched_at
-        && state.revision != at
+        && state.battle_id != at
     {
         camp.launched_at = None;
-        camp.playing = Some(state.revision);
+        camp.playing = Some(state.battle_id);
         if let Some(s) = &camp.state {
             // Rank, skills and techs: stats, and the skills' extra abilities.
             let bonuses: Vec<_> = state
@@ -351,7 +355,8 @@ fn track_battle(
     }
     let Some(rev) = camp.playing else { return };
     let b = &state.battle;
-    let result = if state.revision != rev {
+    // (`battle_id` changes only when another battle starts - not on every move.)
+    let result = if state.battle_id != rev {
         // Left the mission before it ended: a failure (the squad pulls out).
         Some(MissionResult { won: false, fallen: Vec::new(), kills: BTreeMap::new(), doses: BTreeMap::new() })
     } else if b.is_over() && !playback.is_busy() {
@@ -645,4 +650,50 @@ pub fn fill_ui(camp: &Campaign, rules: &Ruleset, v: &mut crate::html_ui::bind::U
             })
             .collect(),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tactics_core::action::Action;
+
+    /// Moving during a campaign mission must not count as leaving it (the
+    /// battle's `revision` changes with every action; `battle_id` doesn't).
+    #[test]
+    fn moving_in_a_campaign_mission_doesnt_abandon_it() {
+        let (rules, _) = crate::content::build_ruleset();
+        let def = campaign::ghost_protocol();
+        let mut s = CampaignState::new(&def, &rules, "Test", 1);
+        let mut rules = rules;
+        s.launch(&def, &rules, None).unwrap();
+        write_squad(&s, &mut rules);
+        let battle = tactics_core::scenario::skirmish(&rules, 7);
+        let mut app = App::new();
+        let mut camp = Campaign::new();
+        camp.state = Some(s);
+        camp.playing = Some(0);
+        app.insert_resource(camp)
+            .insert_resource(BattleState::new(battle))
+            .init_resource::<crate::playback::Playback>()
+            .init_resource::<LogMessages>()
+            .init_resource::<crate::html_ui::UiFlags>()
+            .add_systems(Update, track_battle);
+        app.update();
+        // A move.
+        {
+            let mut state = app.world_mut().resource_mut::<BattleState>();
+            let id = state.battle.living(Team::Player).find(|u| u.can_act()).map(|u| u.id).unwrap();
+            let to = state.battle.movement_range(id).iter().map(|(p, _)| p).find(|p| *p != state.battle.unit(id).unwrap().pos).unwrap();
+            state.apply_quietly(Action::Move { unit: id, to }).unwrap();
+        }
+        app.update();
+        let camp = app.world().resource::<Campaign>();
+        assert_eq!(camp.state.as_ref().unwrap().status, Status::InMission, "still playing: {}", camp.state.as_ref().unwrap().last_report);
+        assert_eq!(camp.playing, Some(0));
+        // A different battle starting does count as leaving.
+        app.world_mut().resource_mut::<BattleState>().battle_id += 1;
+        app.update();
+        let camp = app.world().resource::<Campaign>();
+        assert_eq!(camp.state.as_ref().unwrap().status, Status::StoryFailed);
+    }
 }

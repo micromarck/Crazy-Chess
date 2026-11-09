@@ -42,6 +42,8 @@ pub struct BattleState {
     pub battle: Battle,
     /// Incremented every time the battle or its content changes.
     pub revision: u64,
+    /// Incremented only when a new battle starts (missions, restarts).
+    pub battle_id: u64,
     /// Seed of the current battle (for restarts and bug reports).
     pub seed: u64,
     /// Id of the mission being played (`None` = skirmish / demo).
@@ -157,7 +159,7 @@ impl MissionStats {
 
 impl BattleState {
     pub fn new(battle: Battle) -> Self {
-        Self { battle, revision: 0, seed: DEFAULT_SEED, mission: None, stats: MissionStats::default(), generated: None }
+        Self { battle, revision: 0, battle_id: 0, seed: DEFAULT_SEED, mission: None, stats: MissionStats::default(), generated: None }
     }
 
     /// Applies an action and queues its events for animation.

@@ -308,6 +308,7 @@ pub fn start_battle(
     state.seed = seed;
     state.mission = mission;
     state.revision += 1;
+    state.battle_id += 1;
     playback.clear();
     playback.enqueue(begin_events);
     *selection = Selection::default();
