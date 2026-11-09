@@ -228,7 +228,8 @@ fn board_click(
     mut rig: Single<&mut CameraRig>,
     settings: Res<crate::settings::GameSettings>,
     touch: Res<crate::touch::TouchMode>,
-    mut flags: ResMut<crate::html_ui::UiFlags>,
+    flags: Res<crate::html_ui::UiFlags>,
+    guard: Res<crate::html_ui::UiClickGuard>,
 ) {
     // A click (press + release without dragging), a tap, or releasing an
     // order-drag that started on the selected soldier.
@@ -237,8 +238,7 @@ fn board_click(
         return;
     }
     // A HUD button took this click (or a menu is up).
-    let used = flags.0.insert("click_used".into(), false).unwrap_or(false);
-    if used || flags.0.get("menu").copied().unwrap_or(false) || pointer_over_ui(&hover_map, &ui_nodes) {
+    if guard.0 > 0 || flags.0.get("menu").copied().unwrap_or(false) || pointer_over_ui(&hover_map, &ui_nodes) {
         return;
     }
     let Some(tile) = selection.hovered else { return };

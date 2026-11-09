@@ -178,6 +178,7 @@ pub fn collect_ui_data(
     v.set("mission.name", current.map(|m| m.def.name.as_str()).or(generated.map(|g| g.name.as_str())).unwrap_or("Skirmish"));
     v.set("mission.description", current.map(|m| m.def.description.as_str()).or(generated.map(|g| g.description.as_str())).unwrap_or(""));
     v.set("missions.ready", bool_str(catalog.ready));
+    if flags.0.get("missions").copied().unwrap_or(false) {
     v.lists.insert(
         "missions".into(),
         catalog
@@ -194,6 +195,7 @@ pub fn collect_ui_data(
             })
             .collect(),
     );
+    }
 
     // Character Lab.
     let lab_active = state.mission.as_deref() == Some(crate::lab::LAB_MISSION);
@@ -226,8 +228,13 @@ pub fn collect_ui_data(
     }
 
     // Barracks (saved soldiers).
-    v.lists.insert("roster".into(), roster.rows());
-    crate::campaign::fill_ui(&campaign, b.rules(), &mut v);
+    // (Panel lists are only built while their panel is open: they're the
+    // costly part of this system, and nothing else reads them.)
+    let open = |panel: &str| flags.0.get(panel).copied().unwrap_or(false);
+    if open("barracks") {
+        v.lists.insert("roster".into(), roster.rows());
+    }
+    crate::campaign::fill_ui(&campaign, b.rules(), open("campaign"), &mut v);
     v.set("barracks.count", roster.soldiers.len());
     v.set("barracks.squad", roster.squad().count());
     v.set("barracks.squad_max", crate::roster::SQUAD_SIZE);
@@ -261,6 +268,7 @@ pub fn collect_ui_data(
     v.set("settings.invert_orbit", on(settings.invert_orbit));
     v.set("settings.action_camera", on(settings.action_camera));
     v.set("settings.difficulty", settings.difficulty_name());
+    v.set("settings.graphics", settings.graphics_name());
     v.set("settings.ui_scale", settings.ui_scale_name());
     v.set("settings.edge_margin", settings.edge_margin_name());
 
@@ -269,9 +277,11 @@ pub fn collect_ui_data(
     v.set("cinematics", bool_str(director.enabled));
 
     // Loadouts of the player's squad (edited between missions).
-    v.lists.insert("loadout".into(), crate::loadout::rows(b.rules(), roster.loadout_selected));
-    for (k, val) in crate::loadout::detail(b.rules(), roster.loadout_selected) {
-        v.set(&k, val);
+    if open("loadout") {
+        v.lists.insert("loadout".into(), crate::loadout::rows(b.rules(), roster.loadout_selected));
+        for (k, val) in crate::loadout::detail(b.rules(), roster.loadout_selected) {
+            v.set(&k, val);
+        }
     }
 
     // Lists.

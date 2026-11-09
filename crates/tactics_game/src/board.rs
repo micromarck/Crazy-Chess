@@ -447,6 +447,7 @@ fn spawn_lights(mut commands: Commands, state: Res<BattleState>) {
     let center = grid_to_world(GridPos::new(map.width() / 2, map.height() / 2));
     commands.insert_resource(GlobalAmbientLight { color: Color::srgb(0.75, 0.8, 1.0), brightness: 350.0, ..default() });
     commands.spawn((
+        crate::graphics::KeyLight,
         DirectionalLight { illuminance: 9_000.0, shadow_maps_enabled: true, ..default() },
         Transform::from_translation(center + Vec3::new(-8.0, 20.0, 10.0)).looking_at(center, Vec3::Y),
     ));

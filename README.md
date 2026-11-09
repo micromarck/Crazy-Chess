@@ -60,6 +60,12 @@ The game opens on a **main menu** (Campaign, Missions, Quick skirmish, Barracks,
 Settings, How to play; the Menu button or Esc brings it back). Set
 `TBS_MISSION=<id>` to jump straight into a mission instead.
 
+**Graphics** (Settings): *Performance* (no shadows or anti-aliasing, fewer
+fire, gas and vine effects - for phones and old machines), *Balanced*, or
+*Pretty* (a warm sun with a cool fill light, sharper and smoother shadows from
+a bigger shadow map with more cascades, bloom on desktop). Looks only: the
+rules are identical in every mode.
+
 New to the controls? Play *Basic Training* from the Missions list. Bundled large levels: *Proving Grounds*
 (sandbox), *Hold the Beacon* (defend and extract), *Clear the Complex*
 (explore and clear) and *Silent Theft* (stealth heist); with the

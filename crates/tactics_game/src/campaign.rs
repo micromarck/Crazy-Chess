@@ -133,6 +133,9 @@ pub fn write_squad(s: &CampaignState, rules: &mut Ruleset) {
             appearance: Some(c.appearance.unwrap_or_else(|| Appearance::from_name(&c.name))),
         })
         .collect();
+    if members.is_empty() {
+        return; // nobody left: keep the last squad rather than deploy no one
+    }
     match rules.squad_mut("player") {
         Some(sq) => sq.members = members,
         None => rules.add_squad(SquadDef { id: "player".into(), members }),
@@ -189,10 +192,18 @@ fn run_commands(
                 None => Err("which slot?".into()),
             },
             "load" => match slot.and_then(|n| camp.slots.get(n as usize - 1).cloned().flatten().map(|s| (n, s))) {
-                Some((n, s)) => {
+                Some((n, mut s)) => {
+                    // Saved in the middle of a mission (the game was closed):
+                    // that mission counts as abandoned, so the campaign isn't stuck.
+                    if s.status == Status::InMission {
+                        s.finish(&def, &MissionResult::default());
+                    }
                     write_squad(&s, state.battle.rules_mut());
                     camp.state = Some(s);
                     camp.slot = n;
+                    camp.playing = None;
+                    camp.launched_at = None;
+                    camp.save();
                     Ok(format!("Campaign loaded (slot {n})."))
                 }
                 None => Err("that slot is empty".into()),
@@ -395,7 +406,7 @@ fn track_battle(
 }
 
 /// Panel data (`camp.*` values and `camp_*` lists).
-pub fn fill_ui(camp: &Campaign, rules: &Ruleset, v: &mut crate::html_ui::bind::UiValues) {
+pub fn fill_ui(camp: &Campaign, rules: &Ruleset, open: bool, v: &mut crate::html_ui::bind::UiValues) {
     let yes = |b: bool| if b { "yes" } else { "" };
     v.set("camp.active", yes(camp.active()));
     v.set("camp.name", &camp.def.name);
@@ -431,6 +442,11 @@ pub fn fill_ui(camp: &Campaign, rules: &Ruleset, v: &mut crate::html_ui::bind::U
             .collect(),
     );
     let Some(s) = &camp.state else { return };
+    v.set("camp.funds", s.funds);
+    // The rest is only shown in the panel: don't rebuild it every frame while it's closed.
+    if !open {
+        return;
+    }
     let ch = s.current_chapter(&camp.def);
     v.set("camp.title", &s.title);
     v.set("camp.chapter", format!("{}/{}", (s.chapter + 1).min(camp.def.chapters.len()), camp.def.chapters.len()));

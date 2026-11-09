@@ -52,6 +52,7 @@ pub mod playback;
 pub mod rig;
 pub mod roster;
 pub mod campaign;
+pub mod graphics;
 pub mod scenery;
 pub mod settings;
 pub mod sky;
@@ -104,7 +105,7 @@ impl Plugin for TacticsPlugin {
             html_ui::HtmlUiPlugin,
             editor::EditorPlugin,
         ))
-        .add_plugins((characters::CharactersPlugin, lab::LabPlugin, tooltip::TooltipPlugin, cutaway::CutawayPlugin, minimap::MinimapPlugin, settings::SettingsPlugin, looks::LooksPlugin, roster::RosterPlugin, campaign::CampaignPlugin))
+        .add_plugins((characters::CharactersPlugin, lab::LabPlugin, tooltip::TooltipPlugin, cutaway::CutawayPlugin, minimap::MinimapPlugin, settings::SettingsPlugin, looks::LooksPlugin, roster::RosterPlugin, campaign::CampaignPlugin, graphics::GraphicsPlugin))
             .add_plugins((fog::FogPlugin, touch::TouchPlugin, sky::SkyPlugin, loading::LoadingScreenPlugin, fire::FirePlugin));
     }
 }

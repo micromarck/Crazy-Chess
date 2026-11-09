@@ -46,6 +46,8 @@ pub struct GameSettings {
     /// Space kept free at the right screen edge (system navigation buttons),
     /// in screen pixels; -1 = automatic.
     pub edge_margin: i32,
+    /// 0 = performance, 1 = balanced, 2 = pretty (see [`crate::graphics`]).
+    pub graphics: u8,
 }
 
 impl Default for GameSettings {
@@ -60,6 +62,7 @@ impl Default for GameSettings {
             permadeath: false,
             ui_scale: 0.0,
             edge_margin: -1,
+            graphics: crate::graphics::BALANCED,
         }
     }
 }
@@ -110,6 +113,10 @@ impl GameSettings {
                 self.ui_scale = next_of(&[0.0, 0.7, 0.85, 1.0, 1.15, 1.3, 1.5], self.ui_scale);
                 format!("UI size: {}", self.ui_scale_name())
             }
+            "graphics" => {
+                self.graphics = (self.graphics + 1) % 3;
+                format!("Graphics: {}", self.graphics_name())
+            }
             "difficulty" => {
                 self.difficulty = (self.difficulty + 1) % 3;
                 format!("AI difficulty: {}", self.difficulty_name())
@@ -122,8 +129,8 @@ impl GameSettings {
 
     pub fn to_text(&self) -> String {
         format!(
-            "anim_speed = {}\ncamera_speed = {}\nedge_scroll = {}\ninvert_orbit = {}\naction_camera = {}\ndifficulty = {}\npermadeath = {}\nui_scale = {}\nedge_margin = {}\n",
-            self.anim_speed, self.camera_speed, self.edge_scroll, self.invert_orbit, self.action_camera, self.difficulty, self.permadeath, self.ui_scale, self.edge_margin
+            "anim_speed = {}\ncamera_speed = {}\nedge_scroll = {}\ninvert_orbit = {}\naction_camera = {}\ndifficulty = {}\npermadeath = {}\nui_scale = {}\nedge_margin = {}\ngraphics = {}\n",
+            self.anim_speed, self.camera_speed, self.edge_scroll, self.invert_orbit, self.action_camera, self.difficulty, self.permadeath, self.ui_scale, self.edge_margin, self.graphics
         )
     }
 
@@ -140,6 +147,15 @@ impl GameSettings {
     /// "auto" or "x1.15".
     pub fn ui_scale_name(&self) -> String {
         if self.ui_scale <= 0.0 { "auto".into() } else { format!("x{}", self.ui_scale) }
+    }
+
+    pub fn graphics_name(&self) -> &'static str {
+        ["Performance (fewer effects, no shadows)", "Balanced", "Pretty (better lighting, smoother shadows)"][self.graphics.min(2) as usize]
+    }
+
+    /// Performance mode: skip the purely decorative effects.
+    pub fn low_effects(&self) -> bool {
+        self.graphics == crate::graphics::PERFORMANCE
     }
 
     pub fn difficulty_name(&self) -> &'static str {
@@ -187,6 +203,7 @@ impl GameSettings {
                 "edge_margin" => s.edge_margin = v.parse::<i32>().ok().filter(|m| (-1..=200).contains(m)).unwrap_or(s.edge_margin),
                 "ui_scale" => s.ui_scale = v.parse::<f32>().ok().filter(|x| *x == 0.0 || (0.5..=2.0).contains(x)).unwrap_or(s.ui_scale),
                 "difficulty" => s.difficulty = v.parse::<u8>().ok().filter(|d| *d <= 2).unwrap_or(s.difficulty),
+                "graphics" => s.graphics = v.parse::<u8>().ok().filter(|d| *d <= 2).unwrap_or(s.graphics),
                 _ => {}
             }
         }

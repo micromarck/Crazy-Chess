@@ -48,6 +48,8 @@ impl Plugin for HtmlUiPlugin {
         app.init_resource::<UiData>()
             // The main menu greets the player (unless `TBS_MISSION` jumps straight into a mission).
             .insert_resource(UiFlags([("menu".to_string(), !crate::missions::mission_from_env())].into()))
+            .init_resource::<UiClickGuard>()
+            .add_systems(Last, tick_click_guard)
             .init_resource::<HtmlLayout>()
             .add_message::<UiCommand>()
             .add_systems(Startup, request_initial_build)
@@ -79,6 +81,16 @@ pub struct UiData {
 /// open and close its own panels without any Rust.
 #[derive(Resource, Default)]
 pub struct UiFlags(pub std::collections::BTreeMap<String, bool>);
+
+/// Frames left during which a board click is ignored because a HUD button
+/// just used it (the button's panel may be gone by the time the board looks).
+/// Counts down every frame, so it can never swallow a later click.
+#[derive(Resource, Default)]
+pub struct UiClickGuard(pub u8);
+
+fn tick_click_guard(mut guard: ResMut<UiClickGuard>) {
+    guard.0 = guard.0.saturating_sub(1);
+}
 
 /// The current layout's stylesheet and source, plus a rebuild flag.
 #[derive(Resource, Default)]
@@ -193,12 +205,17 @@ pub fn run_ui_commands(
     mut settings: ResMut<crate::settings::GameSettings>,
     mut roster: ResMut<crate::roster::Roster>,
     mut windows: Query<&mut Window, With<bevy::window::PrimaryWindow>>,
-    (campaign, mut campaign_cmds, mut exit): (Res<crate::campaign::Campaign>, MessageWriter<crate::campaign::CampaignCommand>, MessageWriter<AppExit>),
+    (campaign, mut campaign_cmds, mut exit, mut guard): (
+        Res<crate::campaign::Campaign>,
+        MessageWriter<crate::campaign::CampaignCommand>,
+        MessageWriter<AppExit>,
+        ResMut<UiClickGuard>,
+    ),
 ) {
     for UiCommand(cmd) in commands.read() {
         // This click belongs to the HUD: the board mustn't act on it too (the
         // panel under the pointer may already be gone when the button lets go).
-        flags.0.insert("click_used".into(), true);
+        guard.0 = 2;
         let (name, arg) = cmd.split_once(':').map_or((cmd.as_str(), ""), |(n, a)| (n, a));
         match name.trim() {
             "end_turn" => {

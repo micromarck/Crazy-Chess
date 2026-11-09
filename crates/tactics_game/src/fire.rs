@@ -147,7 +147,9 @@ fn sync_fires(
     assets: Res<FireAssets>,
     mut visuals: ResMut<FireVisuals>,
     mut resets: MessageReader<BattleReset>,
+    settings: Res<crate::settings::GameSettings>,
 ) {
+    let low = settings.low_effects();
     if resets.read().count() > 0 {
         let visuals = &mut *visuals;
         for (_, e) in visuals.fires.drain().chain(visuals.scorches.drain()).chain(visuals.gas.drain()).chain(visuals.vines.drain()) {
@@ -180,7 +182,7 @@ fn sync_fires(
     for (i, p) in new.into_iter().enumerate() {
         let top = tile_top(b.map(), p);
         let root = commands.spawn((Transform::from_translation(top), Visibility::default())).id();
-        for k in 0..4u32 {
+        for k in 0..if low { 2 } else { 4u32 } {
             let off = Vec3::new(jitter(p, k) - 0.5, 0.0, jitter(p, k + 7) - 0.5) * 0.55;
             let s = 0.7 + jitter(p, k + 13) * 0.6;
             let base = Vec3::new(s, s * (0.8 + jitter(p, k + 3) * 0.6), s);
@@ -194,7 +196,7 @@ fn sync_fires(
                 ChildOf(root),
             ));
         }
-        if lights + i < MAX_LIGHTS {
+        if !low && lights + i < MAX_LIGHTS {
             commands.spawn((
                 PointLight { color: Color::srgb(1.0, 0.55, 0.2), intensity: 60_000.0, range: 4.0, shadow_maps_enabled: false, ..default() },
                 Transform::from_translation(Vec3::Y * 0.8),
@@ -257,7 +259,14 @@ fn burst_flames(mut commands: Commands, time: Res<Time>, mut q: Query<(Entity, &
 
 /// Gas clouds (`Battle::gas`): a few slow, see-through yellow-green puffs on
 /// every gassed tile.
-fn sync_gas(mut commands: Commands, state: Res<BattleState>, assets: Res<FireAssets>, mut visuals: ResMut<FireVisuals>) {
+fn sync_gas(
+    mut commands: Commands,
+    state: Res<BattleState>,
+    assets: Res<FireAssets>,
+    mut visuals: ResMut<FireVisuals>,
+    settings: Res<crate::settings::GameSettings>,
+) {
+    let low = settings.low_effects();
     let b = &state.battle;
     let gas = b.gas();
     let gone: Vec<GridPos> = visuals.gas.keys().copied().filter(|p| !gas.contains_key(p)).collect();
@@ -269,7 +278,7 @@ fn sync_gas(mut commands: Commands, state: Res<BattleState>, assets: Res<FireAss
     let new: Vec<GridPos> = gas.keys().copied().filter(|p| !visuals.gas.contains_key(p)).collect();
     for p in new {
         let root = commands.spawn((Transform::from_translation(tile_top(b.map(), p)), Visibility::default())).id();
-        for k in 0..3u32 {
+        for k in 0..if low { 1 } else { 3u32 } {
             let base = Vec3::new(jitter(p, k + 40) - 0.5, 0.35 + jitter(p, k + 50) * 0.5, jitter(p, k + 60) - 0.5) * Vec3::new(0.6, 1.0, 0.6);
             commands.spawn((
                 Mesh3d(assets.puff.clone()),
@@ -294,7 +303,14 @@ fn drift_gas(time: Res<Time>, mut puffs: Query<(&GasPuff, &mut Transform)>) {
 
 /// Symbiote vines (`Battle::vines`): a glistening purple mat on the deck with a
 /// few tendrils sprouting from it.
-fn sync_vines(mut commands: Commands, state: Res<BattleState>, assets: Res<FireAssets>, mut visuals: ResMut<FireVisuals>) {
+fn sync_vines(
+    mut commands: Commands,
+    state: Res<BattleState>,
+    assets: Res<FireAssets>,
+    mut visuals: ResMut<FireVisuals>,
+    settings: Res<crate::settings::GameSettings>,
+) {
+    let low = settings.low_effects();
     let b = &state.battle;
     let vines = b.vines();
     let gone: Vec<GridPos> = visuals.vines.keys().copied().filter(|p| !vines.contains(p)).collect();
@@ -316,7 +332,7 @@ fn sync_vines(mut commands: Commands, state: Res<BattleState>, assets: Res<FireA
             ))
             .id();
         for k in 0..2u32 {
-            if jitter(p, k + 90) < 0.35 {
+            if low || jitter(p, k + 90) < 0.35 {
                 continue;
             }
             let off = Vec3::new(jitter(p, k + 91) - 0.5, jitter(p, k + 92) - 0.5, 0.0) * 0.7;
