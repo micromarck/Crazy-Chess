@@ -1,6 +1,14 @@
 # Campaign system: design outline
 
-**Status: not implemented yet.** This is the plan for the next piece of
+**Status:** the first campaign, **Ghost Protocol**, is implemented
+(`tactics_core::campaign`, `crates/tactics_game/src/campaign.rs`, the
+Campaign panel, story maps in `tools/gen_campaign.py`). It covers save slots,
+permadeath, ranks, funds, the stash and shop, generated side missions,
+checkpoints and reloads. What's below is the fuller design it grew from;
+research, threat, days and data-defined campaigns (`CampaignDef` in RON)
+are still to come.
+
+This was the plan for the next piece of
 work. It sticks to systems the game already has: the saved roster (Barracks,
 permadeath, mission counts), loadouts, data modules, XML missions with
 scripts, and `read_save` / `write_save` (a file on desktop, `localStorage` on

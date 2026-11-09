@@ -104,9 +104,11 @@ impl MissionCatalog {
 pub const GENERATED: &str = "generated";
 
 /// What to start.
-#[derive(Message, Debug, Clone, PartialEq, Eq)]
+#[derive(Message, Debug, Clone, PartialEq)]
 pub enum StartBattle {
     Mission(String),
+    /// A mission built elsewhere (the campaign's generated side missions).
+    Def(Box<tactics_core::mission::MissionDef>),
     Skirmish,
     /// A generated mission; `None` = random theme.
     Generate(Option<tactics_core::levelgen::Theme>),
@@ -256,6 +258,13 @@ pub fn start_battle(
                 return;
             }
         },
+        StartBattle::Def(def) => {
+            let (battle, warnings) = Battle::from_mission(rules, def, seed);
+            let mut lines = vec![format!("Mission: {}", def.name), def.description.clone()];
+            lines.extend(warnings);
+            state.generated = Some((**def).clone());
+            (battle, Some(GENERATED.to_string()), lines)
+        }
         StartBattle::Generate(theme) => {
             use tactics_core::levelgen::{self, GenParams, Objective};
             let mut params = match theme {

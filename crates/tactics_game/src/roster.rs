@@ -402,7 +402,12 @@ fn sync_squad(
     mut roster: ResMut<Roster>,
     mut state: ResMut<BattleState>,
     mut refresh: MessageWriter<crate::characters::RefreshUnitVisuals>,
+    campaign: Res<crate::campaign::Campaign>,
 ) {
+    // A campaign deploys its own soldiers.
+    if campaign.active() {
+        return;
+    }
     if roster.is_added() {
         let rules = state.battle.rules().clone();
         roster.seed_from(&rules);
@@ -438,9 +443,10 @@ fn record_results(
     state: Res<BattleState>,
     playback: Res<crate::playback::Playback>,
     settings: Res<crate::settings::GameSettings>,
+    campaign: Res<crate::campaign::Campaign>,
 ) {
     let b = &state.battle;
-    if !b.is_over() || playback.is_busy() || roster.recorded == Some(state.seed) {
+    if !b.is_over() || playback.is_busy() || roster.recorded == Some(state.seed) || campaign.active() {
         return;
     }
     if state.mission.as_deref() == Some(crate::lab::LAB_MISSION) {

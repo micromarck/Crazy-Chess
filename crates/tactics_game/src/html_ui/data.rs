@@ -36,6 +36,7 @@ pub fn collect_ui_data(
     settings: Res<crate::settings::GameSettings>,
     roster: Res<crate::roster::Roster>,
     touch: Res<crate::touch::TouchMode>,
+    campaign: Res<crate::campaign::Campaign>,
     mut data: ResMut<UiData>,
 ) {
     let mut v = UiValues::default();
@@ -225,6 +226,7 @@ pub fn collect_ui_data(
 
     // Barracks (saved soldiers).
     v.lists.insert("roster".into(), roster.rows());
+    crate::campaign::fill_ui(&campaign, b.rules(), &mut v);
     v.set("barracks.count", roster.soldiers.len());
     v.set("barracks.squad", roster.squad().count());
     v.set("barracks.squad_max", crate::roster::SQUAD_SIZE);

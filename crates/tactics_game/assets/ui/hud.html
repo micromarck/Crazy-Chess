@@ -93,6 +93,19 @@
   .help-row { flex-direction: row; margin-bottom: 3px; }
   .help-key { color: #f2d24a; width: 160px; font-size: 13px; }
   .help-text { font-size: 13px; max-width: 360px; }
+  #campaign { top: 140px; left: 190px; padding: 10px; max-width: 900px; max-height: 76vh; overflow: scroll; z-index: 11; background: #0d1117f4; }
+  .cp-cols { flex-direction: row; }
+  .cp-col { flex-direction: column; width: 430px; margin-right: 12px; }
+  .cp-box { flex-direction: column; background: #1b212b; border-radius: 4px; padding: 6px 8px; margin-bottom: 8px; }
+  .cp-row { flex-direction: row; align-items: center; margin-bottom: 3px; }
+  .cp-text { font-size: 13px; color: #c9ced8; max-width: 410px; }
+  .cp-head { font-size: 11px; color: #9aa1ad; margin-top: 4px; margin-bottom: 3px; }
+  .cp-go { background: #2f5e44; }
+  .cp-bad { background: #6b2a24; }
+  .cp-item { flex-direction: column; width: 230px; }
+  .cp-small { min-width: 54px; height: 34px; font-size: 12px; padding: 2px 6px; margin-left: 4px; }
+  .member.dead { color: #7a5a5a; }
+  .done { color: #7a808c; }
   #loadout { top: 140px; left: 190px; padding: 10px; max-width: 820px; max-height: 75vh; overflow: scroll; z-index: 10; background: #0d1117f2; }
   .lo-head { flex-direction: column; margin-bottom: 6px; }
   .lo-body { flex-direction: row; }
@@ -212,6 +225,7 @@
 <!-- Tool buttons -->
 <div id="tools">
   <button class="small-button" data-command="editor" data-if="!ui.touch">Edit<span class="key">F1</span></button>
+  <button class="small-button" data-command="toggle:campaign">Campaign<span class="key" data-if="camp.active">{{ camp.funds }} funds</span><span class="key" data-if="!camp.active">saves</span></button>
   <button class="small-button" data-command="toggle:missions">Missions<span class="key">list</span></button>
   <button class="small-button" data-command="toggle:barracks">Barracks<span class="key">soldiers</span></button>
   <button class="small-button" data-command="toggle:loadout">Loadout<span class="key">squad</span></button>
@@ -234,6 +248,93 @@
     <span class="key">MISSION LOG - tap to open</span>
     <span>{{ log.last }}</span>
   </button>
+</div>
+
+
+<!-- Campaign (Ghost Protocol): save slots, the next story mission, side jobs, soldiers, shop -->
+<div id="campaign" class="panel" data-if="ui.campaign and !lab.active">
+  <div data-if="!camp.active">
+    <span class="title" style="font-size: 16px">Campaign: {{ camp.name }}</span>
+    <span class="cp-text">Seven story missions with side jobs in between. Soldiers die for good; gear costs money. Each slot is a separate campaign.</span>
+    <div data-for="s in camp_slots">
+      <div class="cp-row">
+        <div class="cp-item"><span>Slot {{ s.n }}</span><span class="key">{{ s.label }}</span></div>
+        <button class="cp-small cp-go" data-if="s.used" data-command="campaign:load:{{ s.n }}">Continue</button>
+        <button class="cp-small cp-go" data-command="campaign:new:{{ s.n }}">New</button>
+        <button class="cp-small cp-bad" data-if="s.used" data-command="campaign:delete:{{ s.n }}">Erase</button>
+      </div>
+    </div>
+  </div>
+  <div data-if="camp.active">
+    <div class="cp-row">
+      <span class="title" style="font-size: 16px">{{ camp.title }}</span>
+      <span class="dim" style="margin-left: 10px">Chapter {{ camp.chapter }} - {{ camp.funds }} funds</span>
+      <button class="cp-small" data-command="campaign:quit">Save and quit</button>
+      <button class="cp-small" data-command="toggle:campaign">Close</button>
+    </div>
+    <span class="cp-text" style="color: #ffe27a">{{ camp.message }}</span>
+    <div class="cp-cols">
+      <div class="cp-col">
+        <div class="cp-box"><span class="cp-head">REPORT</span><span class="cp-text">{{ camp.report }}</span></div>
+        <div class="cp-box" data-if="camp.failed">
+          <span class="cp-text">The story mission failed. Reload the checkpoint from before it, or give up the campaign.</span>
+          <div class="cp-row">
+            <button class="cp-go" data-command="campaign:reload">Reload checkpoint</button>
+            <button class="cp-bad" data-command="campaign:giveup">Give up</button>
+          </div>
+        </div>
+        <div class="cp-box" data-if="camp.in_mission"><span class="cp-text">Mission under way. Leaving it early counts as failing it.</span></div>
+        <div class="cp-box" data-if="camp.has_story">
+          <span class="cp-head">STORY MISSION - pays {{ camp.story_reward }}</span>
+          <span>{{ camp.story_title }}</span>
+          <span class="cp-text">{{ camp.story_briefing }}</span>
+          <span class="cp-text" style="color: #ff9a8a">{{ camp.shortfall }}</span>
+          <button class="cp-go" data-command="campaign:story">Launch<span class="key">a failure can be reloaded</span></button>
+        </div>
+        <div class="cp-box" data-if="camp.has_sides">
+          <span class="cp-head">SIDE JOBS - fail one and lose its pay and every item taken</span>
+          <div data-for="o in camp_sides">
+            <div class="cp-row">
+              <div class="cp-item"><span class="{{ o.state }}">{{ o.name }}</span><span class="key">{{ o.info }}</span></div>
+              <button class="cp-small cp-go" data-if="o.state != done" data-command="campaign:side:{{ o.i }}">Launch</button>
+            </div>
+          </div>
+          <span class="cp-text dim">Taking the next story mission ends these jobs.</span>
+        </div>
+      </div>
+      <div class="cp-col">
+        <div class="cp-box">
+          <span class="cp-head">SOLDIERS - click to put in or out of the squad; gear in the Loadout panel</span>
+          <div data-for="m in camp_soldiers">
+            <button class="member {{ m.state }}" data-command="campaign:squad:{{ m.id }}">
+              <span>{{ m.name }} - {{ m.squad }}</span>
+              <span class="key">{{ m.info }}</span>
+            </button>
+          </div>
+          <div class="cp-row">
+            <button class="cp-small" data-command="campaign:recruit">Recruit<span class="key">{{ camp.recruit_cost }}</span></button>
+            <button class="cp-small" data-command="toggle:loadout">Loadout</button>
+          </div>
+        </div>
+        <div class="cp-box">
+          <span class="cp-head">SHOP - {{ camp.tab }} (owned / price); sells at half</span>
+          <div class="cp-row">
+            <button class="cp-small" data-command="campaign:shop:weapons">Weapons</button>
+            <button class="cp-small" data-command="campaign:shop:armor">Armour</button>
+            <button class="cp-small" data-command="campaign:shop:items">Items</button>
+            <button class="cp-small" data-command="campaign:shop:augments">Augments</button>
+          </div>
+          <div data-for="i in camp_shop">
+            <div class="cp-row">
+              <div class="cp-item"><span>{{ i.name }}</span><span class="key">owned {{ i.owned }} - {{ i.price }}</span></div>
+              <button class="cp-small cp-go" data-command="campaign:buy:{{ i.id }}">Buy</button>
+              <button class="cp-small" data-if="i.can_sell" data-command="campaign:sell:{{ i.id }}">Sell</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Mission list (from assets/missions/index.xml); toggled by the Missions button -->

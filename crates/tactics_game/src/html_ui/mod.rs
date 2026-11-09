@@ -175,6 +175,7 @@ fn rebuild_layout(
 /// | `roster:<command>` | Barracks: edit saved soldiers (see [`crate::roster`]) |
 /// | `move` | touchscreen: enter / leave move mode (then tap a tile, then confirm) |
 /// | `rotate:left`, `rotate:right` | turn the view 45° left / right (like E / Q) |
+/// | `campaign:<command>` | the campaign (see [`crate::campaign`]) |
 /// | `log:<text>` | print a message (handy while designing layouts) |
 #[allow(clippy::too_many_arguments)]
 pub fn run_ui_commands(
@@ -190,6 +191,7 @@ pub fn run_ui_commands(
     mut settings: ResMut<crate::settings::GameSettings>,
     mut roster: ResMut<crate::roster::Roster>,
     mut windows: Query<&mut Window, With<bevy::window::PrimaryWindow>>,
+    (campaign, mut campaign_cmds): (Res<crate::campaign::Campaign>, MessageWriter<crate::campaign::CampaignCommand>),
 ) {
     for UiCommand(cmd) in commands.read() {
         let (name, arg) = cmd.split_once(':').map_or((cmd.as_str(), ""), |(n, a)| (n, a));
@@ -277,7 +279,10 @@ pub fn run_ui_commands(
                     if !msg.is_empty() {
                         log.push(msg);
                     }
-                    roster.pull_gear(state.battle.rules());
+                    // (A campaign keeps its own soldiers: the Barracks roster is left alone.)
+                    if !campaign.active() {
+                        roster.pull_gear(state.battle.rules());
+                    }
                 }
                 None => log.push(format!("UI: bad gear command '{arg}'")),
             },
@@ -292,6 +297,9 @@ pub fn run_ui_commands(
             },
             "apply_loadout" => {
                 player.write(PlayerCommand::Restart);
+            }
+            "campaign" => {
+                campaign_cmds.write(crate::campaign::CampaignCommand(arg.to_string()));
             }
             "log" => log.push(arg.to_string()),
             other => log.push(format!("UI: unknown command '{other}'")),

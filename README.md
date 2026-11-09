@@ -235,6 +235,14 @@ TBSium/
   soldier explode into fire when they die, rage, regenerate, or run on heat
   like a robot and carry a Strider's weapons. A campaign is planned: see
   **[CAMPAIGN.md](CAMPAIGN.md)**.
+* **Campaign: Ghost Protocol** (the Campaign button): seven story missions
+  built round the Ghost in the Machine facility - two against the Black
+  Lantern mercs, the twist (Ghost in the Machine itself), then four down to
+  VESPER's Heart - with 1-3 generated side jobs between them. Four save
+  slots (separate campaigns). Soldiers die for good and rank up (XP from
+  missions and kills: +aim, +HP); every mission pays; gear has to be bought
+  into a stash. Lose everyone on a side job and its pay and every item taken
+  are gone; fail a story mission and reload the checkpoint or give up.
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).
