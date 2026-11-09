@@ -502,6 +502,8 @@ pub struct Unit {
     pub flammable: bool,
     /// Copied from the class: at home in vines.
     pub vine_kin: bool,
+    /// Drugs (ability ids) this unit was given this mission.
+    pub doses: Vec<AbilityId>,
     /// What the unit carries (resolved at spawn).
     pub gear: crate::content::Loadout,
     /// Looks (`None` = derived from the name by the frontend).

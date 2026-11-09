@@ -287,6 +287,7 @@ and `Running::apply` (`tactics_game/src/camera_director.rs`).
 | `Idle` | — | Does nothing (with `cost: EndsTurn`, ends the turn): robots idling to cool off without making heat. |
 | `Adrenaline` | `action_points` | An adrenaline shot (living units only): the user loses half its remaining health, rounded down (nothing at 1 HP), and gains `action_points` AP at once. Use `cost: Points(0)`. |
 | `MindControl` | `turns, insanity` | Takes a living enemy's mind (not machines, monsters or big units): it fights for the user's side for `turns` of the user's turns, acting at once if it's their turn, and its insanity rises by `insanity`. Killing the user frees it. A side is only beaten when none of its own (by allegiance) are left. The AI uses it on the most dangerous soldier it can see. |
+| `Drug(heal, action_points, fear, insanity, aim, mobility, defense)` | ints | A drug for a living ally or yourself (not machines): heals, adds AP (on their turn), changes fear and insanity (negative calms), and adds aim, mobility (movement points) and defence for the rest of the mission. The dose is recorded on the unit (`Unit::doses`); the campaign rolls its lasting side effects after the mission (`tactics_core::campaign::side_effects`). |
 | `Leap(reach: r, over_walls: b)` | float, bool | Target a tile: move there in a straight line, up to `r` times the unit's normal move. `over_walls: true` flies over anything (jump pack); `false` is stopped by walls, holes, units and steep steps (boost thrusters). Overwatch can fire at the landing. |
 
 ### Attack stats (`AttackProfile`)

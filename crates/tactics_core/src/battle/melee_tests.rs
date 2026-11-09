@@ -167,3 +167,39 @@ fn blind_fire_into_nothing_spends_the_burst() {
     assert_eq!(b.unit(a).unwrap().weapon.ammo, ammo - 4, "a rifle burst");
     assert_eq!(b.unit(a).unwrap().action_points, 0, "ends the turn");
 }
+
+#[test]
+fn drugs_boost_on_the_spot_calm_minds_and_record_the_dose() {
+    use crate::content::DrugEffect;
+    let mut r = rules();
+    r.add_ability(
+        AbilityDef::new("focus", "Focus")
+            .with_cost(ApCost::Points(0))
+            .with_targeting(Targeting::SelfOnly, AbilityRange::Fixed(0.0))
+            .with_effect(AbilityEffect::Drug(DrugEffect { aim: 25, ..Default::default() })),
+    );
+    r.add_ability(
+        AbilityDef::new("sedative", "Sedative")
+            .with_cost(ApCost::Points(1))
+            .with_targeting(Targeting::Ally, AbilityRange::Fixed(1.5))
+            .with_effect(AbilityEffect::Drug(DrugEffect { insanity: -25, heal: 2, ..Default::default() })),
+    );
+    let mut c = r.class("rifleman").unwrap().clone();
+    c.abilities.extend([AbilityId::new("focus"), AbilityId::new("sedative")]);
+    r.add_class(c);
+    let mut b = Battle::new(Map::from_ascii(&"........\n".repeat(3)), r, 1);
+    let a = b.spawn("rifleman", "A", Team::Player, GridPos::new(1, 1)).unwrap();
+    let pal = b.spawn("rifleman", "Pal", Team::Player, GridPos::new(2, 1)).unwrap();
+    let bot = b.spawn("bot_light", "Bot", Team::Player, GridPos::new(1, 2)).unwrap();
+    b.spawn("rifleman", "E", Team::Enemy, GridPos::new(7, 1)).unwrap();
+    let aim = b.unit(a).unwrap().stats.aim;
+    b.apply(Action::ability(a, "focus", Target::None)).unwrap();
+    assert_eq!(b.unit(a).unwrap().stats.aim, aim + 25);
+    assert_eq!(b.unit(a).unwrap().doses, vec![AbilityId::new("focus")]);
+    let mut ev = Vec::new();
+    b.add_insanity(pal, 40, &mut ev);
+    b.apply(Action::ability(a, "sedative", Target::Unit(pal))).unwrap();
+    assert_eq!(b.unit(pal).unwrap().insanity, 15);
+    assert_eq!(b.unit(pal).unwrap().doses, vec![AbilityId::new("sedative")]);
+    assert!(b.validate(&Action::ability(a, "sedative", Target::Unit(bot))).is_err(), "machines don't take drugs");
+}

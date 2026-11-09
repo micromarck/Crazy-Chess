@@ -246,6 +246,11 @@ TBSium/
   A **tech tree** (research with funds: unlocks gear in the shop, squad-wide
   bonuses) and a **skill tree per soldier** (a point per rank: Marksman,
   Survivor, Scout and Specialist branches; stats and extra abilities).
+  **Medical items and drugs**: trauma kits, field dressings and sedatives heal
+  and calm; combat drugs (Berserk, Morphine, Neuro-Clarity, Regen Serum, Focus
+  Drops, Hyperdrive) are strong on the spot but may leave **side effects that
+  last** across missions (a crash, tremors, scarring, heart strain); timed ones
+  wear off, lasting ones need the infirmary (funds).
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).

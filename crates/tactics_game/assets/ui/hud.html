@@ -324,6 +324,15 @@
               <button class="cp-small" data-if="m.state != dead" data-command="campaign:pick:{{ m.id }}">Skills</button>
             </div>
           </div>
+          <div data-if="camp.has_conditions">
+            <span class="cp-head">INFIRMARY - drug side effects (timed ones wear off after missions)</span>
+            <div data-for="k in camp_conditions">
+              <div class="cp-row">
+                <div class="cp-item" style="width: 330px"><span>{{ k.name }}</span><span class="key">{{ k.info }}</span></div>
+                <button class="cp-small cp-go" data-command="campaign:treat:{{ k.soldier }}:{{ k.id }}">Treat</button>
+              </div>
+            </div>
+          </div>
           <div class="cp-row">
             <button class="cp-small" data-command="campaign:recruit">Recruit<span class="key">{{ camp.recruit_cost }}</span></button>
             <button class="cp-small" data-command="toggle:loadout">Loadout</button>

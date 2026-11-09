@@ -17,6 +17,7 @@
 //! | `campaign:pick:<soldier id>` | show this soldier's skill tree |
 //! | `campaign:learn:<soldier id>:<skill>` | spend a skill point |
 //! | `campaign:research:<tech>` | research a tech (funds) |
+//! | `campaign:treat:<soldier id>:<condition>` | the infirmary: cure a drug side effect (funds) |
 //!
 //! While a campaign is open its soldiers are the squad (the skirmish
 //! Barracks roster is left alone); gear is edited in the Loadout panel as
@@ -282,6 +283,10 @@ fn run_commands(
                         Err(_) => Err("which soldier?".into()),
                     },
                     "research" => s.research(arg),
+                    "treat" => match arg.parse::<u32>() {
+                        Ok(id) => s.treat(id, arg2),
+                        Err(_) => Err("which soldier?".into()),
+                    },
                     "reload" => s.reload().map(|_| {
                         write_squad(&s, state.battle.rules_mut());
                         "Checkpoint reloaded.".to_string()
@@ -348,7 +353,7 @@ fn track_battle(
     let b = &state.battle;
     let result = if state.revision != rev {
         // Left the mission before it ended: a failure (the squad pulls out).
-        Some(MissionResult { won: false, fallen: Vec::new(), kills: BTreeMap::new() })
+        Some(MissionResult { won: false, fallen: Vec::new(), kills: BTreeMap::new(), doses: BTreeMap::new() })
     } else if b.is_over() && !playback.is_busy() {
         let fallen = b
             .units()
@@ -356,7 +361,13 @@ fn track_battle(
             .filter(|u| u.home_team() == Team::Player && (!u.is_alive() || u.status.controlled == u32::MAX))
             .map(|u| u.name.clone())
             .collect();
-        Some(MissionResult { won: b.winner() == Some(Team::Player), fallen, kills: state.stats.kills_by.clone() })
+        let doses = b
+            .units()
+            .iter()
+            .filter(|u| u.home_team() == Team::Player && !u.doses.is_empty())
+            .map(|u| (u.name.clone(), u.doses.iter().map(|d| d.to_string()).collect()))
+            .collect();
+        Some(MissionResult { won: b.winner() == Some(Team::Player), fallen, kills: state.stats.kills_by.clone(), doses })
     } else {
         None
     };
@@ -465,10 +476,21 @@ pub fn fill_ui(camp: &Campaign, rules: &Ruleset, v: &mut crate::html_ui::bind::U
             .map(|c| {
                 let class = rules.class(&c.class).map_or(c.class.clone(), |k| k.name.clone());
                 let next = c.next_rank_in().map_or("top rank".into(), |n| format!("{n} XP to next rank"));
+                let effects = campaign::side_effects();
+                let conditions: Vec<String> = c
+                    .conditions
+                    .iter()
+                    .filter_map(|k| effects.iter().find(|e| e.id == k.id).map(|e| (e, k)))
+                    .map(|(e, k)| format!("{}{}", e.name, k.missions_left.map_or(" (lasting)".to_string(), |n| format!(" ({n})"))))
+                    .collect();
                 let info = if c.dead {
                     format!("KIA - {} missions, {} kills", c.missions, c.kills)
                 } else {
-                    format!("{} {} - {} XP ({next}) - {} missions, {} kills", c.rank_name(), class, c.xp, c.missions, c.kills)
+                    let mut t = format!("{} {} - {} XP ({next}) - {} missions, {} kills", c.rank_name(), class, c.xp, c.missions, c.kills);
+                    if !conditions.is_empty() {
+                        t += &format!(" - {}", conditions.join(", "));
+                    }
+                    t
                 };
                 BTreeMap::from([
                     ("id".to_string(), c.id.to_string()),
@@ -483,6 +505,30 @@ pub fn fill_ui(camp: &Campaign, rules: &Ruleset, v: &mut crate::html_ui::bind::U
             })
             .collect(),
     );
+    // The infirmary: every lasting side effect, with its cure.
+    let effects = campaign::side_effects();
+    v.lists.insert(
+        "camp_conditions".into(),
+        s.alive()
+            .flat_map(|c| c.conditions.iter().map(move |k| (c, k)))
+            .filter_map(|(c, k)| effects.iter().find(|e| e.id == k.id).map(|e| (c, k, e)))
+            .map(|(c, k, e)| {
+                BTreeMap::from([
+                    ("soldier".to_string(), c.id.to_string()),
+                    ("id".to_string(), e.id.to_string()),
+                    (
+                        "name".to_string(),
+                        format!("{}: {}", c.name, e.name),
+                    ),
+                    (
+                        "info".to_string(),
+                        format!("{} - {} - cure {}", e.description, k.missions_left.map_or("lasting".to_string(), |n| format!("{n} more mission{}", if n == 1 { "" } else { "s" })), e.treat_cost),
+                    ),
+                ])
+            })
+            .collect(),
+    );
+    v.set("camp.has_conditions", yes(s.alive().any(|c| !c.conditions.is_empty())));
     // The shop: one tab at a time.
     let tab = camp.shop_tab.as_str();
     let mut shop: Vec<(String, String, u32)> = Vec::new();

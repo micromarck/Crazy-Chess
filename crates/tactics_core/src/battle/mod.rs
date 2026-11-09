@@ -260,6 +260,7 @@ impl Battle {
             insanity: 0,
             flammable: class.flammable,
             vine_kin: class.vine_kin,
+            doses: Vec::new(),
             gear: Loadout { weapon: Some(weapon_id), ..gear },
             appearance: None,
         };
@@ -639,6 +640,12 @@ impl Battle {
                     _ => {}
                 }
                 let point = self.check_target(u, def, *target)?;
+                if let AbilityEffect::Drug(_) = def.effect {
+                    let patient = self.unit_at(point).ok_or(ActionError::WrongTarget)?;
+                    if patient.heat.is_some() || patient.machine != crate::unit::Machine::None {
+                        return Err(ActionError::CantHealMachine);
+                    }
+                }
                 if let AbilityEffect::Heal { .. } = def.effect {
                     let healee = self.unit_at(point).ok_or(ActionError::WrongTarget)?;
                     if healee.heat.is_some() {
@@ -972,6 +979,36 @@ impl Battle {
                     }
                 }
                 self.on_enter(unit, point, events);
+            }
+            AbilityEffect::Drug(d) => {
+                if let Some(patient) = self.unit_at(point).map(|u| u.id) {
+                    let active = self.active_team;
+                    let p = self.unit_mut(patient);
+                    p.doses.push(def.id.clone());
+                    let before = p.hp;
+                    p.hp = (p.hp + d.heal).min(p.stats.max_hp);
+                    let healed = p.hp - before;
+                    p.stats.aim += d.aim;
+                    p.stats.defense += d.defense;
+                    p.stats.mobility = (p.stats.mobility as i32 + d.mobility).max(2) as u32;
+                    let ap = (d.action_points > 0 && p.team == active).then(|| {
+                        p.action_points = p.action_points.saturating_add(d.action_points);
+                        p.action_points
+                    });
+                    if healed > 0 {
+                        events.push(GameEvent::UnitHealed { unit: patient, amount: healed });
+                    }
+                    if let Some(remaining) = ap {
+                        events.push(GameEvent::ActionPointsChanged { unit: patient, remaining });
+                    }
+                    events.push(GameEvent::Callout { unit: patient, text: def.name.to_uppercase() });
+                    if d.fear != 0 {
+                        self.add_fear(patient, d.fear, events);
+                    }
+                    if d.insanity != 0 {
+                        self.add_insanity(patient, d.insanity, events);
+                    }
+                }
             }
             AbilityEffect::Heal { amount } => {
                 if let Some(healee) = self.unit_at(point).map(|u| u.id) {

@@ -310,6 +310,26 @@ pub enum AbilityEffect {
     /// their turn), and its insanity rises by `insanity`. Freed early if the
     /// user dies.
     MindControl { turns: u32, insanity: i32 },
+    /// A **drug** given to a living ally (or yourself): heals `heal`, adds
+    /// `action_points` (if it's their turn), changes fear by `fear` and
+    /// insanity by `insanity` (negative calms), and adds `aim`, `mobility`
+    /// (movement points) and `defense` for the rest of the mission. The dose
+    /// is recorded on the unit (`Unit::doses`): a campaign may turn it into
+    /// a lasting side effect.
+    Drug(DrugEffect),
+}
+
+/// What a [`AbilityEffect::Drug`] does on the spot.
+#[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
+pub struct DrugEffect {
+    pub heal: i32,
+    pub action_points: u8,
+    pub fear: i32,
+    pub insanity: i32,
+    pub aim: i32,
+    pub mobility: i32,
+    pub defense: i32,
 }
 
 impl Default for AbilityEffect {
@@ -352,6 +372,7 @@ impl AbilityEffect {
             AbilityEffect::Idle => "Idle",
             AbilityEffect::Adrenaline { .. } => "Adrenaline",
             AbilityEffect::MindControl { .. } => "Mind control",
+            AbilityEffect::Drug(_) => "Drug",
         }
     }
 }

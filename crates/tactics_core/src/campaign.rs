@@ -88,6 +88,49 @@ pub struct CampaignSoldier {
     pub in_squad: bool,
     /// Skills learned (see [`skills`]): one point per rank.
     pub skills: Vec<String>,
+    /// Lasting side effects of drugs (see [`side_effects`]).
+    pub conditions: Vec<Condition>,
+}
+
+/// A lasting side effect on a soldier.
+#[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize), serde(default))]
+pub struct Condition {
+    /// A [`SideEffect`] id.
+    pub id: String,
+    /// Missions it lasts (`None`: for good, until treated).
+    pub missions_left: Option<u32>,
+}
+
+/// What a drug may leave behind once the mission is over.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SideEffect {
+    pub id: &'static str,
+    pub name: &'static str,
+    /// The drug (ability id) that causes it.
+    pub drug: &'static str,
+    /// Percent chance per dose.
+    pub chance: i32,
+    /// Missions it lasts (0 = for good, until treated).
+    pub missions: u32,
+    /// Added to the soldier's stats while it lasts (negative).
+    pub penalty: StatModifiers,
+    /// What the infirmary charges to cure it.
+    pub treat_cost: u32,
+    pub description: &'static str,
+}
+
+/// The drugs' side effects.
+pub fn side_effects() -> Vec<SideEffect> {
+    let m = StatModifiers::default;
+    vec![
+        SideEffect { id: "crash", name: "Crash", drug: "berserk", chance: 60, missions: 2, penalty: StatModifiers { aim: -10, mobility: -2, ..m() }, treat_cost: 60, description: "-10 aim, -1 tile of movement" },
+        SideEffect { id: "drowsy", name: "Drowsy", drug: "morphine", chance: 40, missions: 1, penalty: StatModifiers { mobility: -2, ..m() }, treat_cost: 30, description: "-1 tile of movement" },
+        SideEffect { id: "neural_fatigue", name: "Neural Fatigue", drug: "clarity", chance: 50, missions: 2, penalty: StatModifiers { aim: -5, bravery: -15, ..m() }, treat_cost: 60, description: "-5 aim, -15 bravery" },
+        SideEffect { id: "tissue_scarring", name: "Tissue Scarring", drug: "regen_serum", chance: 35, missions: 0, penalty: StatModifiers { max_hp: -1, ..m() }, treat_cost: 120, description: "-1 max HP" },
+        SideEffect { id: "tremors", name: "Tremors", drug: "focus", chance: 50, missions: 3, penalty: StatModifiers { aim: -10, ..m() }, treat_cost: 90, description: "-10 aim" },
+        SideEffect { id: "heart_strain", name: "Heart Strain", drug: "hyperdrive", chance: 30, missions: 0, penalty: StatModifiers { max_hp: -2, defense: -5, ..m() }, treat_cost: 200, description: "-2 max HP, -5 defence" },
+    ]
 }
 
 /// Ranks: (name, XP needed). Each rank above the first: +3 aim, +1 HP.
@@ -177,7 +220,8 @@ pub struct Tech {
 pub fn techs() -> Vec<Tech> {
     let m = StatModifiers::default;
     vec![
-        Tech { id: "field_medicine", name: "Field Medicine", cost: 100, requires: &[], min_chapter: 0, description: "Medkits and adrenaline shots in the shop.", unlocks: &["medkit_item", "adrenaline_shot"], squad_bonus: m() },
+        Tech { id: "field_medicine", name: "Field Medicine", cost: 100, requires: &[], min_chapter: 0, description: "Medkits, trauma kits, field dressings, sedatives and adrenaline shots in the shop.", unlocks: &["medkit_item", "adrenaline_shot", "trauma_kit", "field_dressings", "sedatives"], squad_bonus: m() },
+        Tech { id: "pharmacology", name: "Pharmacology", cost: 180, requires: &["field_medicine"], min_chapter: 0, description: "Combat drugs in the shop: Berserk, Morphine, Neuro-Clarity, Regen Serum, Focus Drops, Hyperdrive. Strong - with side effects that can last.", unlocks: &["berserk_pills", "morphine_injector", "clarity_inhaler", "regen_vial", "focus_drops", "hyperdrive_vial"], squad_bonus: m() },
         Tech { id: "combat_training", name: "Combat Training", cost: 200, requires: &[], min_chapter: 0, description: "Every soldier: +5 aim.", unlocks: &[], squad_bonus: StatModifiers { aim: 5, ..m() } },
         Tech { id: "advanced_armour", name: "Advanced Armour", cost: 150, requires: &[], min_chapter: 0, description: "Plated armour and ghost suits in the shop.", unlocks: &["plated_armor", "ghost_suit"], squad_bonus: m() },
         Tech { id: "reinforced_plating", name: "Reinforced Plating", cost: 250, requires: &["advanced_armour"], min_chapter: 1, description: "Every soldier: +1 HP, +5 defence.", unlocks: &[], squad_bonus: StatModifiers { max_hp: 1, defense: 5, ..m() } },
@@ -287,13 +331,16 @@ pub struct MissionResult {
     pub fallen: Vec<String>,
     /// Kills per soldier name.
     pub kills: BTreeMap<String, u32>,
+    /// Drugs (ability ids) each soldier took, by name.
+    pub doses: BTreeMap<String, Vec<String>>,
 }
 
 /// The price of a weapon or item (0 = free / not for sale).
 pub fn price(rules: &Ruleset, id: &str) -> u32 {
     let fixed: &[(&str, u32)] = &[
         ("kevlar", 50), ("plated_armor", 120), ("ghost_suit", 150), ("scanner_armor", 120),
-        ("frag", 40), ("medkit_item", 50), ("smoke", 30), ("incendiary", 45), ("gas", 45), ("particle", 90),
+        ("frag", 40), ("medkit_item", 50), ("trauma_kit", 70), ("field_dressings", 40), ("sedatives", 50),
+        ("berserk_pills", 60), ("morphine_injector", 50), ("clarity_inhaler", 70), ("regen_vial", 90), ("focus_drops", 70), ("hyperdrive_vial", 100), ("smoke", 30), ("incendiary", 45), ("gas", 45), ("particle", 90),
         ("taser", 60), ("adrenaline_shot", 50), ("jump_pack", 120), ("rocket_launcher", 130), ("flamethrower_pack", 110),
         ("combat_knife", 20), ("machete", 40), ("sledgehammer", 60), ("scope", 60), ("stims", 60), ("ammo_pouch", 30), ("dog_tags", 30),
         ("aug_pyre_core", 220), ("aug_heat_frame", 300), ("aug_berserker_gland", 220), ("aug_regenerator", 220),
@@ -471,7 +518,66 @@ impl CampaignState {
         for t in techs().iter().filter(|t| self.techs.iter().any(|x| x == t.id)) {
             add(&t.squad_bonus);
         }
+        let effects = side_effects();
+        for c in &s.conditions {
+            if let Some(e) = effects.iter().find(|e| e.id == c.id) {
+                add(&e.penalty);
+            }
+        }
         (b, abilities)
+    }
+
+    /// The infirmary: cures a soldier's condition for money.
+    pub fn treat(&mut self, soldier: u32, condition: &str) -> Result<String, String> {
+        let e = side_effects().into_iter().find(|e| e.id == condition).ok_or_else(|| format!("no condition '{condition}'"))?;
+        let funds = self.funds;
+        let s = self.soldier_mut(soldier).ok_or("no such soldier")?;
+        let i = s.conditions.iter().position(|c| c.id == condition).ok_or_else(|| format!("{} doesn't have {}", s.name, e.name))?;
+        if funds < e.treat_cost {
+            return Err(format!("treating {} costs {} ({funds} in hand)", e.name, e.treat_cost));
+        }
+        s.conditions.remove(i);
+        let name = s.name.clone();
+        self.funds -= e.treat_cost;
+        Ok(format!("{name} is treated for {}.", e.name))
+    }
+
+    /// After a mission: conditions wear off, and every drug the survivors
+    /// took may leave a new one. Returns report lines.
+    fn apply_doses(&mut self, result: &MissionResult, deployed: &[u32]) -> Vec<String> {
+        let mut lines = Vec::new();
+        // Time heals (some of it).
+        let effects = side_effects();
+        for s in self.soldiers.iter_mut().filter(|s| !s.dead) {
+            s.conditions.retain_mut(|c| match c.missions_left.as_mut() {
+                Some(n) => {
+                    *n = n.saturating_sub(1);
+                    *n > 0
+                }
+                None => true,
+            });
+        }
+        let mut rng = GameRng::new(self.seed ^ (self.missions_played as u64).wrapping_mul(0xD1B5_4A32_D192_ED03));
+        for s in self.soldiers.iter_mut().filter(|s| !s.dead && deployed.contains(&s.id)) {
+            for drug in result.doses.get(&s.name).cloned().unwrap_or_default() {
+                let Some(e) = effects.iter().find(|e| e.drug == drug) else { continue };
+                if !rng.roll_percent(e.chance) {
+                    continue;
+                }
+                let lasts = (e.missions > 0).then_some(e.missions);
+                match s.conditions.iter_mut().find(|c| c.id == e.id) {
+                    Some(c) => {
+                        if let (Some(left), Some(n)) = (c.missions_left.as_mut(), lasts) {
+                            *left = (*left).max(n);
+                        }
+                    }
+                    None => s.conditions.push(Condition { id: e.id.to_string(), missions_left: lasts }),
+                }
+                let how_long = lasts.map_or("for good, until treated".to_string(), |n| format!("for {n} mission{}", if n == 1 { "" } else { "s" }));
+                lines.push(format!("Side effect: {} has {} ({}) {how_long}.", s.name, e.name, e.description));
+            }
+        }
+        lines
     }
 
     /// Buys one of `id`.
@@ -609,6 +715,8 @@ impl CampaignState {
                 lines.push(format!("{} {} was killed in action.", s.rank_name(), s.name));
             }
         }
+        let deployed: Vec<u32> = dep.taken.iter().map(|(id, _)| *id).collect();
+        let side_lines = self.apply_doses(result, &deployed);
         let reward = match dep.side {
             None => self.current_chapter(def).map_or(0, |c| c.reward),
             Some(i) => self.side_ops.get(i).map_or(0, |o| o.reward),
@@ -681,6 +789,7 @@ impl CampaignState {
                 }
             }
         }
+        lines.extend(side_lines);
         // Nobody left and no money for a recruit: it's over.
         if self.status == Status::Ready && self.alive().next().is_none() && self.funds < RECRUIT_COST {
             self.status = Status::Lost;
@@ -826,7 +935,7 @@ mod tests {
     }
 
     fn win(names: &[(&str, u32)]) -> MissionResult {
-        MissionResult { won: true, fallen: vec![], kills: names.iter().map(|(n, k)| (n.to_string(), *k)).collect() }
+        MissionResult { won: true, fallen: vec![], kills: names.iter().map(|(n, k)| (n.to_string(), *k)).collect(), ..Default::default() }
     }
 
     #[test]
@@ -871,7 +980,7 @@ mod tests {
         let kit = s.required(&r, s.soldiers.iter().find(|x| x.name == "Pvt. Kowalski").unwrap());
         assert!(!kit.is_empty());
         s.launch(&def, &r, None).unwrap();
-        s.finish(&def, &MissionResult { won: true, fallen: vec!["Pvt. Kowalski".into()], kills: BTreeMap::new() });
+        s.finish(&def, &MissionResult { won: true, fallen: vec!["Pvt. Kowalski".into()], kills: BTreeMap::new(), ..Default::default() });
         let k = s.soldiers.iter().find(|x| x.name == "Pvt. Kowalski").unwrap();
         assert!(k.dead && !k.in_squad);
         assert!(s.toggle_squad(k.id).is_err(), "can't deploy the dead");
@@ -889,7 +998,7 @@ mod tests {
         let stash: u32 = s.stash.values().sum();
         s.launch(&def, &r, Some(0)).unwrap();
         let everyone: Vec<String> = s.squad().map(|x| x.name.clone()).collect();
-        s.finish(&def, &MissionResult { won: false, fallen: everyone, kills: BTreeMap::new() });
+        s.finish(&def, &MissionResult { won: false, fallen: everyone, kills: BTreeMap::new(), ..Default::default() });
         assert_eq!(s.funds, funds, "no pay");
         assert!(s.stash.values().sum::<u32>() < stash, "the items are gone");
         assert!(s.side_ops[0].done);
@@ -909,7 +1018,7 @@ mod tests {
         let before = s.clone();
         s.launch(&def, &r, None).unwrap();
         let everyone: Vec<String> = s.squad().map(|x| x.name.clone()).collect();
-        s.finish(&def, &MissionResult { won: false, fallen: everyone, kills: BTreeMap::new() });
+        s.finish(&def, &MissionResult { won: false, fallen: everyone, kills: BTreeMap::new(), ..Default::default() });
         assert_eq!(s.status, Status::StoryFailed);
         assert!(s.launch(&def, &r, None).is_err(), "decide first");
         let mut given = s.clone();
@@ -1002,6 +1111,39 @@ mod tests {
         assert_eq!(abilities, vec![("medkit".to_string(), 1)]);
         // Other soldiers have their own trees.
         assert!(s.soldiers[1].skills.is_empty());
+    }
+
+    #[test]
+    fn drugs_leave_side_effects_that_wear_off_or_need_treatment() {
+        let def = ghost_protocol();
+        let r = rules();
+        // Direct checks: a timed condition ticks away, a permanent one stays until treated.
+        let mut s = CampaignState::new(&def, &r, "Test", 12);
+        s.soldiers[0].conditions = vec![
+            Condition { id: "tremors".into(), missions_left: Some(1) },
+            Condition { id: "heart_strain".into(), missions_left: None },
+        ];
+        let (b, _) = s.deploy_bonus(&s.soldiers[0]);
+        assert_eq!(b.aim, -10);
+        assert_eq!(b.max_hp, -2);
+        s.launch(&def, &r, None).unwrap();
+        s.finish(&def, &MissionResult { won: true, ..Default::default() });
+        let c: Vec<&str> = s.soldiers[0].conditions.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(c, vec!["heart_strain"], "tremors wore off; the heart strain didn't");
+        s.funds = 100;
+        assert!(s.treat(s.soldiers[0].id, "heart_strain").is_err(), "200 to treat");
+        s.funds = 300;
+        s.treat(s.soldiers[0].id, "heart_strain").unwrap();
+        assert!(s.soldiers[0].conditions.is_empty());
+        assert_eq!(s.funds, 100);
+        // Doses roll their chances: over many soldiers-missions, some stick.
+        let mut s = CampaignState::new(&def, &r, "Test", 13);
+        s.launch(&def, &r, None).unwrap();
+        let names: Vec<String> = s.squad().map(|x| x.name.clone()).collect();
+        let doses = names.iter().map(|n| (n.clone(), vec!["berserk".to_string(); 3])).collect();
+        let report = s.finish(&def, &MissionResult { won: true, doses, ..Default::default() });
+        assert!(report.contains("Crash"), "60% a dose, 12 doses: {report}");
+        assert!(s.soldiers.iter().any(|x| x.conditions.iter().any(|c| c.id == "crash" && c.missions_left == Some(2))));
     }
 
     #[cfg(feature = "data")]

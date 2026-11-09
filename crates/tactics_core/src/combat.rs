@@ -301,6 +301,7 @@ mod tests {
             insanity: 0,
             flammable: false,
             vine_kin: false,
+            doses: Vec::new(),
             size: 1,
             fearless: false,
             body: Default::default(),
