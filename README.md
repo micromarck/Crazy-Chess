@@ -56,6 +56,10 @@ brick, containers, trees, water...), and hand-made missions get the same
 look automatically. Each mission can set its **sky** in the file: a colour, a
 gradient or a panorama image (`<sky>`).
 
+The game opens on a **main menu** (Campaign, Missions, Quick skirmish, Barracks,
+Settings, How to play; the Menu button or Esc brings it back). Set
+`TBS_MISSION=<id>` to jump straight into a mission instead.
+
 New to the controls? Play *Basic Training* from the Missions list. Bundled large levels: *Proving Grounds*
 (sandbox), *Hold the Beacon* (defend and extract), *Clear the Complex*
 (explore and clear) and *Silent Theft* (stealth heist); with the

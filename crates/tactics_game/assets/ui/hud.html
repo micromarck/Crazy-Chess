@@ -93,6 +93,12 @@
   .help-row { flex-direction: row; margin-bottom: 3px; }
   .help-key { color: #f2d24a; width: 160px; font-size: 13px; }
   .help-text { font-size: 13px; max-width: 360px; }
+  #menu { position: absolute; left: 0px; top: 0px; width: 100vw; height: 100vh; z-index: 50; background: #07090dfa; align-items: center; justify-content: center; flex-direction: column; }
+  .menu-title { font-size: 46px; color: #ebedf2; margin-bottom: 2px; }
+  .menu-sub { font-size: 15px; color: #9aa1ad; margin-bottom: 26px; }
+  .menu-button { width: 340px; height: 56px; margin-bottom: 10px; margin-left: 0px; flex-direction: column; justify-content: center; align-items: center; font-size: 18px; background: #1d232e; }
+  .menu-button .key { font-size: 12px; }
+  .menu-main { background: #2f5e44; }
   #campaign { top: 140px; left: 190px; padding: 10px; max-width: 900px; max-height: 76vh; overflow: scroll; z-index: 11; background: #0d1117f4; }
   .cp-cols { flex-direction: row; }
   .cp-col { flex-direction: column; width: 430px; margin-right: 12px; }
@@ -229,6 +235,7 @@
 <!-- Tool buttons -->
 <div id="tools">
   <button class="small-button" data-command="editor" data-if="!ui.touch">Edit<span class="key">F1</span></button>
+  <button class="small-button" data-command="toggle:menu">Menu<span class="key">Esc</span></button>
   <button class="small-button" data-command="toggle:campaign">Campaign<span class="key" data-if="camp.active">{{ camp.funds }} funds</span><span class="key" data-if="!camp.active">saves</span></button>
   <button class="small-button" data-command="toggle:missions">Missions<span class="key">list</span></button>
   <button class="small-button" data-command="toggle:barracks">Barracks<span class="key">soldiers</span></button>
@@ -254,6 +261,20 @@
   </button>
 </div>
 
+
+<!-- Main menu: shown at startup (and from the Menu button / Esc) -->
+<div id="menu" data-if="ui.menu">
+  <span class="menu-title">TACTICS</span>
+  <span class="menu-sub">squad tactics - turn by turn</span>
+  <button class="menu-button menu-main" data-command="menu:campaign">Campaign<span class="key">{{ camp.name }}: story, side jobs, four save slots</span></button>
+  <button class="menu-button" data-command="menu:missions">Missions<span class="key">every mission, one at a time</span></button>
+  <button class="menu-button" data-command="menu:skirmish">Quick skirmish<span class="key">a random generated mission</span></button>
+  <button class="menu-button" data-command="menu:barracks">Barracks<span class="key">your skirmish soldiers</span></button>
+  <button class="menu-button" data-command="menu:settings">Settings</button>
+  <button class="menu-button" data-command="menu:help">How to play</button>
+  <button class="menu-button" data-command="menu:resume">Resume<span class="key">back to the map</span></button>
+  <button class="menu-button" data-if="ui.desktop" data-command="menu:quit">Quit</button>
+</div>
 
 <!-- Campaign (Ghost Protocol): save slots, the next story mission, side jobs, soldiers, shop -->
 <div id="campaign" class="panel" data-if="ui.campaign and !lab.active">

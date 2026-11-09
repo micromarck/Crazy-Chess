@@ -100,6 +100,14 @@ impl MissionCatalog {
     }
 }
 
+/// Did the player ask (`TBS_MISSION`, desktop) to jump straight into a mission?
+pub fn mission_from_env() -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    return std::env::var("TBS_MISSION").is_ok_and(|v| !v.is_empty());
+    #[cfg(target_arch = "wasm32")]
+    false
+}
+
 /// Mission id used for generated missions.
 pub const GENERATED: &str = "generated";
 
@@ -136,6 +144,11 @@ fn track_loading(
             catalog.started = true;
             // `TBS_MISSION=<id>` (desktop) overrides the index's start mission,
             // handy for testing a level.
+            // Otherwise the main menu is up and nothing starts until the
+            // player picks something (the demo map waits behind it).
+            if !mission_from_env() {
+                return;
+            }
             #[cfg(not(target_arch = "wasm32"))]
             let wanted = std::env::var("TBS_MISSION").ok().or_else(|| catalog.start.clone());
             #[cfg(target_arch = "wasm32")]
@@ -320,7 +333,7 @@ pub fn start_battle(
         rig.focus_at(tile_top(map, u.pos));
     }
     // Menus that led here (Missions, Loadout...) close with the new battle.
-    for panel in ["missions", "loadout", "barracks", "settings", "help"] {
+    for panel in ["missions", "loadout", "barracks", "settings", "help", "menu"] {
         if let Some(open) = flags.0.get_mut(panel) {
             *open = false;
         }

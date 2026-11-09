@@ -135,6 +135,13 @@ fn keyboard_shortcuts(
     settings: Res<crate::settings::GameSettings>,
     mut commands: MessageWriter<PlayerCommand>,
 ) {
+    // The main menu takes no shortcuts; Esc goes back to the game.
+    if flags.0.get("menu").copied().unwrap_or(false) {
+        if keys.just_pressed(KeyCode::Escape) {
+            flags.0.insert("menu".into(), false);
+        }
+        return;
+    }
     // H / F10: controls cheat sheet.
     if keys.any_just_pressed([KeyCode::KeyH, KeyCode::F10]) {
         let f = flags.0.entry("help".into()).or_insert(false);
@@ -144,7 +151,7 @@ fn keyboard_shortcuts(
     // Esc closes open panels first; only then does it cancel targeting.
     let mut esc_used = false;
     if keys.just_pressed(KeyCode::Escape) {
-        for panel in ["help", "settings", "missions", "loadout", "barracks"] {
+        for panel in ["help", "settings", "missions", "loadout", "barracks", "campaign"] {
             if let Some(f) = flags.0.get_mut(panel).filter(|f| **f) {
                 *f = false;
                 esc_used = true;
@@ -221,11 +228,17 @@ fn board_click(
     mut rig: Single<&mut CameraRig>,
     settings: Res<crate::settings::GameSettings>,
     touch: Res<crate::touch::TouchMode>,
+    mut flags: ResMut<crate::html_ui::UiFlags>,
 ) {
     // A click (press + release without dragging), a tap, or releasing an
     // order-drag that started on the selected soldier.
     let tapped = touches.any_just_released() && !gesture.dragged;
-    if !(drag.clicked || drag.order_released || tapped) || pointer_over_ui(&hover_map, &ui_nodes) {
+    if !(drag.clicked || drag.order_released || tapped) {
+        return;
+    }
+    // A HUD button took this click (or a menu is up).
+    let used = flags.0.insert("click_used".into(), false).unwrap_or(false);
+    if used || flags.0.get("menu").copied().unwrap_or(false) || pointer_over_ui(&hover_map, &ui_nodes) {
         return;
     }
     let Some(tile) = selection.hovered else { return };

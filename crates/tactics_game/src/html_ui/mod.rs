@@ -46,7 +46,8 @@ pub struct HtmlUiPlugin;
 impl Plugin for HtmlUiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<UiData>()
-            .init_resource::<UiFlags>()
+            // The main menu greets the player (unless `TBS_MISSION` jumps straight into a mission).
+            .insert_resource(UiFlags([("menu".to_string(), !crate::missions::mission_from_env())].into()))
             .init_resource::<HtmlLayout>()
             .add_message::<UiCommand>()
             .add_systems(Startup, request_initial_build)
@@ -176,6 +177,7 @@ fn rebuild_layout(
 /// | `move` | touchscreen: enter / leave move mode (then tap a tile, then confirm) |
 /// | `rotate:left`, `rotate:right` | turn the view 45° left / right (like E / Q) |
 /// | `campaign:<command>` | the campaign (see [`crate::campaign`]) |
+/// | `menu:<what>` | main menu: `resume`, `campaign`, `missions`, `skirmish`, `barracks`, `loadout`, `settings`, `help`, `quit` |
 /// | `log:<text>` | print a message (handy while designing layouts) |
 #[allow(clippy::too_many_arguments)]
 pub fn run_ui_commands(
@@ -191,9 +193,12 @@ pub fn run_ui_commands(
     mut settings: ResMut<crate::settings::GameSettings>,
     mut roster: ResMut<crate::roster::Roster>,
     mut windows: Query<&mut Window, With<bevy::window::PrimaryWindow>>,
-    (campaign, mut campaign_cmds): (Res<crate::campaign::Campaign>, MessageWriter<crate::campaign::CampaignCommand>),
+    (campaign, mut campaign_cmds, mut exit): (Res<crate::campaign::Campaign>, MessageWriter<crate::campaign::CampaignCommand>, MessageWriter<AppExit>),
 ) {
     for UiCommand(cmd) in commands.read() {
+        // This click belongs to the HUD: the board mustn't act on it too (the
+        // panel under the pointer may already be gone when the button lets go).
+        flags.0.insert("click_used".into(), true);
         let (name, arg) = cmd.split_once(':').map_or((cmd.as_str(), ""), |(n, a)| (n, a));
         match name.trim() {
             "end_turn" => {
@@ -300,6 +305,23 @@ pub fn run_ui_commands(
             }
             "campaign" => {
                 campaign_cmds.write(crate::campaign::CampaignCommand(arg.to_string()));
+            }
+            // The main menu: close it, then open a panel or start something.
+            "menu" => {
+                flags.0.insert("menu".into(), false);
+                match arg.trim() {
+                    "resume" | "" => {}
+                    "skirmish" => {
+                        player.write(PlayerCommand::Generate("any".into()));
+                    }
+                    "quit" => {
+                        exit.write(AppExit::Success);
+                    }
+                    panel @ ("campaign" | "missions" | "barracks" | "loadout" | "settings" | "help") => {
+                        flags.0.insert(panel.into(), true);
+                    }
+                    other => log.push(format!("UI: menu:{other}?")),
+                }
             }
             "log" => log.push(arg.to_string()),
             other => log.push(format!("UI: unknown command '{other}'")),
