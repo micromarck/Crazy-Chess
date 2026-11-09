@@ -22,5 +22,11 @@
   <mission file="tyrant_hunt.mission.xml"/>
   <mission file="nest_raid.mission.xml"/>
   <mission file="station.mission.xml"/>
+  <mission file="camp_squatters.mission.xml"/>
+  <mission file="camp_courier.mission.xml"/>
+  <mission file="camp_shafts.mission.xml"/>
+  <mission file="camp_servers.mission.xml"/>
+  <mission file="camp_coolant.mission.xml"/>
+  <mission file="camp_heart.mission.xml"/>
   <mission file="lab.mission.xml"/>
 </missions>

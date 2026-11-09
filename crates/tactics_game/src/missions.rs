@@ -601,6 +601,40 @@ mod tests {
         }
     }
 
+    /// Ghost Protocol: every chapter's mission is bundled, builds cleanly and
+    /// plays (both sides) without script errors; the relay and Heart kills
+    /// drive their objectives.
+    #[test]
+    fn campaign_missions_play() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(MISSION_DIR);
+        let (rules, _) = crate::content::build_ruleset();
+        let def = tactics_core::campaign::ghost_protocol();
+        let index = std::fs::read_to_string(dir.join("index.xml")).unwrap();
+        let config = AiConfig::default();
+        for ch in &def.chapters {
+            let file = format!("{}.mission.xml", ch.mission);
+            assert!(index.contains(&file), "{file} is in the index");
+            let m = parse_mission(&std::fs::read_to_string(dir.join(&file)).unwrap()).unwrap();
+            let (mut b, warnings) = Battle::from_mission(rules.clone(), &m, 4);
+            assert!(warnings.is_empty(), "{file}: {warnings:?}");
+            let ev = b.begin();
+            assert!(!ev.iter().any(|e| matches!(e, GameEvent::ScriptError { .. })), "{file}: {ev:?}");
+            for _ in 0..1200 {
+                if b.round() >= 8 || b.is_over() {
+                    break;
+                }
+                let ev = b.apply(ai::next_team_action(&b, &config)).unwrap();
+                assert!(!ev.iter().any(|e| matches!(e, GameEvent::ScriptError { .. })), "{file}: {ev:?}");
+            }
+        }
+        // The Heart is a 2x2 machine.
+        let m = parse_mission(&std::fs::read_to_string(dir.join("camp_heart.mission.xml")).unwrap()).unwrap();
+        let (mut b, _) = Battle::from_mission(rules, &m, 4);
+        b.begin();
+        let heart = b.living(Team::Enemy).find(|u| u.class == "vesper_heart").unwrap().id;
+        assert_eq!(b.unit(heart).unwrap().tiles().count(), 4);
+    }
+
     /// The other dinosaur missions build cleanly, keep every big beast on
     /// walkable tiles while both sides play them out, and their scripts run.
     #[test]

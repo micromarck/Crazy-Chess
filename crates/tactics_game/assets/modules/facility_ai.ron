@@ -371,6 +371,49 @@
                 "#),
             ],
         ),
+        // --- Ghost Protocol (the campaign): VESPER's relay nodes and its Heart.
+        (
+            id: "vesper_relay",
+            machine: Medium,
+            name: "Relay Node",
+            stats: (max_hp: 8, mobility: 0, aim: 45, defense: 0, sight: 12.0, bravery: 100),
+            weapon: "spot_laser",
+            abilities: ["shoot"],
+            model: "vesper_relay",
+            fearless: true,
+            hearing: 12.0,
+            body: (height: 1.6),
+            hooks: [
+                (on: "death", code: r#"explode(x, y, 1.5, 2);"#),
+            ],
+        ),
+        (
+            id: "vesper_heart",
+            machine: Heavy,
+            name: "The Heart",
+            size: 2,
+            stats: (max_hp: 45, mobility: 0, aim: 62, defense: 0, sight: 16.0, bravery: 100),
+            weapon: "vesper_lance",
+            abilities: ["shoot"],
+            model: "vesper_heart",
+            fearless: true,
+            hearing: 30.0,
+            no_half_cover: true,
+            body: (height: 2.6, muzzle: Some(1.8)),
+            hooks: [
+                (on: "spotted", once: true, code: r#"
+                    say(unit, "I MADE YOU COME HERE. I CAN MAKE YOU STAY.");
+                "#),
+                // It builds defenders while it lives.
+                (on: "turn_start", code: r#"
+                    if !unit_dormant(unit) && round % 3 == 0 && alive_count("enemy") < 14 {
+                        spawn_unit("enemy", "fac_secbot", "Security Bot", x + 3, y);
+                        say(unit, "REPAIR. DEFEND.");
+                    }
+                "#),
+                (on: "death", code: r#"explode(x, y, 3.0, 4); ignite(x, y, 2.5, 3);"#),
+            ],
+        ),
     ],
 
     squads: [
@@ -392,6 +435,28 @@
     // Prime chassis has a halo of sensor fins and a glowing core.
     // ---------------------------------------------------------------------
     skeletons: [
+        // A relay node: a pillar of racks with a pulsing core.
+        (
+            id: "vesper_relay",
+            bones: [
+                (name: "base", offset: (0.0, 0.15, 0.0), shape: Box(size: (0.6, 0.3, 0.6)), color: Dark),
+                (name: "pillar", parent: "base", offset: (0.0, 0.7, 0.0), shape: Box(size: (0.4, 1.1, 0.4)), color: Team),
+                (name: "core", parent: "pillar", offset: (0.0, 0.2, -0.21), shape: Sphere(radius: 0.12), color: Accent),
+                (name: "cap", parent: "pillar", offset: (0.0, 0.6, 0.0), shape: Box(size: (0.5, 0.08, 0.5)), color: Dark),
+            ],
+        ),
+        // The Heart: a great sphere of light in a cage of cables.
+        (
+            id: "vesper_heart",
+            bones: [
+                (name: "plinth", offset: (0.0, 0.25, 0.0), shape: Box(size: (1.6, 0.5, 1.6)), color: Dark),
+                (name: "core", parent: "plinth", offset: (0.0, 1.2, 0.0), shape: Sphere(radius: 0.65), color: Accent),
+                (name: "ring", parent: "core", offset: (0.0, 0.0, 0.0), shape: Box(size: (1.7, 0.08, 0.08)), color: Team),
+                (name: "ring2", parent: "core", offset: (0.0, 0.0, 0.0), rotation: (0.0, 90.0, 0.0), shape: Box(size: (1.7, 0.08, 0.08)), color: Team),
+                (name: "cable_1", parent: "plinth", offset: (-0.7, 0.25, -0.7), rotation: (20.0, 0.0, -20.0), shape: Capsule(radius: 0.05, length: 1.4), shape_offset: (0.0, 0.7, 0.0), color: Dark),
+                (name: "cable_2", parent: "plinth", offset: (0.7, 0.25, 0.7), rotation: (-20.0, 0.0, 20.0), shape: Capsule(radius: 0.05, length: 1.4), shape_offset: (0.0, 0.7, 0.0), color: Dark),
+            ],
+        ),
         (
             id: "fac_bot",
             extends: "humanoid",
@@ -447,6 +512,16 @@
     ],
 
     animations: [
+        // The Heart's rings turn.
+        (
+            skeleton: "vesper_heart",
+            slot: "idle",
+            duration: 4.0,
+            looping: true,
+            rotations: {
+                "core": [(0.0, (0.0, 0.0, 0.0)), (2.0, (0.0, 180.0, 0.0)), (4.0, (0.0, 360.0, 0.0))],
+            },
+        ),
         // The Prime's fins sweep slowly while it idles: it is listening.
         (
             skeleton: "vesper_prime",
@@ -465,5 +540,7 @@
         (id: "fac_secbot", skeleton: "fac_bot", fallback: Soldier, scale: 0.85),
         (id: "fac_warden", skeleton: "fac_warden", fallback: Soldier, scale: 1.4),
         (id: "vesper_prime", skeleton: "vesper_prime", fallback: Soldier, scale: 1.55),
+        (id: "vesper_relay", skeleton: "vesper_relay", fallback: Soldier, scale: 1.0),
+        (id: "vesper_heart", skeleton: "vesper_heart", fallback: Soldier, scale: 1.0),
     ],
 )

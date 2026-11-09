@@ -65,6 +65,7 @@ pub mod ai;
 #[cfg(test)]
 mod ai_legacy;
 pub mod battle;
+pub mod campaign;
 pub mod combat;
 pub mod content;
 pub mod cover;

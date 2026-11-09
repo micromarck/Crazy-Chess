@@ -28,6 +28,19 @@ impl Battle {
         }
     }
 
+    /// Veterancy and other between-mission bonuses: adds `m`'s aim, defence,
+    /// mobility, sight and max HP to a unit (healing it by the extra HP).
+    pub fn apply_bonus(&mut self, id: UnitId, m: crate::content::StatModifiers) {
+        if let Some(u) = self.units.get_mut(id.0 as usize).filter(|u| u.is_alive()) {
+            u.stats.aim += m.aim;
+            u.stats.defense += m.defense;
+            u.stats.mobility = (u.stats.mobility as i32 + m.mobility).max(2) as u32;
+            u.stats.sight = (u.stats.sight + m.sight).max(1.0);
+            u.stats.max_hp = (u.stats.max_hp + m.max_hp).max(1);
+            u.hp = (u.hp + m.max_hp).clamp(1, u.stats.max_hp);
+        }
+    }
+
     /// Sets a unit's HP directly (tests, tools).
     pub fn debug_set_hp(&mut self, id: UnitId, hp: i32) {
         if let Some(u) = self.units.get_mut(id.0 as usize) {
