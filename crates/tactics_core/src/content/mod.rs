@@ -491,6 +491,7 @@ impl Ruleset {
             gear.armor = None;
         }
         gear.items.retain(|i| !i.is_empty());
+        gear.augments.retain(|i| !i.is_empty());
         gear
     }
 
@@ -499,7 +500,10 @@ impl Ruleset {
         let mut problems = Vec::new();
         // Restricted classes (robot frames) only take gear made for them.
         let restricted = self.class(class).is_some_and(|c| c.restricted_gear);
-        let allowed = |list: &[String]| (!restricted && list.is_empty()) || list.iter().any(|c| c == class);
+        // Augments can make a soldier count as another class for gear (a heat
+        // frame conversion carries Strider weapons).
+        let gear_as: Vec<&String> = gear.augments.iter().filter_map(|a| self.items.get(a)).flat_map(|i| i.gear_as.iter()).collect();
+        let allowed = |list: &[String]| (!restricted && list.is_empty()) || list.iter().any(|c| c == class || gear_as.contains(&c));
         if let Some(w) = &gear.weapon {
             match self.weapons.get(w) {
                 None => problems.push(format!("unknown weapon '{w}'")),
@@ -519,8 +523,18 @@ impl Ruleset {
         for i in &gear.items {
             check_item(i, ItemSlot::Utility);
         }
+        for a in &gear.augments {
+            check_item(a, ItemSlot::Augment);
+        }
         if gear.items.len() > UTILITY_SLOTS {
             problems.push(format!("{} utility items (max {UTILITY_SLOTS})", gear.items.len()));
+        }
+        if gear.augments.len() > AUGMENT_SLOTS {
+            problems.push(format!("{} augments (max {AUGMENT_SLOTS})", gear.augments.len()));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        if let Some(dup) = gear.augments.iter().find(|a| !seen.insert(*a)) {
+            problems.push(format!("the same augment twice ('{dup}')"));
         }
         problems
     }

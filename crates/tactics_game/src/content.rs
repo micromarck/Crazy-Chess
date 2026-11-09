@@ -34,6 +34,7 @@ pub const BUNDLED_DATA_MODULES: &[(&str, &str)] = &[
     ("robot_frames.ron", include_str!("../assets/modules/robot_frames.ron")),
     ("dinosaurs.ron", include_str!("../assets/modules/dinosaurs.ron")),
     ("symbiotes.ron", include_str!("../assets/modules/symbiotes.ron")),
+    ("augments.ron", include_str!("../assets/modules/augments.ron")),
 ];
 
 /// Folder (relative to the working directory) scanned for user modules on desktop.
@@ -192,6 +193,47 @@ mod tests {
     /// default loadouts spawn, heat rules come from the class, and the
     /// missile pod heats the frame. The Arsenal's lasers and heavy weapons
     /// go to the right soldiers.
+    #[test]
+    fn augmented_soldiers_trade_strengths_and_the_wild_augments_work() {
+        use tactics_core::content::Loadout;
+        let (rules, _) = build_ruleset();
+        let aug = |list: &[&str]| Loadout { augments: list.iter().map(|s| s.to_string()).collect(), ..Default::default() };
+        // Gear rules: augments only for the Augmented, one of each, three at most.
+        assert!(!rules.check_gear("rifleman", &aug(&["aug_targeting_eye"])).is_empty(), "riflemen can't be augmented");
+        assert!(!rules.check_gear("augmented", &aug(&["aug_targeting_eye", "aug_targeting_eye"])).is_empty());
+        assert!(!rules.check_gear("augmented", &aug(&["aug_targeting_eye", "aug_bulk_grafts", "aug_pyre_core", "aug_regenerator"])).is_empty());
+        let lasers = Loadout { weapon: Some("pulse_lasers".into()), ..Default::default() };
+        assert!(!rules.check_gear("augmented", &lasers).is_empty(), "no Strider weapons without the heat frame");
+        assert!(rules.check_gear("augmented", &Loadout { augments: vec!["aug_heat_frame".into()], ..lasers }).is_empty());
+
+        let mut b = Battle::new(Map::from_ascii(&"............\n".repeat(5)), rules, 3);
+        let spawn = |b: &mut Battle, preset: &str, x: i32| {
+            b.spawn_equipped("augmented", preset, Team::Player, GridPos::new(x, 0), Some(preset), &Loadout::default()).unwrap()
+        };
+        let plain = b.spawn_equipped("augmented", "Plain", Team::Player, GridPos::new(0, 4), None, &aug(&[""])).unwrap();
+        let turret = spawn(&mut b, "aug_turret", 0);
+        let brute = spawn(&mut b, "aug_berserker", 3);
+        let frame = spawn(&mut b, "aug_heatframe", 6);
+        b.spawn("sectoid", "E", Team::Enemy, GridPos::new(11, 4)).unwrap();
+        let (p, t, br, f) = (b.unit(plain).unwrap(), b.unit(turret).unwrap(), b.unit(brute).unwrap(), b.unit(frame).unwrap());
+        assert!(t.stats.aim >= p.stats.aim + 20 && t.stats.mobility < p.stats.mobility, "aims, can't move");
+        assert!(t.fearless, "the neural dampener");
+        assert!(br.stats.max_hp > p.stats.max_hp && br.stats.defense < p.stats.defense, "tough, easy to hit");
+        assert!(br.rage_rules.is_some(), "the berserker gland");
+        assert!(f.heat.is_some() && f.weapon.id == "pulse_lasers" && f.has_ability(&"shutdown".into()), "a heat-run frame with Strider weapons");
+        // The pyre core: dying sets the ground alight. (An enemy grenadier's
+        // frag finishes the berserker off: the blast never misses.)
+        let at = b.unit(brute).unwrap().pos;
+        b.debug_set_hp(brute, 1);
+        let g = b.spawn("grenadier", "G", Team::Enemy, GridPos::new(11, 0)).unwrap();
+        while b.active_team() == Team::Player {
+            b.apply(Action::EndTurn).unwrap();
+        }
+        let events = b.apply(Action::ability(g, "frag_grenade", Target::Tile(at))).unwrap();
+        assert!(!b.unit(brute).unwrap().is_alive());
+        assert!(b.on_fire(at), "the pyre core went up: {events:?}");
+    }
+
     #[test]
     fn boost_costs_six_heat_and_needs_a_turn_to_recharge() {
         let (rules, _) = build_ruleset();

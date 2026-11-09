@@ -15,11 +15,12 @@
 //! | `gear:weapon:<i>[:<dir>]` | next / previous weapon this class may use |
 //! | `gear:armor:<i>[:<dir>]` | next / previous armour (or none) |
 //! | `gear:item:<i>:<slot>[:<dir>]` | next / previous utility item (or none) in slot 0/1 |
+//! | `gear:aug:<i>:<slot>[:<dir>]` | next / previous augment (or none) in slot 0-2 (augmented soldiers); gear the new set can't carry goes back to the default |
 //! | `gear:reset:<i>` | back to the class's default gear |
 
 use std::collections::BTreeMap;
 
-use tactics_core::content::{ItemSlot, Loadout, Ruleset, SquadMember, UTILITY_SLOTS};
+use tactics_core::content::{AUGMENT_SLOTS, ItemSlot, Loadout, Ruleset, SquadMember, UTILITY_SLOTS};
 
 const SQUAD: &str = "player";
 
@@ -31,7 +32,7 @@ pub fn command(arg: &str, rules: &mut Ruleset, selected: &mut usize) -> Option<S
     let index: usize = parts.next()?.parse().ok()?;
     let rest: Vec<i64> = parts.filter_map(|s| s.parse().ok()).collect();
     // Items take a slot before the direction.
-    let (slot, dir) = if what == "item" { (rest.first().copied().unwrap_or(0) as usize, rest.get(1).copied().unwrap_or(1)) } else { (0, rest.first().copied().unwrap_or(1)) };
+    let (slot, dir) = if what == "item" || what == "aug" { (rest.first().copied().unwrap_or(0) as usize, rest.get(1).copied().unwrap_or(1)) } else { (0, rest.first().copied().unwrap_or(1)) };
     let back = dir < 0;
     let snapshot = rules.clone();
     let member = rules.squad_mut(SQUAD)?.members.get_mut(index)?;
@@ -73,11 +74,11 @@ pub fn command(arg: &str, rules: &mut Ruleset, selected: &mut usize) -> Option<S
             member.gear = Loadout::default();
         }
         "weapon" => {
-            let ids = weapon_choices(&snapshot, &member.class);
+            let ids = weapon_choices(&snapshot, &member.class, &current.augments);
             member.gear.weapon = step(&ids, &current.weapon, back);
         }
         "armor" => {
-            let ids = item_choices(&snapshot, member, ItemSlot::Armor);
+            let ids = item_choices(&snapshot, member, ItemSlot::Armor, &current.augments);
             member.gear.armor = step(&ids, &current.armor, back);
             if member.gear.armor.is_none() {
                 // "None" must override a preset's armor: use an explicit empty set.
@@ -85,12 +86,35 @@ pub fn command(arg: &str, rules: &mut Ruleset, selected: &mut usize) -> Option<S
             }
         }
         "item" if slot < UTILITY_SLOTS => {
-            let ids = item_choices(&snapshot, member, ItemSlot::Utility);
+            let ids = item_choices(&snapshot, member, ItemSlot::Utility, &current.augments);
             let mut items: Vec<Option<String>> = (0..UTILITY_SLOTS).map(|i| current.items.get(i).cloned()).collect();
             items[slot] = step(&ids, &items[slot], back);
             member.gear.items = items.into_iter().flatten().collect();
             if member.gear.items.is_empty() {
                 member.gear.items = vec![String::new()];
+            }
+        }
+        "aug" if slot < AUGMENT_SLOTS => {
+            let ids = item_choices(&snapshot, member, ItemSlot::Augment, &[]);
+            let mut augs: Vec<Option<String>> = (0..AUGMENT_SLOTS).map(|i| current.augments.get(i).cloned()).collect();
+            // Skip augments already fitted in another slot.
+            let others: Vec<String> = augs.iter().enumerate().filter(|(i, _)| *i != slot).filter_map(|(_, a)| a.clone()).collect();
+            let free: Vec<Option<String>> = ids.into_iter().filter(|o| o.as_ref().is_none_or(|id| !others.contains(id))).collect();
+            augs[slot] = step(&free, &augs[slot], back);
+            member.gear.augments = augs.into_iter().flatten().collect();
+            if member.gear.augments.is_empty() {
+                member.gear.augments = vec![String::new()];
+            }
+            // What the new set can't carry (a Strider weapon without the heat
+            // frame) goes back to the class's default.
+            let fits = |m: &SquadMember| snapshot.check_gear(&m.class, &normalize(snapshot.gear_for(&m.class, m.loadout.as_deref(), &m.gear))).is_empty();
+            if !fits(member) {
+                member.gear.weapon = None;
+            }
+            if !fits(member) {
+                member.gear.items = vec![String::new()];
+                member.gear.armor = None;
+                member.loadout = None;
             }
         }
         _ => return None,
@@ -109,11 +133,11 @@ pub fn command(arg: &str, rules: &mut Ruleset, selected: &mut usize) -> Option<S
     })
 }
 
-/// Weapons `class` may carry (player weapons only).
-fn weapon_choices(rules: &Ruleset, class: &str) -> Vec<Option<String>> {
+/// Weapons `class` may carry with these `augments` (player weapons only).
+fn weapon_choices(rules: &Ruleset, class: &str, augments: &[String]) -> Vec<Option<String>> {
     rules
         .weapons()
-        .filter(|w| rules.check_gear(class, &Loadout { weapon: Some(w.id.clone()), ..Default::default() }).is_empty())
+        .filter(|w| rules.check_gear(class, &Loadout { weapon: Some(w.id.clone()), augments: augments.to_vec(), ..Default::default() }).is_empty())
         .filter(|w| is_player_weapon(rules, &w.id))
         .map(|w| Some(w.id.clone()))
         .collect()
@@ -126,6 +150,7 @@ pub fn normalize(mut gear: Loadout) -> Loadout {
         gear.armor = None;
     }
     gear.items.retain(|i| !i.is_empty());
+    gear.augments.retain(|i| !i.is_empty());
     gear
 }
 
@@ -137,16 +162,18 @@ fn is_player_weapon(rules: &Ruleset, id: &str) -> bool {
         || rules.loadouts().any(|l| l.gear.weapon.as_deref() == Some(id))
 }
 
-fn item_choices(rules: &Ruleset, member: &SquadMember, slot: ItemSlot) -> Vec<Option<String>> {
+fn item_choices(rules: &Ruleset, member: &SquadMember, slot: ItemSlot, augments: &[String]) -> Vec<Option<String>> {
     std::iter::once(None)
         .chain(
             rules
                 .items()
                 .filter(|i| i.slot == slot)
                 .filter(|i| {
+                    let augments = augments.to_vec();
                     let gear = match slot {
-                        ItemSlot::Armor => Loadout { armor: Some(i.id.clone()), ..Default::default() },
-                        ItemSlot::Utility => Loadout { items: vec![i.id.clone()], ..Default::default() },
+                        ItemSlot::Armor => Loadout { armor: Some(i.id.clone()), augments, ..Default::default() },
+                        ItemSlot::Utility => Loadout { items: vec![i.id.clone()], augments, ..Default::default() },
+                        ItemSlot::Augment => Loadout { augments: vec![i.id.clone()], ..Default::default() },
                     };
                     rules.check_gear(&member.class, &gear).is_empty()
                 })
@@ -178,7 +205,12 @@ fn item_name(rules: &Ruleset, id: Option<&String>) -> String {
 pub fn describe(rules: &Ruleset, gear: &Loadout) -> String {
     let weapon = gear.weapon.as_deref().and_then(|w| rules.weapon(w)).map_or("-".to_string(), |w| w.name.clone());
     let items: Vec<String> = gear.items.iter().map(|i| item_name(rules, Some(i))).collect();
-    format!("{weapon}, {}, {}", item_name(rules, gear.armor.as_ref()), if items.is_empty() { "no items".into() } else { items.join(" + ") })
+    let augs: Vec<String> = gear.augments.iter().map(|i| item_name(rules, Some(i))).collect();
+    let mut s = format!("{weapon}, {}, {}", item_name(rules, gear.armor.as_ref()), if items.is_empty() { "no items".into() } else { items.join(" + ") });
+    if !augs.is_empty() {
+        s += &format!("; augments: {}", augs.join(", "));
+    }
+    s
 }
 
 /// Rows for the HUD's `loadout` list (the squad, `selected` highlighted).
@@ -214,7 +246,8 @@ pub fn detail(rules: &Ruleset, selected: usize) -> Vec<(String, String)> {
     // Stats with items applied.
     let mut stats = class.map(|c| c.stats).unwrap_or_default();
     let mut sight_percent = 0;
-    for item in gear.armor.iter().chain(gear.items.iter()).filter_map(|id| rules.item(id)) {
+    let worn: Vec<_> = gear.armor.iter().chain(gear.items.iter()).chain(gear.augments.iter()).filter_map(|id| rules.item(id)).collect();
+    for item in &worn {
         sight_percent += item.stats.sight_percent;
         stats.sight += item.stats.sight;
         stats.max_hp += item.stats.max_hp;
@@ -223,13 +256,17 @@ pub fn detail(rules: &Ruleset, selected: usize) -> Vec<(String, String)> {
         stats.defense += item.stats.defense;
         stats.bravery += item.stats.bravery;
     }
-    let machine = class.is_some_and(|c| c.heat.is_some());
+    let heat = worn.iter().rev().find_map(|i| i.heat).or(class.and_then(|c| c.heat));
+    let machine = heat.is_some();
     let vital = if machine { format!("Heat limit {}", stats.max_hp) } else { format!("HP {}", stats.max_hp) };
     let sight = stats.sight * (1.0 + sight_percent as f32 / 100.0);
     let stats_line =
         format!("{vital}   Move {}   Aim {}   Defence {}   Sight {:.0}", stats.mobility / 2, stats.aim, stats.defense, sight);
+    let can_augment = rules.items().any(|i| i.slot == ItemSlot::Augment && i.classes.contains(&m.class));
     let class_info = match class {
-        Some(c) if machine => format!("Robot frame - runs on heat (cools {} a turn)", c.heat.map_or(0, |h| h.cooling)),
+        Some(c) if c.heat.is_some() => format!("Robot frame - runs on heat (cools {} a turn)", heat.map_or(0, |h| h.cooling)),
+        Some(_) if machine => format!("Augmented soldier - converted to run on heat (cools {} a turn)", heat.map_or(0, |h| h.cooling)),
+        Some(_) if can_augment => format!("Augmented soldier - up to {AUGMENT_SLOTS} augments"),
         Some(_) => "Soldier".to_string(),
         None => String::new(),
     };
@@ -258,7 +295,7 @@ pub fn detail(rules: &Ruleset, selected: usize) -> Vec<(String, String)> {
     let item_info = |id: Option<&String>| id.filter(|s| !s.is_empty()).and_then(|i| rules.item(i)).map_or("nothing".to_string(), |i| i.description.clone());
     // Everything this soldier will be able to do.
     let mut abilities: Vec<String> = Vec::new();
-    for a in class.map(|c| c.abilities.clone()).unwrap_or_default().iter().chain(gear.armor.iter().chain(gear.items.iter()).filter_map(|i| rules.item(i)).flat_map(|i| i.abilities.iter())) {
+    for a in class.map(|c| c.abilities.clone()).unwrap_or_default().iter().chain(worn.iter().flat_map(|i| i.abilities.iter())) {
         if let Some(d) = rules.ability(a)
             && !abilities.contains(&d.name)
         {
@@ -286,6 +323,13 @@ pub fn detail(rules: &Ruleset, selected: usize) -> Vec<(String, String)> {
         field("item0_info", item_info(gear.items.first())),
         field("item1", item_name(rules, gear.items.get(1))),
         field("item1_info", item_info(gear.items.get(1))),
+        field("augmented", if can_augment { "yes".into() } else { String::new() }),
+        field("aug0", item_name(rules, gear.augments.first())),
+        field("aug0_info", item_info(gear.augments.first())),
+        field("aug1", item_name(rules, gear.augments.get(1))),
+        field("aug1_info", item_info(gear.augments.get(1))),
+        field("aug2", item_name(rules, gear.augments.get(2))),
+        field("aug2_info", item_info(gear.augments.get(2))),
         field("preset", preset_name),
         field("preset_info", preset.map_or("The class's standard kit".to_string(), |l| l.description.clone())),
         field("stats", stats_line),
@@ -358,5 +402,53 @@ mod tests {
         roster.pull_gear(&rules);
         let name = rules.squad("player").unwrap().members[0].name.clone();
         assert_eq!(roster.soldiers.iter().find(|s| s.name == name).unwrap().class, rules.squad("player").unwrap().members[0].class);
+    }
+
+    /// Augmented soldiers: cycling the augment slots stays legal, never fits
+    /// one augment twice, and the heat frame unlocks Strider weapons (which go
+    /// back when it comes off).
+    #[test]
+    fn augment_slots_cycle_and_the_heat_frame_unlocks_strider_weapons() {
+        let (mut rules, _) = crate::content::build_ruleset();
+        let mut sel = 0;
+        while rules.squad("player").unwrap().members[0].class != "augmented" {
+            command("class:0:1", &mut rules, &mut sel).unwrap();
+        }
+        let page: BTreeMap<String, String> = detail(&rules, 0).into_iter().collect();
+        assert_eq!(page["lo.augmented"], "yes");
+        let gear = |rules: &Ruleset| {
+            let m = &rules.squad("player").unwrap().members[0];
+            normalize(rules.gear_for(&m.class, m.loadout.as_deref(), &m.gear))
+        };
+        for slot in 0..AUGMENT_SLOTS {
+            for _ in 0..14 {
+                command(&format!("aug:0:{slot}:1"), &mut rules, &mut sel).unwrap();
+                let g = gear(&rules);
+                assert!(rules.check_gear("augmented", &g).is_empty(), "{:?}", g);
+            }
+        }
+        // Fit the heat frame in slot 0: pulse lasers become a choice.
+        for _ in 0..20 {
+            if gear(&rules).augments.first().map(String::as_str) == Some("aug_heat_frame") {
+                break;
+            }
+            command("aug:0:0:1", &mut rules, &mut sel).unwrap();
+        }
+        assert_eq!(gear(&rules).augments.first().map(String::as_str), Some("aug_heat_frame"));
+        assert!(weapon_choices(&rules, "augmented", &gear(&rules).augments).contains(&Some("pulse_lasers".into())));
+        for _ in 0..20 {
+            if gear(&rules).weapon.as_deref() == Some("pulse_lasers") {
+                break;
+            }
+            command("weapon:0:1", &mut rules, &mut sel).unwrap();
+        }
+        assert_eq!(gear(&rules).weapon.as_deref(), Some("pulse_lasers"));
+        let page: BTreeMap<String, String> = detail(&rules, 0).into_iter().collect();
+        assert!(page["lo.stats"].contains("Heat limit"), "{}", page["lo.stats"]);
+        // Take the frame off: the lasers go too.
+        command("aug:0:0:1", &mut rules, &mut sel).unwrap();
+        let g = gear(&rules);
+        assert!(!g.augments.contains(&"aug_heat_frame".to_string()) || g.augments.len() > 1);
+        assert!(rules.check_gear("augmented", &g).is_empty(), "{g:?}");
     }
 }

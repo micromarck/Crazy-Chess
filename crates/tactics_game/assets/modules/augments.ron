@@ -1,0 +1,190 @@
+// Augments: the Augmented soldier, built from cybernetic augments.
+//
+// An Augmented soldier fits up to 3 augments (the Loadout screen's Augment
+// rows). Most are a trade: excel at one thing, pay for it with another.
+// Then there are the wild ones.
+//
+//   Targeting Eye      +25 aim, +3 sight       / -3 tiles of movement
+//   Bulk Grafts        +8 HP                   / -20 defence
+//   Reflex Wiring      +3 tiles of movement    / -15 aim
+//   Dermal Plating     +20 defence             / -2 tiles of movement
+//   Recoil Dampers     +10 aim                 / -3 HP
+//   Neural Dampener    no fear, no insanity    / -10 aim
+//   Spring Legs        the jump pack's Jump    / -2 HP
+//   Adrenal Pump       2 Adrenaline Shots      / -2 HP
+//   --- wild ---
+//   Pyre Core          when they die, they go up in a fireball (friend or foe)
+//   Berserker Gland    rage: every hit makes them angrier (+damage, +movement) / -10 defence
+//   Regenerator Cells  heal 1 HP every turn    / -3 HP
+//   Heat Frame         runs on HEAT instead of health, like a robot (Shutdown,
+//                      Idle) and carries a Strider's weapons and gear
+(
+    info: (
+        id: "augments",
+        name: "Augments",
+        version: "1.0",
+        author: "Tactics",
+        description: "The Augmented soldier and cybernetic augments: trade-offs (aim for movement, health for defence) and wild ones (a fireball on death, rage, a heat-run robot body).",
+    ),
+
+    items: [
+        // --- Trade-offs ---
+        (
+            id: "aug_targeting_eye",
+            name: "Targeting Eye",
+            description: "+25 aim, +3 sight; heavy optics: -3 tiles of movement.",
+            slot: Augment,
+            stats: (aim: 25, sight: 3.0, mobility: -6),
+            classes: ["augmented"],
+        ),
+        (
+            id: "aug_bulk_grafts",
+            name: "Bulk Grafts",
+            description: "+8 HP of grafted muscle; a big, slow target: -20 defence.",
+            slot: Augment,
+            stats: (max_hp: 8, defense: -20),
+            classes: ["augmented"],
+        ),
+        (
+            id: "aug_reflex_wiring",
+            name: "Reflex Wiring",
+            description: "+3 tiles of movement; jittery hands: -15 aim.",
+            slot: Augment,
+            stats: (mobility: 6, aim: -15),
+            classes: ["augmented"],
+        ),
+        (
+            id: "aug_dermal_plating",
+            name: "Dermal Plating",
+            description: "+20 defence; heavy plates: -2 tiles of movement.",
+            slot: Augment,
+            stats: (defense: 20, mobility: -4),
+            classes: ["augmented"],
+        ),
+        (
+            id: "aug_recoil_dampers",
+            name: "Recoil Dampers",
+            description: "+10 aim; the implants take a toll: -3 HP.",
+            slot: Augment,
+            stats: (aim: 10, max_hp: -3),
+            classes: ["augmented"],
+        ),
+        (
+            id: "aug_neural_dampener",
+            name: "Neural Dampener",
+            description: "Feels no fear and can't go insane; dulled reactions: -10 aim.",
+            slot: Augment,
+            stats: (aim: -10),
+            fearless: true,
+            classes: ["augmented"],
+        ),
+        (
+            id: "aug_spring_legs",
+            name: "Spring Legs",
+            description: "Grants Jump (a straight-line leap of 2 moves over walls); -2 HP.",
+            slot: Augment,
+            stats: (max_hp: -2),
+            abilities: ["jump"],
+            classes: ["augmented"],
+        ),
+        (
+            id: "aug_adrenal_pump",
+            name: "Adrenal Pump",
+            description: "Grants 2 Adrenaline Shots (+2 AP for half your remaining health); -2 HP.",
+            slot: Augment,
+            stats: (max_hp: -2),
+            abilities: ["adrenaline"],
+            charges: Some(2),
+            classes: ["augmented"],
+        ),
+        // --- Wild ---
+        (
+            id: "aug_pyre_core",
+            name: "Pyre Core",
+            description: "An unstable reactor in the chest: when they die it goes up - 3 damage within 1.5 tiles and fire for 3 rounds (friend or foe).",
+            slot: Augment,
+            classes: ["augmented"],
+            hooks: [
+                (on: "death", code: r#"
+                    message(unit_name(unit) + "'s pyre core goes up!");
+                    explode(x, y, 1.5, 3);
+                    ignite(x, y, 2.5, 3);
+                "#),
+            ],
+        ),
+        (
+            id: "aug_berserker_gland",
+            name: "Berserker Gland",
+            description: "Rage: every hit and every friend lost makes them angrier; enraged, +2 damage and +2 tiles of movement. Reckless: -10 defence.",
+            slot: Augment,
+            stats: (defense: -10),
+            rage: (per_hit: 35, per_ally_death: 30, decay: 15, threshold: 50, damage: 2, mobility: 4),
+            classes: ["augmented"],
+        ),
+        (
+            id: "aug_regenerator",
+            name: "Regenerator Cells",
+            description: "Heals 1 HP at the start of every turn; the cells feed on the body: -3 HP.",
+            slot: Augment,
+            stats: (max_hp: -3),
+            classes: ["augmented"],
+            hooks: [
+                (on: "turn_start", code: r#"if unit_alive(unit) && unit_hp(unit) < unit_max_hp(unit) { heal(unit, 1); }"#),
+            ],
+        ),
+        (
+            id: "aug_heat_frame",
+            name: "Heat Frame Conversion",
+            description: "Most of the body replaced with a robot frame: runs on HEAT instead of health (heat limit = HP; cools 4 a turn; shots, moves and hits heat it up) and carries a Strider's weapons and gear. Gains Shutdown and Idle.",
+            slot: Augment,
+            stats: (max_hp: 3),
+            heat: (cooling: 4, per_move: 1, per_shot: 2),
+            gear_as: ["frame_light"],
+            abilities: ["shutdown", "idle"],
+            classes: ["augmented"],
+        ),
+    ],
+
+    classes: [
+        (
+            id: "augmented",
+            name: "Augmented",
+            stats: (max_hp: 9, mobility: 12, aim: 66, defense: 0, sight: 14.0, bravery: 50),
+            weapon: "rifle",
+            abilities: ["shoot", "blind_fire", "overwatch", "hunker", "reload"],
+            model: "soldier",
+            loadout: "aug_balanced",
+        ),
+    ],
+
+    loadouts: [
+        (
+            id: "aug_balanced",
+            name: "Augmented",
+            description: "Rifle, Recoil Dampers and Dermal Plating.",
+            classes: ["augmented"],
+            gear: (weapon: Some("rifle"), augments: ["aug_recoil_dampers", "aug_dermal_plating"]),
+        ),
+        (
+            id: "aug_turret",
+            name: "Augmented: Turret",
+            description: "Laser rifle, Targeting Eye, Recoil Dampers, Neural Dampener: deadly aim, barely moves.",
+            classes: ["augmented"],
+            gear: (weapon: Some("laser_rifle"), augments: ["aug_targeting_eye", "aug_recoil_dampers", "aug_neural_dampener"]),
+        ),
+        (
+            id: "aug_berserker",
+            name: "Augmented: Berserker",
+            description: "Shotgun, Bulk Grafts, Berserker Gland and a Pyre Core: charge in, and go out in flames.",
+            classes: ["augmented"],
+            gear: (weapon: Some("shotgun"), augments: ["aug_bulk_grafts", "aug_berserker_gland", "aug_pyre_core"]),
+        ),
+        (
+            id: "aug_heatframe",
+            name: "Augmented: Heat Frame",
+            description: "Heat Frame Conversion with Strider pulse lasers and a coolant tank, plus Reflex Wiring.",
+            classes: ["augmented"],
+            gear: (weapon: Some("pulse_lasers"), items: ["coolant_tank"], augments: ["aug_heat_frame", "aug_reflex_wiring"]),
+        ),
+    ],
+)

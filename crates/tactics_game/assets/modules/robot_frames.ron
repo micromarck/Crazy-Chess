@@ -113,9 +113,9 @@
         (
             id: "inferno",
             name: "Inferno Projector",
-            description: "Roast a 60-degree cone out to 5 tiles: 2-4 damage to everyone in it (friend or foe), ignoring cover; it burns for 3 rounds. +5 heat, 1 turn cooldown.",
+            description: "Roast a 60-degree cone out to 5 tiles: 2-4 damage to everyone in it (friend or foe), ignoring cover; it burns for 3 rounds. +5 heat; then a turn to recharge (not again next turn).",
             cost: EndsTurn,
-            cooldown: 1,
+            cooldown: 2, // ticks at the start of the user's turns: skip the next one
             targeting: Tile,
             range: Fixed(5.0),
             requires_los: true,

@@ -141,6 +141,7 @@ impl GameModule for GrenadierModule {
                 weapon: Some(weapon.into()),
                 armor: armor.map(String::from),
                 items: items.iter().map(|s| s.to_string()).collect(),
+                augments: Vec::new(),
             },
         };
         rules.add_loadout(preset("standard", "Standard", "Rifle, kevlar, one frag.", "rifle", Some("kevlar"), &["frag"]));

@@ -19,6 +19,9 @@ use crate::content::AbilityId;
 /// How many utility items a unit can carry.
 pub const UTILITY_SLOTS: usize = 2;
 
+/// How many augments an augmented soldier can have.
+pub const AUGMENT_SLOTS: usize = 3;
+
 /// Where an item is worn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "data", derive(serde::Serialize, serde::Deserialize))]
@@ -26,6 +29,9 @@ pub enum ItemSlot {
     Armor,
     #[default]
     Utility,
+    /// Cybernetic augments (augmented soldiers): up to [`AUGMENT_SLOTS`],
+    /// each a trade-off - or something stranger.
+    Augment,
 }
 
 /// Stat changes from an item (added to the class's stats).
@@ -68,6 +74,18 @@ pub struct ItemDef {
     /// Socket the model attaches to (default: `chest` for armour, `hip_r`
     /// for utility items).
     pub socket: Option<String>,
+    /// Scripts the wearer runs, like a class's `hooks` (e.g. bursting into
+    /// fire on `death`).
+    pub hooks: Vec<crate::unit::ClassHook>,
+    /// The wearer runs on **heat** instead of health (like a robot frame).
+    pub heat: Option<crate::unit::HeatRules>,
+    /// The wearer also counts as these classes for gear (`["frame_light"]`:
+    /// can carry a Strider's weapons and items).
+    pub gear_as: Vec<String>,
+    /// The wearer builds rage (see `RageRules`).
+    pub rage: Option<crate::unit::RageRules>,
+    /// The wearer feels no fear and no insanity.
+    pub fearless: bool,
 }
 
 /// A set of equipment. Empty fields mean "keep what you'd otherwise have".
@@ -80,6 +98,8 @@ pub struct Loadout {
     /// Utility item ids (an id may repeat: two grenades). `[""]` = explicitly
     /// no items.
     pub items: Vec<String>,
+    /// Augment ids (augmented soldiers). `[""]` = explicitly none.
+    pub augments: Vec<String>,
 }
 
 impl Loadout {
@@ -89,11 +109,12 @@ impl Loadout {
             weapon: over.weapon.clone().or_else(|| self.weapon.clone()),
             armor: over.armor.clone().or_else(|| self.armor.clone()),
             items: if over.items.is_empty() { self.items.clone() } else { over.items.clone() },
+            augments: if over.augments.is_empty() { self.augments.clone() } else { over.augments.clone() },
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.weapon.is_none() && self.armor.is_none() && self.items.is_empty()
+        self.weapon.is_none() && self.armor.is_none() && self.items.is_empty() && self.augments.is_empty()
     }
 }
 

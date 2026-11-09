@@ -473,6 +473,10 @@ mod xml {
                             .attribute("items")
                             .map(|t| t.split([',', ' ']).filter(|s| !s.is_empty()).map(String::from).collect())
                             .unwrap_or_default(),
+                        augments: n
+                            .attribute("augments")
+                            .map(|t| t.split([',', ' ']).filter(|s| !s.is_empty()).map(String::from).collect())
+                            .unwrap_or_default(),
                     },
                     pod: n.attribute("pod").map(String::from),
                     patrol: match n.attribute("patrol") {

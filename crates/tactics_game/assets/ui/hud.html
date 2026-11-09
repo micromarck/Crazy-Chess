@@ -414,6 +414,24 @@
         <div class="lo-value"><span>{{ lo.item1 }}</span><span class="key">{{ lo.item1_info }}</span></div>
         <button class="lo-arrow" data-command="gear:item:{{ lo.index }}:1:1">&gt;</button>
       </div>
+      <div class="lo-row" data-if="lo.augmented">
+        <span class="lo-label">Augment 1</span>
+        <button class="lo-arrow" data-command="gear:aug:{{ lo.index }}:0:-1">&lt;</button>
+        <div class="lo-value"><span>{{ lo.aug0 }}</span><span class="key">{{ lo.aug0_info }}</span></div>
+        <button class="lo-arrow" data-command="gear:aug:{{ lo.index }}:0:1">&gt;</button>
+      </div>
+      <div class="lo-row" data-if="lo.augmented">
+        <span class="lo-label">Augment 2</span>
+        <button class="lo-arrow" data-command="gear:aug:{{ lo.index }}:1:-1">&lt;</button>
+        <div class="lo-value"><span>{{ lo.aug1 }}</span><span class="key">{{ lo.aug1_info }}</span></div>
+        <button class="lo-arrow" data-command="gear:aug:{{ lo.index }}:1:1">&gt;</button>
+      </div>
+      <div class="lo-row" data-if="lo.augmented">
+        <span class="lo-label">Augment 3</span>
+        <button class="lo-arrow" data-command="gear:aug:{{ lo.index }}:2:-1">&lt;</button>
+        <div class="lo-value"><span>{{ lo.aug2 }}</span><span class="key">{{ lo.aug2_info }}</span></div>
+        <button class="lo-arrow" data-command="gear:aug:{{ lo.index }}:2:1">&gt;</button>
+      </div>
       <div class="lo-row">
         <span class="lo-label">Quick pick</span>
         <button class="lo-arrow" data-command="gear:preset:{{ lo.index }}:-1">&lt;</button>

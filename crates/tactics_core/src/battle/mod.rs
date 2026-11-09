@@ -201,7 +201,7 @@ impl Battle {
         let mut abilities = class.abilities.clone();
         let mut charges: std::collections::BTreeMap<AbilityId, u32> = Default::default();
         let items: Vec<ItemDef> =
-            gear.armor.iter().chain(gear.items.iter()).filter_map(|id| self.rules.item(id).cloned()).collect();
+            gear.armor.iter().chain(gear.items.iter()).chain(gear.augments.iter()).filter_map(|id| self.rules.item(id).cloned()).collect();
         let mut sight_percent = 0;
         for item in &items {
             let m = item.stats;
@@ -263,10 +263,22 @@ impl Battle {
             gear: Loadout { weapon: Some(weapon_id), ..gear },
             appearance: None,
         };
+        // Augments that change what the soldier *is*.
+        let mut unit = unit;
+        for item in &items {
+            if item.heat.is_some() {
+                unit.heat = item.heat;
+            }
+            if item.rage.is_some() {
+                unit.rage_rules = item.rage;
+            }
+            unit.fearless |= item.fearless;
+        }
         // The class's scripts ride along with every unit of it.
         let hooks: Vec<crate::mission::ScriptHook> = class
             .hooks
             .iter()
+            .chain(items.iter().flat_map(|i| i.hooks.iter()))
             .filter_map(|h| {
                 crate::mission::HookEvent::parse(&h.on).map(|on| crate::mission::ScriptHook { on, team: None, once: h.once, code: h.code.clone() })
             })

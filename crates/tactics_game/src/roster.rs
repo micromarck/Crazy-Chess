@@ -51,7 +51,7 @@ pub const SQUAD_SIZE: usize = 6;
 const FILE: &str = "tbsium_roster.ron";
 /// Classes a recruit can be (the player classes of the bundled modules;
 /// ones whose module isn't loaded are skipped).
-const SOLDIER_CLASSES: [&str; 5] = ["rifleman", "assault", "sniper", "grenadier", "heavy"];
+const SOLDIER_CLASSES: [&str; 6] = ["rifleman", "assault", "sniper", "grenadier", "heavy", "augmented"];
 /// Robot frames (the Robot Frames module): built, not recruited.
 const ROBOT_CLASSES: [&str; 2] = ["frame_light", "frame_heavy"];
 

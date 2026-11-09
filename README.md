@@ -229,6 +229,12 @@ TBSium/
 * **Frag grenades** do their damage with fragments: 24 of them at 2 damage,
   hitting everyone around the throw (inside the blast too) unless walls or
   cover stop them; the blast itself is small. Rockets still hit with the blast.
+* **Augmented** soldiers (Augments module): fit up to 3 cybernetic augments in
+  the Loadout screen. Most trade one strength for a weakness (Targeting Eye:
+  +25 aim, -3 movement; Bulk Grafts: +8 HP, -20 defence); the wild ones make a
+  soldier explode into fire when they die, rage, regenerate, or run on heat
+  like a robot and carry a Strider's weapons. A campaign is planned: see
+  **[CAMPAIGN.md](CAMPAIGN.md)**.
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).
