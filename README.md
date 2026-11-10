@@ -62,7 +62,8 @@ Settings, How to play; the Menu button or Esc brings it back). Set
 
 **Graphics** (Settings): *Performance* (no shadows or anti-aliasing, fewer
 fire, gas and vine effects - for phones and old machines), *Balanced*, or
-*Pretty* (a warm sun with a cool fill light, sharper and smoother shadows from
+*Pretty* (a brighter sun plus light from the mission's own sky - ambient, an
+overhead skylight and a horizon bounce in its colours - sharper, smoother shadows from
 a bigger shadow map with more cascades, bloom on desktop). Looks only: the
 rules are identical in every mode.
 
