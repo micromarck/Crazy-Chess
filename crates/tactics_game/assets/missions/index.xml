@@ -28,5 +28,8 @@
   <mission file="camp_servers.mission.xml"/>
   <mission file="camp_coolant.mission.xml"/>
   <mission file="camp_heart.mission.xml"/>
+  <mission file="holdout_square.mission.xml"/>
+  <mission file="holdout_yard.mission.xml"/>
+  <mission file="holdout_hive.mission.xml"/>
   <mission file="lab.mission.xml"/>
 </missions>

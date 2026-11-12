@@ -36,7 +36,7 @@ pub fn collect_ui_data(
     settings: Res<crate::settings::GameSettings>,
     roster: Res<crate::roster::Roster>,
     touch: Res<crate::touch::TouchMode>,
-    campaign: Res<crate::campaign::Campaign>,
+    (campaign, holdout): (Res<crate::campaign::Campaign>, Res<crate::holdout::HoldoutBest>),
     mut data: ResMut<UiData>,
 ) {
     let mut v = UiValues::default();
@@ -71,6 +71,10 @@ pub fn collect_ui_data(
         },
     );
     v.set("battle.seed", format!("{:#x}", state.seed));
+    // Hold Out: the round to beat.
+    let holdout_on = crate::holdout::is_holdout(state.mission.as_deref());
+    v.set("holdout.active", bool_str(holdout_on));
+    v.set("holdout.best", if holdout_on { holdout.get(state.mission.as_deref().unwrap_or("")) } else { 0 });
     v.set("battle.summary", state.stats.summary(b.round()));
     v.set("busy", bool_str(playback.is_busy() || director.is_active()));
 

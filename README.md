@@ -262,6 +262,11 @@ TBSium/
   Drops, Hyperdrive) are strong on the spot but may leave **side effects that
   last** across missions (a crash, tremors, scarring, heart strain); timed ones
   wear off, lasting ones need the infirmary (funds).
+* **Hold Out** missions (Last Stand: zombies; Iron Tide: VESPER's robots;
+  Feeding Frenzy: symbiotes): no win, just survive as long as you can. Waves
+  arrive every enemy turn - 1-3 at first, 2-5 from round 4, 4-7 from round 7,
+  then both ends x1.5 (rounded up) every 5 rounds - with tougher enemies
+  joining later. Your best round per mission is saved and shown.
 * Overwatch reaction fire that interrupts movement mid-path.
 * Hunker down, reload, ammo, critical hits, death, victory/defeat.
 * Utility AI (cover-seeking, flanking-aware, shoots good odds, advances when blind).

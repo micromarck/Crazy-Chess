@@ -658,6 +658,65 @@ mod tests {
         assert_eq!(b.unit(heart).unwrap().tiles().count(), 4);
     }
 
+    /// Hold Out: waves follow the schedule (1-3, 2-5 from round 4, 4-7 from
+    /// round 7, then x1.5 rounded up every 5 rounds; capped by how many may
+    /// be alive), the arenas start empty, and there's no win.
+    #[test]
+    fn holdout_waves_follow_the_schedule() {
+        fn range(r: u32) -> (u32, u32) {
+            let (mut lo, mut hi) = if r >= 7 { (4.0f64, 7.0f64) } else if r >= 4 { (2.0, 5.0) } else { (1.0, 3.0) };
+            if r >= 7 {
+                for _ in 0..(r - 7) / 5 {
+                    lo = (lo * 1.5).ceil();
+                    hi = (hi * 1.5).ceil();
+                }
+            }
+            (lo as u32, hi as u32)
+        }
+        assert_eq!(range(12), (6, 11));
+        assert_eq!(range(17), (9, 17));
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(MISSION_DIR);
+        let (rules, _) = crate::content::build_ruleset();
+        for (file, cap) in [("holdout_square", 60), ("holdout_yard", 36), ("holdout_hive", 40)] {
+            let def = parse_mission(&std::fs::read_to_string(dir.join(format!("{file}.mission.xml"))).unwrap()).unwrap();
+            let (mut b, warnings) = Battle::from_mission(rules.clone(), &def, 2);
+            assert!(warnings.is_empty(), "{file}: {warnings:?}");
+            b.begin();
+            assert_eq!(b.living(Team::Enemy).count(), 0, "{file} starts empty");
+            let squad: Vec<_> = b.living(Team::Player).map(|u| u.id).collect();
+            for _ in 0..25 {
+                if b.is_over() {
+                    break;
+                }
+                // The squad just waits, healed back up every turn so the waves can be counted.
+                for &id in &squad {
+                    b.debug_set_hp(id, 99);
+                }
+                let before = b.living(Team::Enemy).count() as u32;
+                let r = b.round();
+                let ev = b.apply(Action::EndTurn).unwrap(); // the enemy turn: the wave
+                assert!(!ev.iter().any(|e| matches!(e, GameEvent::ScriptError { .. })), "{file}: {ev:?}");
+                let spawned = ev.iter().filter(|e| matches!(e, GameEvent::UnitSpawned { .. })).count() as u32;
+                let (lo, hi) = range(r);
+                let room = (cap as u32).saturating_sub(before);
+                assert!(spawned <= hi.min(room) && spawned >= lo.min(room), "{file} round {r}: {spawned} not in {lo}-{hi} (room {room})");
+                assert!(b.winner() != Some(Team::Player), "{file}: no win");
+                if b.is_over() {
+                    break;
+                }
+                // The enemy acts; then back to the squad.
+                while b.active_team() == Team::Enemy && !b.is_over() {
+                    let a = ai::next_team_action(&b, &AiConfig::default());
+                    b.apply(a).unwrap();
+                }
+            }
+            // (A squad that never shoots back falls early to guns; the zombies
+            // have to walk up, so the square shows the later, x1.5 waves.)
+            let need = if file == "holdout_square" { 20 } else { 5 };
+            assert!(b.round() >= need, "{file}: reached round {}", b.round());
+        }
+    }
+
     /// The other dinosaur missions build cleanly, keep every big beast on
     /// walkable tiles while both sides play them out, and their scripts run.
     #[test]
@@ -742,7 +801,8 @@ mod tests {
             // The Character Lab is a test stage: one subject, no enemies.
             if def.id != crate::lab::LAB_MISSION {
                 assert!(battle.living(Team::Player).count() >= 4, "{f}: squad deployed");
-                assert!(battle.living(Team::Enemy).count() >= 3, "{f}: enemies placed");
+                // (Hold Out arenas start empty: the waves come from round 1.)
+                assert!(battle.living(Team::Enemy).count() >= 3 || def.id.starts_with("holdout_"), "{f}: enemies placed");
             }
             ids.push(def.id);
         }
